@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>HomeManagement.Core</RootNamespace>
+    <Description>Composition root — DI registration, configuration, and startup wiring.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="HomeManagement.Core.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Extensions.Logging" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Serilog.Enrichers.Thread" />
+    <PackageReference Include="Serilog.Enrichers.Environment" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Core only depends on Abstractions and Data (infrastructure).
+         Module implementations are discovered at runtime via IModuleRegistration.
+         The GUI project references the module assemblies to ensure they're loaded. -->
+    <ProjectReference Include="..\HomeManagement.Abstractions\HomeManagement.Abstractions.csproj" />
+    <ProjectReference Include="..\HomeManagement.Data\HomeManagement.Data.csproj" />
+  </ItemGroup>
+</Project>

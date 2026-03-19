@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>HomeManagement.Transport</RootNamespace>
+    <Description>Remote execution transport layer — SSH, WinRM, PowerShell Remoting, Agent.</Description>
+    <NoWarn>CA1848;CA1873</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="HomeManagement.Transport.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="SSH.NET" />
+    <PackageReference Include="System.Reactive" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Tools" PrivateAssets="All" />
+  </ItemGroup>
+  <ItemGroup>
+    <Protobuf Include="Protos\agent_hub.proto" GrpcServices="Server" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HomeManagement.Abstractions\HomeManagement.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

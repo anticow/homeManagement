@@ -1,0 +1,34 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HomeManagement.Gui.ViewModels"
+             x:Class="HomeManagement.Gui.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+    <DockPanel Margin="24">
+        <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,16">
+            <TextBlock Text="Settings" FontSize="24" FontWeight="Bold" />
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="Red"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </StackPanel>
+
+        <ScrollViewer>
+            <StackPanel Spacing="16">
+                <Border Background="#2D2D3D" CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="System Health" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding HealthReport.OverallStatus, StringFormat='Status: {0}'}" Foreground="#888" />
+                        <Button Content="Refresh Health" Command="{Binding RefreshHealthCommand}" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="#2D2D3D" CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Vault" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding VaultUnlocked, StringFormat='Unlocked: {0}'}" Foreground="#888" />
+                    </StackPanel>
+                </Border>
+
+                <Button Content="Save Settings" Command="{Binding SaveCommand}" />
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

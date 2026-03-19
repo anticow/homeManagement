@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HomeManagement.Gui.ViewModels"
+             x:Class="HomeManagement.Gui.Views.AuditLogView"
+             x:DataType="vm:AuditLogViewModel">
+    <DockPanel Margin="24">
+        <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,16">
+            <TextBlock Text="Audit Log" FontSize="24" FontWeight="Bold" />
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="Red"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Refresh" Command="{Binding RefreshCommand}" />
+                <Button Content="← Prev" Command="{Binding PrevPageCommand}" />
+                <TextBlock Text="{Binding Page, StringFormat='Page {0}'}" VerticalAlignment="Center" />
+                <Button Content="Next →" Command="{Binding NextPageCommand}" />
+            </StackPanel>
+        </StackPanel>
+
+        <TextBlock DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <TextBlock.Text>
+                <MultiBinding StringFormat="{}{0} events total">
+                    <Binding Path="TotalCount" />
+                </MultiBinding>
+            </TextBlock.Text>
+        </TextBlock>
+
+        <ListBox ItemsSource="{Binding Events}" Margin="0,8,0,0">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Orientation="Horizontal" Spacing="16" Margin="4">
+                        <TextBlock Text="{Binding TimestampUtc}" Width="160" Foreground="#888" />
+                        <TextBlock Text="{Binding Action}" Width="120" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Actor}" Width="150" />
+                        <TextBlock Text="{Binding Detail}" Foreground="#888" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </DockPanel>
+</UserControl>

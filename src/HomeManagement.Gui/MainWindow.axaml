@@ -1,0 +1,62 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:HomeManagement.Gui.ViewModels"
+        x:Class="HomeManagement.Gui.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="HomeManagement"
+        Width="1280" Height="800"
+        WindowStartupLocation="CenterScreen">
+    <DockPanel>
+        <!-- Navigation sidebar -->
+        <Border DockPanel.Dock="Left" Width="220" Background="#1E1E2E" Padding="8">
+            <StackPanel Spacing="4">
+                <TextBlock Text="HomeManagement" FontSize="18" FontWeight="Bold"
+                           Foreground="White" Margin="8,16,8,24" />
+                <Button Content="Dashboard" HorizontalAlignment="Stretch" Classes="nav"
+                        Command="{Binding NavigateCommand}" CommandParameter="Dashboard" />
+                <Button Content="Machines" HorizontalAlignment="Stretch" Classes="nav"
+                        Command="{Binding NavigateCommand}" CommandParameter="Machines" />
+                <Button Content="Patching" HorizontalAlignment="Stretch" Classes="nav"
+                        Command="{Binding NavigateCommand}" CommandParameter="Patching" />
+                <Button Content="Services" HorizontalAlignment="Stretch" Classes="nav"
+                        Command="{Binding NavigateCommand}" CommandParameter="Services" />
+                <Button Content="Jobs" HorizontalAlignment="Stretch" Classes="nav"
+                        Command="{Binding NavigateCommand}" CommandParameter="Jobs" />
+                <Button Content="Credentials" HorizontalAlignment="Stretch" Classes="nav"
+                        Command="{Binding NavigateCommand}" CommandParameter="Credentials" />
+                <Button Content="Audit Log" HorizontalAlignment="Stretch" Classes="nav"
+                        Command="{Binding NavigateCommand}" CommandParameter="Audit Log" />
+                <Button Content="Settings" HorizontalAlignment="Stretch" Classes="nav"
+                        Command="{Binding NavigateCommand}" CommandParameter="Settings" />
+            </StackPanel>
+        </Border>
+
+        <!-- Status bar -->
+        <Border DockPanel.Dock="Bottom" Height="28" Background="#2D2D3D" Padding="8,0">
+            <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                <TextBlock Foreground="#888" FontSize="11">
+                    <TextBlock.Text>
+                        <MultiBinding StringFormat="● {0} agents">
+                            <Binding Path="ConnectedAgentCount" />
+                        </MultiBinding>
+                    </TextBlock.Text>
+                </TextBlock>
+                <TextBlock Foreground="#888" FontSize="11">
+                    <TextBlock.Text>
+                        <MultiBinding StringFormat="{}{0} jobs running">
+                            <Binding Path="RunningJobCount" />
+                        </MultiBinding>
+                    </TextBlock.Text>
+                </TextBlock>
+                <TextBlock Text="{Binding IsVaultUnlocked, StringFormat='Vault: {0}'}"
+                           Foreground="#888" FontSize="11" />
+                <TextBlock Text="{Binding StatusMessage}" Foreground="#888" FontSize="11" />
+                <TextBlock Text="{Binding AppVersion, StringFormat='v{0}'}"
+                           Foreground="#555" FontSize="11" HorizontalAlignment="Right" />
+            </StackPanel>
+        </Border>
+
+        <!-- Main content area — switches views based on current page ViewModel -->
+        <ContentControl Content="{Binding Navigation.CurrentPage}" Margin="0" />
+    </DockPanel>
+</Window>

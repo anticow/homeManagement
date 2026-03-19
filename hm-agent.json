@@ -1,0 +1,11 @@
+{
+  "Agent": {
+    "ControlServer": "localhost:9444",
+    "AgentId": "",
+    "CertPath": "certs/agent.pfx",
+    "CaCertPath": "certs/ca.crt",
+    "HeartbeatIntervalSeconds": 30,
+    "MaxConcurrentCommands": 5,
+    "LogLevel": "Information"
+  }
+}

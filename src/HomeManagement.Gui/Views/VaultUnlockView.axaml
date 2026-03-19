@@ -1,0 +1,18 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HomeManagement.Gui.ViewModels"
+             x:Class="HomeManagement.Gui.Views.VaultUnlockView"
+             x:DataType="vm:VaultUnlockViewModel">
+    <Border MaxWidth="400" MaxHeight="300" VerticalAlignment="Center" HorizontalAlignment="Center"
+            Background="#2D2D3D" CornerRadius="8" Padding="32">
+        <StackPanel Spacing="16">
+            <TextBlock Text="Unlock Vault" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center" />
+            <TextBlock Text="Enter your vault password to access credentials." Foreground="#888"
+                       TextWrapping="Wrap" HorizontalAlignment="Center" />
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="Red"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <TextBox Name="PasswordBox" Watermark="Password" PasswordChar="●" />
+            <Button Content="Unlock" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+        </StackPanel>
+    </Border>
+</UserControl>

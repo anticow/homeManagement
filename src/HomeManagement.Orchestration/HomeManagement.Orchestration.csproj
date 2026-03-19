@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>HomeManagement.Orchestration</RootNamespace>
+    <Description>Job scheduling, orchestration, and execution pipeline.</Description>
+    <NoWarn>CA1848;CA1873</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Quartz" />
+    <PackageReference Include="Quartz.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="System.Reactive" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HomeManagement.Abstractions\HomeManagement.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

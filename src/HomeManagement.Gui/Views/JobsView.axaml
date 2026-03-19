@@ -1,0 +1,37 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HomeManagement.Gui.ViewModels"
+             x:Class="HomeManagement.Gui.Views.JobsView"
+             x:DataType="vm:JobsViewModel">
+    <DockPanel Margin="24">
+        <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,16">
+            <TextBlock Text="Jobs" FontSize="24" FontWeight="Bold" />
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="Red"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Refresh" Command="{Binding RefreshCommand}" />
+            </StackPanel>
+        </StackPanel>
+
+        <TextBlock DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <TextBlock.Text>
+                <MultiBinding StringFormat="{}{0} jobs total">
+                    <Binding Path="TotalCount" />
+                </MultiBinding>
+            </TextBlock.Text>
+        </TextBlock>
+
+        <ListBox ItemsSource="{Binding Jobs}" Margin="0,8,0,0">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Orientation="Horizontal" Spacing="16" Margin="4">
+                        <TextBlock Text="{Binding Name}" Width="200" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding State}" Width="100" />
+                        <TextBlock Text="{Binding Type}" Width="120" Foreground="#888" />
+                        <TextBlock Text="{Binding SubmittedUtc}" Foreground="#888" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </DockPanel>
+</UserControl>

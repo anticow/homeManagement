@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>HomeManagement.Gui</RootNamespace>
+    <Description>Avalonia desktop GUI for HomeManagement.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="Avalonia.ReactiveUI" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <PackageReference Include="Grpc.AspNetCore" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HomeManagement.Core\HomeManagement.Core.csproj" />
+    <!-- Module assemblies — referenced so they're loaded into AppDomain for IModuleRegistration discovery -->
+    <ProjectReference Include="..\HomeManagement.Vault\HomeManagement.Vault.csproj" />
+    <ProjectReference Include="..\HomeManagement.Transport\HomeManagement.Transport.csproj" />
+    <ProjectReference Include="..\HomeManagement.Patching\HomeManagement.Patching.csproj" />
+    <ProjectReference Include="..\HomeManagement.Services\HomeManagement.Services.csproj" />
+    <ProjectReference Include="..\HomeManagement.Inventory\HomeManagement.Inventory.csproj" />
+    <ProjectReference Include="..\HomeManagement.Auditing\HomeManagement.Auditing.csproj" />
+    <ProjectReference Include="..\HomeManagement.Orchestration\HomeManagement.Orchestration.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>HomeManagement.Auditing</RootNamespace>
+    <Description>Audit logging and tamper-evident event store.</Description>
+    <NoWarn>CA1848;CA1873</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Serilog.Enrichers.Thread" />
+    <PackageReference Include="Serilog.Enrichers.Environment" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HomeManagement.Abstractions\HomeManagement.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

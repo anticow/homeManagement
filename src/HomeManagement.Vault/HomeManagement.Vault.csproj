@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>HomeManagement.Vault</RootNamespace>
+    <Description>Encrypted credential vault implementation.</Description>
+    <NoWarn>CA1848;CA1873</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Konscious.Security.Cryptography.Argon2" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="System.Reactive" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HomeManagement.Abstractions\HomeManagement.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

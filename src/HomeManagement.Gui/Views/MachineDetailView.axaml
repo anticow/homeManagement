@@ -1,0 +1,52 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:HomeManagement.Gui.ViewModels"
+             x:Class="HomeManagement.Gui.Views.MachineDetailView"
+             x:DataType="vm:MachineDetailViewModel">
+    <DockPanel Margin="24">
+        <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,16">
+            <TextBlock Text="Machine Detail" FontSize="24" FontWeight="Bold" />
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="Red"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </StackPanel>
+
+        <ScrollViewer>
+            <StackPanel Spacing="16">
+                <Border Background="#2D2D3D" CornerRadius="8" Padding="16">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{Binding Machine.Hostname}" FontSize="18" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding Machine.OsType, StringFormat='OS: {0}'}" Foreground="#888" />
+                        <TextBlock Text="{Binding Machine.State, StringFormat='State: {0}'}" Foreground="#888" />
+                        <TextBlock Text="{Binding Machine.Protocol, StringFormat='Protocol: {0}'}" Foreground="#888" />
+                    </StackPanel>
+                </Border>
+
+                <TextBlock Text="Installed Patches" FontWeight="SemiBold" />
+                <ItemsControl ItemsSource="{Binding Patches}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,2">
+                                <TextBlock Text="{Binding PatchId}" Width="200" />
+                                <TextBlock Text="{Binding InstalledUtc}" Foreground="#888" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Text="Services" FontWeight="SemiBold" />
+                <ItemsControl ItemsSource="{Binding Services}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,2">
+                                <TextBlock Text="{Binding Name}" Width="200" />
+                                <TextBlock Text="{Binding Status}" Width="100" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Button Content="Refresh" Command="{Binding RefreshCommand}" />
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>
