@@ -38,7 +38,7 @@
     <PackageVersion Include="Quartz.Serialization.SystemTextJson" Version="3.13.1" />
 
     <!-- Reactive -->
-    <PackageVersion Include="System.Reactive" Version="6.0.1" />
+    <PackageVersion Include="System.Reactive" Version="6.1.0" />
 
     <!-- Logging -->
     <PackageVersion Include="Serilog" Version="4.2.0" />
