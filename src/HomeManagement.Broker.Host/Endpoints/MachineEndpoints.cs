@@ -15,9 +15,23 @@ public static class MachineEndpoints
             .WithTags("Machines")
             .RequireAuthorization();
 
-        group.MapGet("/", async (IInventoryService inventory, int page, int pageSize, CancellationToken ct) =>
+        group.MapGet("/", async (
+            IInventoryService inventory,
+            string? searchText,
+            OsType? osType,
+            MachineState? state,
+            int page,
+            int pageSize,
+            CancellationToken ct) =>
         {
-            var query = new MachineQuery { Page = page, PageSize = pageSize };
+            var query = new MachineQuery
+            {
+                SearchText = searchText,
+                OsType = osType,
+                State = state,
+                Page = page,
+                PageSize = pageSize
+            };
             return Results.Ok(await inventory.QueryAsync(query, ct));
         });
 

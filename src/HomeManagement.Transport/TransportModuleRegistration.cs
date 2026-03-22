@@ -1,5 +1,6 @@
 using HomeManagement.Abstractions.CrossCutting;
 using HomeManagement.Abstractions.Interfaces;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace HomeManagement.Transport;
@@ -21,6 +22,7 @@ public sealed class TransportModuleRegistration : IModuleRegistration
         services.AddSingleton<IAgentGateway>(sp => sp.GetRequiredService<RemoteAgentGatewayClient>());
         // Command broker: async queue for fire-and-forget command dispatch with persistent results
         services.AddSingleton<CommandBrokerService>();
+        services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<CommandBrokerService>());
         services.AddSingleton<ICommandBroker>(sp => sp.GetRequiredService<CommandBrokerService>());
         services.AddScoped<IRemoteExecutor, RemoteExecutorRouter>();
     }

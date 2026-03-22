@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using HomeManagement.Abstractions.Interfaces;
 using HomeManagement.Abstractions.Models;
 using HomeManagement.Abstractions.Repositories;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -14,7 +15,7 @@ namespace HomeManagement.Transport;
 /// via the agent transport, and persists results to the data store regardless of UI state.
 /// Ensures that navigating away from a page does not abandon in-flight commands.
 /// </summary>
-public sealed class CommandBrokerService : ICommandBroker, IAsyncDisposable
+public sealed class CommandBrokerService : ICommandBroker, IHostedService, IAsyncDisposable
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<CommandBrokerService> _logger;
@@ -25,6 +26,9 @@ public sealed class CommandBrokerService : ICommandBroker, IAsyncDisposable
 
     private readonly CancellationTokenSource _cts = new();
     private Task? _processingTask;
+    private int _started;
+    private int _stopped;
+    private int _disposed;
 
     public IObservable<CommandCompletedEvent> CompletedStream => _completedSubject.AsObservable();
 
@@ -41,8 +45,41 @@ public sealed class CommandBrokerService : ICommandBroker, IAsyncDisposable
     /// </summary>
     public void Start()
     {
+        if (Interlocked.Exchange(ref _started, 1) == 1)
+        {
+            return;
+        }
+
         _processingTask = Task.Run(() => ProcessLoopAsync(_cts.Token));
         _logger.LogInformation("Command broker started");
+    }
+
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        Start();
+        return Task.CompletedTask;
+    }
+
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        if (Interlocked.Exchange(ref _stopped, 1) == 1)
+        {
+            return;
+        }
+
+        _queue.Writer.TryComplete();
+        await _cts.CancelAsync();
+
+        if (_processingTask is not null)
+        {
+            try
+            {
+                await _processingTask.WaitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
     }
 
     public async Task<Guid> SubmitAsync(CommandEnvelope envelope, CancellationToken ct = default)
@@ -167,14 +204,12 @@ public sealed class CommandBrokerService : ICommandBroker, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        _queue.Writer.TryComplete();
-        await _cts.CancelAsync();
-
-        if (_processingTask is not null)
+        if (Interlocked.Exchange(ref _disposed, 1) == 1)
         {
-            try { await _processingTask; }
-            catch (OperationCanceledException) { /* expected */ }
+            return;
         }
+
+        await StopAsync(CancellationToken.None);
 
         _cts.Dispose();
         _completedSubject.OnCompleted();

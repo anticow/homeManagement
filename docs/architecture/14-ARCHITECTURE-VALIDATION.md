@@ -35,6 +35,10 @@
 > Implemented: corrected Helm wiring for `hm-agent-gw`, gateway, and web; explicit ingress SSL redirect behavior; chart lint and render checks in CI and release validation; raw Kubernetes manifests marked reference-only.
 > REV12-04 and REV12-06 are now resolved in `17-REMEDIATION-AND-DECISION-TRACKER.md`.
 >
+> **Revision 18 — 2026-03-22:** Client/runtime follow-through completed.
+> The desktop runtime now supports a platform mode that consumes Broker and Auth over explicit HTTP clients instead of resolving in-process domain services for the supported path.
+> The Broker host now starts both Quartz and the async command broker as host-native services, and focused end-to-end coverage now proves Broker job submission through AgentGateway to Agent with persisted completion state.
+>
 > **Revision 11 — 2026-03-21:** Post-P4 security review.
 > Found and fixed: gRPC agent spoofing (CRIT — added ApiKeyInterceptor with pre-shared key auth on all gRPC methods),
 > missing SensitivePropertyEnricher in Gateway + AgentGateway Serilog pipelines (MED — enricher added),
@@ -149,6 +153,14 @@ The third remaining correction track is complete:
 - `hm-agent-gw`, `hm-gateway`, and `hm-web` Helm values now match the current runtime contracts
 - CI and release validation both lint and render the Helm chart before shipping
 - raw manifests remain in-repo as reference-only scaffolding, not a supported production path
+
+### Revision 18 Delta
+
+The remaining runtime follow-through behind the earlier control-plane decisions is now materially tighter:
+
+- the desktop client can run in a platform mode that authenticates against `hm-auth` and calls `hm-broker` APIs instead of using the local in-process service graph for the supported runtime path
+- Broker-hosted job execution now starts its own Quartz scheduler and command broker loop automatically in server runtimes
+- end-to-end coverage now includes authenticated Broker job submission, AgentGateway relay, agent execution, and persisted completion verification
 
 ### Revision 12 Delta
 

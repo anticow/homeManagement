@@ -13,6 +13,7 @@ public sealed class OrchestrationModuleRegistration : IModuleRegistration
     {
         // Register Quartz.NET scheduler
         services.AddQuartz();
+        services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
 
         services.AddSingleton<IJobScheduler, JobSchedulerService>();
     }

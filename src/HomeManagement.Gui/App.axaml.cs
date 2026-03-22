@@ -41,10 +41,21 @@ public class App : Application
                     .AddEnvironmentVariables()
                     .Build();
 
+                var platformOptions = DesktopPlatformOptions.FromConfiguration(configuration);
+
                 var services = new ServiceCollection();
                 services.AddSingleton<IConfiguration>(configuration);
+                services.AddSingleton(platformOptions);
                 services.AddHomeManagementLogging(dataDir);
-                services.AddHomeManagement(dataDir);
+
+                if (platformOptions.IsEnabled)
+                {
+                    services.AddDesktopPlatformClients(platformOptions);
+                }
+                else
+                {
+                    services.AddHomeManagement(dataDir);
+                }
 
                 // GUI services
                 services.AddSingleton<NavigationService>();
@@ -69,8 +80,11 @@ public class App : Application
                 _serviceProvider = services.BuildServiceProvider();
 
                 // Initialize database schema before resolving any ViewModels
-                ServiceRegistration.InitializeDatabaseAsync(_serviceProvider)
-                    .GetAwaiter().GetResult();
+                if (!platformOptions.IsEnabled)
+                {
+                    ServiceRegistration.InitializeDatabaseAsync(_serviceProvider)
+                        .GetAwaiter().GetResult();
+                }
 
                 var mainVm = _serviceProvider.GetRequiredService<MainWindowViewModel>();
                 desktop.MainWindow = new MainWindow { DataContext = mainVm };
@@ -78,15 +92,18 @@ public class App : Application
                 var agentGateway = _serviceProvider.GetRequiredService<IAgentGateway>();
                 agentGateway.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
 
-                _agentRegistration = new AgentAutoRegistrationService(
-                    agentGateway,
-                    _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-                    _serviceProvider.GetRequiredService<ILogger<AgentAutoRegistrationService>>());
-                _agentRegistration.Start();
+                if (!platformOptions.IsEnabled)
+                {
+                    _agentRegistration = new AgentAutoRegistrationService(
+                        agentGateway,
+                        _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+                        _serviceProvider.GetRequiredService<ILogger<AgentAutoRegistrationService>>());
+                    _agentRegistration.Start();
 
-                // Start the async command broker for fire-and-forget operation dispatch
-                _commandBroker = _serviceProvider.GetRequiredService<Transport.CommandBrokerService>();
-                _commandBroker.Start();
+                    // Start the async command broker for fire-and-forget operation dispatch
+                    _commandBroker = _serviceProvider.GetRequiredService<Transport.CommandBrokerService>();
+                    _commandBroker.Start();
+                }
 
                 // Dispose DI container on shutdown to clean up singletons and DB connections
                 desktop.ShutdownRequested += (_, _) =>

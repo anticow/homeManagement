@@ -15,9 +15,23 @@ public static class AuditEndpoints
             .WithTags("Audit")
             .RequireAuthorization();
 
-        group.MapGet("/", async (IAuditLogger audit, int page, int pageSize, CancellationToken ct) =>
+        group.MapGet("/", async (
+            IAuditLogger audit,
+            AuditAction? action,
+            DateTime? fromUtc,
+            DateTime? toUtc,
+            int page,
+            int pageSize,
+            CancellationToken ct) =>
         {
-            var query = new AuditQuery { Page = page, PageSize = pageSize };
+            var query = new AuditQuery
+            {
+                Action = action,
+                FromUtc = fromUtc,
+                ToUtc = toUtc,
+                Page = page,
+                PageSize = pageSize
+            };
             return Results.Ok(await audit.QueryAsync(query, ct));
         });
 

@@ -14,9 +14,11 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
     <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\HomeManagement.Core\HomeManagement.Core.csproj" />
+    <ProjectReference Include="..\HomeManagement.Auth\HomeManagement.Auth.csproj" />
     <!-- Module assemblies — referenced so they're loaded into AppDomain for IModuleRegistration discovery -->
     <ProjectReference Include="..\HomeManagement.Vault\HomeManagement.Vault.csproj" />
     <ProjectReference Include="..\HomeManagement.Transport\HomeManagement.Transport.csproj" />

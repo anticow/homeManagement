@@ -37,6 +37,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Refit;
 
@@ -87,6 +88,64 @@ public sealed class WebBrokerAgentEndToEndTests
 
         patches.Should().HaveCount(2);
         patches.Select(patch => patch.PatchId).Should().BeEquivalentTo(["curl", "vim"]);
+        agentSession.ReceivedCommands.Should().ContainSingle();
+        agentSession.ReceivedCommands.Single().CommandText.Should().Contain("apt list --upgradable");
+    }
+
+    [Fact]
+    public async Task JobSubmission_FromBrokerApi_RoutesThroughGatewayAndPersistsCompletion()
+    {
+        var machineId = Guid.NewGuid();
+        var machine = CreateAgentMachine(machineId, "agent-job-e2e");
+
+        await using var gatewayHost = await TestAgentGatewayHost.StartAsync();
+        await using var agentSession = await TestAgentSession.ConnectAsync(gatewayHost.GrpcBaseAddress, gatewayHost.ApiKey, machine.Hostname.Value);
+        await gatewayHost.WaitForAgentAsync(machine.Hostname.Value, CancellationToken.None);
+
+        await using var brokerFactory = new BrokerHostWebApplicationFactory(gatewayHost.ControlBaseAddress, gatewayHost.ApiKey, machine);
+        await using var authFactory = new AuthHostWebApplicationFactory();
+
+        var authClient = authFactory.CreateClient();
+        var login = await authClient.PostAsJsonAsync("/api/auth/login", new LoginRequest(AdminUsername, AdminPassword, AuthProviderType.Local));
+        login.EnsureSuccessStatusCode();
+        var authResult = await login.Content.ReadFromJsonAsync<AuthResult>();
+        authResult.Should().NotBeNull();
+        authResult!.Success.Should().BeTrue();
+        authResult.AccessToken.Should().NotBeNullOrWhiteSpace();
+
+        var brokerClient = brokerFactory.CreateClient();
+        brokerClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", authResult.AccessToken);
+
+        var jobDefinition = new JobDefinition(
+            Name: "Patch Scan Job",
+            Type: JobType.PatchScan,
+            TargetMachineIds: [machineId],
+            Parameters: []);
+
+        var submit = await brokerClient.PostAsJsonAsync("/api/jobs", jobDefinition);
+        submit.EnsureSuccessStatusCode();
+        var submitPayload = await submit.Content.ReadFromJsonAsync<JobSubmissionResponse>();
+        submitPayload.Should().NotBeNull();
+
+        JobStatus? job = null;
+        var timeoutAt = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < timeoutAt)
+        {
+            job = await brokerClient.GetFromJsonAsync<JobStatus>($"/api/jobs/{submitPayload!.JobId}");
+            if (job is not null && job.State is JobState.Completed or JobState.Failed)
+            {
+                break;
+            }
+
+            await Task.Delay(100);
+        }
+
+        job.Should().NotBeNull();
+        job!.State.Should().Be(JobState.Completed);
+        job.CompletedTargets.Should().Be(1);
+        job.FailedTargets.Should().Be(0);
+        job.MachineResults.Should().ContainSingle();
+        job.MachineResults.Single().Success.Should().BeTrue();
         agentSession.ReceivedCommands.Should().ContainSingle();
         agentSession.ReceivedCommands.Single().CommandText.Should().Contain("apt list --upgradable");
     }
@@ -330,6 +389,8 @@ public sealed class WebBrokerAgentEndToEndTests
                 ["AgentGateway:ApiKey"] = apiKey
             });
 
+            builder.Logging.AddFilter("Grpc.AspNetCore.Server", LogLevel.Warning);
+
             builder.WebHost.ConfigureKestrel(options =>
             {
                 options.Listen(IPAddress.Loopback, 0, listenOptions =>
@@ -486,7 +547,6 @@ public sealed class WebBrokerAgentEndToEndTests
 
         public async ValueTask DisposeAsync()
         {
-            _cts.Cancel();
             try
             {
                 await _call.RequestStream.CompleteAsync();
@@ -498,8 +558,25 @@ public sealed class WebBrokerAgentEndToEndTests
             {
             }
 
+            try
+            {
+                await _readLoop.WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            catch (TimeoutException)
+            {
+                _cts.Cancel();
+            }
+
             _call.Dispose();
-            await _readLoop;
+
+            try
+            {
+                await _readLoop;
+            }
+            catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+            {
+            }
+
             _channel.Dispose();
             _cts.Dispose();
         }
@@ -526,4 +603,6 @@ public sealed class WebBrokerAgentEndToEndTests
             return continuation(requestStream, responseStream, context);
         }
     }
+
+    private sealed record JobSubmissionResponse(Guid JobId);
 }

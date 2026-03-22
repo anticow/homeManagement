@@ -71,7 +71,16 @@ public sealed class JobRepository : IJobRepository
     public Task UpdateAsync(JobStatus job, CancellationToken ct = default)
     {
         var entity = ToEntity(job);
-        _db.Jobs.Update(entity);
+        var trackedEntity = _db.Jobs.Local.FirstOrDefault(existing => existing.Id == entity.Id);
+        if (trackedEntity is not null)
+        {
+            _db.Entry(trackedEntity).CurrentValues.SetValues(entity);
+        }
+        else
+        {
+            _db.Jobs.Update(entity);
+        }
+
         return Task.CompletedTask;
     }
 

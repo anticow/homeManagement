@@ -13,7 +13,6 @@ public sealed class PatchingViewModel : ViewModelBase
     private readonly IJobScheduler _jobScheduler;
     private readonly IInventoryService _inventory;
     private readonly IAgentGateway _agentGateway;
-    private readonly ICommandBroker _broker;
 
     private ObservableCollection<Machine> _machines = [];
     private ObservableCollection<PatchInfo> _detectedPatches = [];
@@ -51,14 +50,12 @@ public sealed class PatchingViewModel : ViewModelBase
         IPatchService patchService,
         IJobScheduler jobScheduler,
         IInventoryService inventory,
-        IAgentGateway agentGateway,
-        ICommandBroker broker)
+        IAgentGateway agentGateway)
     {
         _patchService = patchService;
         _jobScheduler = jobScheduler;
         _inventory = inventory;
         _agentGateway = agentGateway;
-        _broker = broker;
 
         ScanCommand = ReactiveCommand.CreateFromTask(ScanForPatchesAsync);
         ApplyCommand = ReactiveCommand.CreateFromTask(ApplyPatchesAsync);
@@ -73,18 +70,6 @@ public sealed class PatchingViewModel : ViewModelBase
             .Throttle(TimeSpan.FromSeconds(3))
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(_ => LoadMachinesAsync().ConfigureAwait(false))
-            .DisposeWith(Disposables);
-
-        // Show status when async broker commands complete for the selected machine
-        _broker.CompletedStream
-            .Where(evt => _selectedMachine is not null && evt.MachineId == _selectedMachine.Id)
-            .ObserveOn(RxApp.MainThreadScheduler)
-            .Subscribe(evt =>
-            {
-                StatusMessage = evt.Result.ExitCode == 0
-                    ? $"Patch operation completed on {evt.MachineName}"
-                    : $"Patch operation failed on {evt.MachineName}: {evt.Result.Stderr[..Math.Min(120, evt.Result.Stderr.Length)]}";
-            })
             .DisposeWith(Disposables);
     }
 

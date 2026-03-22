@@ -25,6 +25,16 @@ public static class PatchingEndpoints
             return Results.Ok(patches);
         });
 
+        group.MapGet("/{machineId:guid}/installed", async (Guid machineId, IPatchService patchService, IInventoryService inventory, CancellationToken ct) =>
+        {
+            var machine = await inventory.GetAsync(machineId, ct);
+            if (machine is null) return Results.NotFound();
+
+            var target = new MachineTarget(machine.Id, machine.Hostname, machine.OsType, machine.ConnectionMode, machine.Protocol, machine.Port, machine.CredentialId);
+            var installed = await patchService.GetInstalledAsync(target, ct);
+            return Results.Ok(installed);
+        });
+
         group.MapGet("/{machineId:guid}/history", async (Guid machineId, IPatchService patchService, CancellationToken ct) =>
         {
             var history = await patchService.GetHistoryAsync(machineId, ct);
