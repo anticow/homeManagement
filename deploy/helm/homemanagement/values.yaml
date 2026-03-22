@@ -1,0 +1,141 @@
+# -- Global settings
+global:
+  imageRegistry: ghcr.io/homemanagement
+  imageTag: latest
+  imagePullPolicy: IfNotPresent
+
+# -- Namespace
+namespace: homemanagement
+
+# -- Database
+database:
+  connectionString: ""  # Required — override via --set or values override file
+  # Example: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=...;TrustServerCertificate=True"
+
+# -- Seq centralized logging
+seq:
+  url: "http://seq:5341"
+
+# -- Auth configuration
+auth:
+  jwtSigningKey: ""  # Required — 64+ character random string
+  issuer: "homemanagement"
+  audience: "homemanagement"
+
+# -- Broker service
+broker:
+  replicaCount: 1
+  image:
+    repository: hm-broker
+    tag: ""  # Defaults to global.imageTag
+  port: 8082
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+# -- Auth service
+authService:
+  replicaCount: 2
+  image:
+    repository: hm-auth
+    tag: ""
+  port: 8083
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# -- Web GUI (Blazor Server)
+web:
+  replicaCount: 1
+  image:
+    repository: hm-web
+    tag: ""
+  port: 8080
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 75
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# -- Agent Gateway (gRPC)
+agentGateway:
+  replicaCount: 1
+  apiKey: ""  # Required — shared with HomeManagement.Agent clients
+  serviceType: LoadBalancer
+  image:
+    repository: hm-agent-gw
+    tag: ""
+  port: 9444
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+# -- API Gateway (YARP)
+gateway:
+  replicaCount: 2
+  image:
+    repository: hm-gateway
+    tag: ""
+  port: 8081
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# -- Ingress
+ingress:
+  enabled: true
+  className: nginx
+  host: homemanagement.local
+  sslRedirect: false
+  tls:
+    enabled: false
+    secretName: hm-tls-secret
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+
+# -- Service account
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# -- Prometheus monitoring
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+    interval: 30s

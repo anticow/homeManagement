@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>HomeManagement.Broker.Host</RootNamespace>
+    <Description>Broker service ASP.NET Core host — exposes domain operations as a REST API.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Sinks.Seq" />
+    <PackageReference Include="Serilog.Enrichers.Thread" />
+    <PackageReference Include="Serilog.Enrichers.Environment" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HomeManagement.Core\HomeManagement.Core.csproj" />
+    <ProjectReference Include="..\HomeManagement.Auth\HomeManagement.Auth.csproj" />
+    <ProjectReference Include="..\HomeManagement.Data.SqlServer\HomeManagement.Data.SqlServer.csproj" />
+    <!-- Module assemblies — same as GUI, so IModuleRegistration discovery works -->
+    <ProjectReference Include="..\HomeManagement.Vault\HomeManagement.Vault.csproj" />
+    <ProjectReference Include="..\HomeManagement.Transport\HomeManagement.Transport.csproj" />
+    <ProjectReference Include="..\HomeManagement.Patching\HomeManagement.Patching.csproj" />
+    <ProjectReference Include="..\HomeManagement.Services\HomeManagement.Services.csproj" />
+    <ProjectReference Include="..\HomeManagement.Inventory\HomeManagement.Inventory.csproj" />
+    <ProjectReference Include="..\HomeManagement.Auditing\HomeManagement.Auditing.csproj" />
+    <ProjectReference Include="..\HomeManagement.Orchestration\HomeManagement.Orchestration.csproj" />
+  </ItemGroup>
+</Project>

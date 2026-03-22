@@ -19,6 +19,10 @@ public class HomeManagementDbContext : DbContext
     public DbSet<ScheduledJobEntity> ScheduledJobs => Set<ScheduledJobEntity>();
     public DbSet<ServiceSnapshotEntity> ServiceSnapshots => Set<ServiceSnapshotEntity>();
     public DbSet<AppSettingEntity> AppSettings => Set<AppSettingEntity>();
+    public DbSet<AuthUserEntity> AuthUsers => Set<AuthUserEntity>();
+    public DbSet<AuthRoleEntity> AuthRoles => Set<AuthRoleEntity>();
+    public DbSet<AuthUserRoleEntity> AuthUserRoles => Set<AuthUserRoleEntity>();
+    public DbSet<AuthRefreshTokenEntity> AuthRefreshTokens => Set<AuthRefreshTokenEntity>();
 
     /// <summary>
     /// Intercept save to enforce audit event immutability — audit records
@@ -155,6 +159,44 @@ public class HomeManagementDbContext : DbContext
         modelBuilder.Entity<AppSettingEntity>(e =>
         {
             e.HasKey(a => a.Key);
+        });
+
+        // ── Auth Users ──
+        modelBuilder.Entity<AuthUserEntity>(e =>
+        {
+            e.HasKey(u => u.Id);
+            e.HasIndex(u => u.Username).IsUnique();
+            e.HasIndex(u => u.Email).IsUnique();
+            e.HasIndex(u => u.Provider);
+            e.Property(u => u.Username).HasMaxLength(128);
+            e.Property(u => u.Email).HasMaxLength(256);
+            e.Property(u => u.Provider).HasMaxLength(64);
+            e.HasMany(u => u.UserRoles).WithOne(ur => ur.User).HasForeignKey(ur => ur.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(u => u.RefreshTokens).WithOne(t => t.User).HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── Auth Roles ──
+        modelBuilder.Entity<AuthRoleEntity>(e =>
+        {
+            e.HasKey(r => r.Id);
+            e.HasIndex(r => r.Name).IsUnique();
+            e.Property(r => r.Name).HasMaxLength(64);
+            e.HasMany(r => r.UserRoles).WithOne(ur => ur.Role).HasForeignKey(ur => ur.RoleId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── Auth User Roles ──
+        modelBuilder.Entity<AuthUserRoleEntity>(e =>
+        {
+            e.HasKey(ur => new { ur.UserId, ur.RoleId });
+            e.HasIndex(ur => ur.RoleId);
+        });
+
+        // ── Auth Refresh Tokens ──
+        modelBuilder.Entity<AuthRefreshTokenEntity>(e =>
+        {
+            e.HasKey(t => t.Id);
+            e.HasIndex(t => t.TokenHash).IsUnique();
+            e.HasIndex(t => new { t.UserId, t.ExpiresUtc });
         });
     }
 }

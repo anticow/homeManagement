@@ -2,6 +2,9 @@
 
 > Lightweight cross-platform agent for Windows and Linux managed machines.
 > Supersedes agent-related fragments in docs 02, 05, and 08.
+>
+> **Revision 2 — 2026-03-21:** Control-plane topology aligned to platform architecture.
+> Agents connect to the standalone AgentGateway service, not the desktop GUI. Broker remains the system of record for commands and execution state.
 
 ---
 
@@ -9,15 +12,15 @@
 
 The **hm-agent** is a self-contained, single-binary service (~10 MB) that runs on
 each managed machine in **agent mode** (`MachineConnectionMode.Agent`).
-It initiates an **outbound** gRPC connection to the control machine, removing
-every requirement for inbound firewall rules on the target.
+It initiates an **outbound** gRPC connection to the standalone **AgentGateway** service,
+removing every requirement for inbound firewall rules on the target.
 
 ```
 ┌──────────────────────────────────────┐
-│        Control Machine (GUI)         │
+│      Platform Control Plane         │
 │  ┌────────────────────────────────┐  │
-│  │  AgentGateway  (gRPC server)   │  │
-│  │  :9444 — mTLS, bidirectional   │  │
+│  │ AgentGateway (gRPC edge)       │  │
+│  │ :9444 — mTLS, bidirectional    │  │
 │  └──────────────┬─────────────────┘  │
 │                 │                     │
 └─────────────────┼─────────────────────┘
@@ -41,6 +44,8 @@ every requirement for inbound firewall rules on the target.
 | G4 | **Self-updating** | Controller pushes update packages; agent verifies, installs, restarts |
 | G5 | **Resilient** | Exponential-backoff reconnect; command timeout; local log buffer |
 | G6 | **Observable** | Structured JSON logs; heartbeat telemetry; audit correlation IDs |
+
+The agent does not know about GUI or Broker internals. It speaks only to AgentGateway over the gRPC protocol.
 
 ---
 
@@ -83,7 +88,7 @@ hm-agent process
 
 | Class | Responsibility |
 |-------|---------------|
-| `AgentHostService` | `IHostedService`. On start: load config → load certs → open gRPC channel → enter command loop. Inbound `Channel<CommandRequest>` (bounded capacity 128) decouples the gRPC receive loop from command execution; `CommandProcessingLoopAsync` drains the queue with `SemaphoreSlim`-bounded concurrency. On stop: drain pending commands → close channel. |
+| `AgentHostService` | `IHostedService`. On start: load config → load certs → open gRPC channel to AgentGateway → enter command loop. Inbound `Channel<CommandRequest>` (bounded capacity 128) decouples the gRPC receive loop from command execution; `CommandProcessingLoopAsync` drains the queue according to the configured concurrency policy. On stop: drain pending commands → close channel. |
 | `GrpcChannelManager` | Creates `GrpcChannel` with `SslCredentials`; exposes `GetChannel()`. Recreates channel on reconnect. |
 | `CommandDispatcher` | Receives `CommandRequest` from gRPC stream → resolves `ICommandHandler` by `CommandType` enum → calls `HandleAsync` → returns `CommandResponse`. |
 | `ShellCommandHandler` | Spawns `System.Diagnostics.Process` with redirected I/O. Applies `ElevationMode`. Enforces per-command `Timeout`. |
@@ -118,12 +123,12 @@ option csharp_namespace = "HomeManagement.Agent.Protocol";
 // ──────────────────────────────────────────────
 service AgentHub {
   // Agent opens this stream on startup.
-  // Controller writes CommandRequest; agent writes AgentMessage.
+  // AgentGateway writes CommandRequest; agent writes AgentMessage.
   rpc Connect (stream AgentMessage) returns (stream ControlMessage);
 }
 
 // ──────────────────────────────────────────────
-//  Agent → Controller
+//  Agent → AgentGateway
 // ──────────────────────────────────────────────
 message AgentMessage {
   oneof payload {
@@ -164,7 +169,7 @@ message CommandResponse {
 }
 
 // ──────────────────────────────────────────────
-//  Controller → Agent
+//  AgentGateway → Agent
 // ──────────────────────────────────────────────
 message ControlMessage {
   oneof payload {
@@ -202,29 +207,29 @@ message Shutdown {
 
 message Ack {
   string in_response_to = 1;  // "handshake" | "heartbeat"
-  string controller_version = 2;
+  string controller_version = 2;  // AgentGateway version at the protocol edge
 }
 ```
 
 ### 3.1  Message flow
 
 ```
-Agent                                    Controller
+Agent                                   AgentGateway / Control Plane Edge
   │                                          │
   │──── Handshake ─────────────────────────►│  (first message after mTLS)
   │                                          │
-  │◄──── Ack (handshake) ──────────────────│  (controller confirms identity)
+  │◄──── Ack (handshake) ──────────────────│  (gateway confirms stream acceptance)
   │                                          │
   │──── Heartbeat (every 30 s) ────────────►│
   │◄──── Ack (heartbeat) ──────────────────│
   │                                          │
-  │◄──── CommandRequest (request_id=A) ────│  (controller sends a task)
+  │◄──── CommandRequest (request_id=A) ────│  (broker-originated task relayed by gateway)
   │                                          │
   │      [ agent executes locally ]          │
   │                                          │
-  │──── CommandResponse (request_id=A) ────►│  (agent returns result)
+  │──── CommandResponse (request_id=A) ────►│  (gateway relays result back to broker)
   │                                          │
-  │◄──── UpdateDirective ──────────────────│  (controller pushes update)
+  │◄──── UpdateDirective ──────────────────│  (broker-originated update relayed by gateway)
   │      [ agent downloads, verifies,        │
   │        stages, restarts ]                │
   │                                          │

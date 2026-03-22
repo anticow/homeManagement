@@ -17,9 +17,8 @@ public sealed class TransportModuleRegistration : IModuleRegistration
         services.AddSingleton<SshTransportProvider>();
         services.AddSingleton<WinRmTransportProvider>();
         services.AddSingleton<AgentTransportProvider>();
-        // AgentGateway: single instance shared between IAgentGateway consumers and the gRPC service
-        services.AddSingleton<AgentGatewayService>();
-        services.AddSingleton<IAgentGateway>(sp => sp.GetRequiredService<AgentGatewayService>());
+        services.AddSingleton<RemoteAgentGatewayClient>();
+        services.AddSingleton<IAgentGateway>(sp => sp.GetRequiredService<RemoteAgentGatewayClient>());
         // Command broker: async queue for fire-and-forget command dispatch with persistent results
         services.AddSingleton<CommandBrokerService>();
         services.AddSingleton<ICommandBroker>(sp => sp.GetRequiredService<CommandBrokerService>());

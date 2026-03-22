@@ -1,0 +1,64 @@
+@page "/machines"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using HomeManagement.Abstractions.Models
+@inject HomeManagement.Web.Services.IBrokerApi BrokerApi
+@inject NavigationManager Navigation
+
+<h1>Machines</h1>
+
+@if (_loading)
+{
+    <p>Loading machines...</p>
+}
+else if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <p>@_errorMessage</p>
+}
+else if (_machines is not null)
+{
+    <table>
+        <thead>
+            <tr>
+                <th>Hostname</th>
+                <th>OS</th>
+                <th>State</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var machine in _machines.Items)
+            {
+                <tr>
+                    <td><a href="/machines/@machine.Id">@machine.Hostname</a></td>
+                    <td>@machine.OsType</td>
+                    <td>@machine.State</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private bool _loading = true;
+    private PagedResult<Machine>? _machines;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _machines = await BrokerApi.GetMachinesAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Unable to load machines: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

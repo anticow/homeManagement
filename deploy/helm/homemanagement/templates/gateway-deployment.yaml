@@ -1,0 +1,82 @@
+{{- $svcName := "hm-gateway" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $svcName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "homemanagement.labels" . | nindent 4 }}
+    app: {{ $svcName }}
+spec:
+  replicas: {{ .Values.gateway.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ $svcName }}
+  template:
+    metadata:
+      labels:
+        app: {{ $svcName }}
+    spec:
+      containers:
+        - name: gateway
+          image: {{ include "homemanagement.image" (dict "global" .Values.global "image" .Values.gateway.image) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.gateway.port }}
+              name: http
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:{{ .Values.gateway.port }}"
+            - name: Auth__JwtSigningKey
+              valueFrom:
+                secretKeyRef:
+                  name: hm-secrets
+                  key: jwt-signing-key
+            - name: Auth__Issuer
+              value: {{ .Values.auth.issuer | quote }}
+            - name: Auth__Audience
+              value: {{ .Values.auth.audience | quote }}
+            - name: ReverseProxy__Clusters__broker__Destinations__primary__Address
+              value: "http://hm-broker:{{ .Values.broker.port }}"
+            - name: ReverseProxy__Clusters__auth__Destinations__primary__Address
+              value: "http://hm-auth:{{ .Values.authService.port }}"
+            - name: Seq__Url
+              value: {{ .Values.seq.url | quote }}
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+{{- if .Values.gateway.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $svcName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "homemanagement.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $svcName }}
+  minReplicas: {{ .Values.gateway.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.gateway.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.gateway.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}

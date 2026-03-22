@@ -62,6 +62,12 @@ public sealed class MachineRepository : IMachineRepository
         await _db.Machines.AddAsync(entity, ct);
     }
 
+    public async Task AddRangeAsync(IReadOnlyList<Machine> machines, CancellationToken ct = default)
+    {
+        var entities = machines.Select(ToEntity).ToList();
+        await _db.Machines.AddRangeAsync(entities, ct);
+    }
+
     public Task UpdateAsync(Machine machine, CancellationToken ct = default)
     {
         var entity = ToEntity(machine);
@@ -75,6 +81,20 @@ public sealed class MachineRepository : IMachineRepository
             ?? throw new KeyNotFoundException($"Machine {id} not found.");
         entity.IsDeleted = true;
         entity.UpdatedUtc = DateTime.UtcNow;
+    }
+
+    public async Task SoftDeleteRangeAsync(IReadOnlyList<Guid> ids, CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        var entities = await _db.Machines
+            .Where(m => ids.Contains(m.Id))
+            .ToListAsync(ct);
+
+        foreach (var entity in entities)
+        {
+            entity.IsDeleted = true;
+            entity.UpdatedUtc = now;
+        }
     }
 
     public async Task SaveChangesAsync(CancellationToken ct = default)

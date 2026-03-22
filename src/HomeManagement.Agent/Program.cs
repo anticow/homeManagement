@@ -52,6 +52,10 @@ internal static class Program
                     // Communication
                     services.AddSingleton<GrpcChannelManager>();
                     services.AddSingleton<CommandDispatcher>();
+                    services.AddSingleton(sp => new AgentCommandExecutionService(
+                        sp.GetRequiredService<CommandDispatcher>(),
+                        sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<AgentCommandExecutionService>>(),
+                        sp.GetRequiredService<IOptions<AgentConfiguration>>().Value.MaxConcurrentCommands));
                     services.AddSingleton<ShutdownCoordinator>();
 
                     // Resilience

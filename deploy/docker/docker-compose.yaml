@@ -1,0 +1,78 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "HomeManagement_Dev1!"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqldata:/var/opt/mssql
+
+  broker:
+    build:
+      context: ..
+      dockerfile: docker/broker.Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      ASPNETCORE_URLS: "http://+:8082"
+      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=HomeManagement_Dev1!;TrustServerCertificate=True;"
+      Auth__JwtSigningKey: "dev-signing-key-at-least-32-characters-long!"
+      Auth__Issuer: "homemanagement"
+      Auth__Audience: "homemanagement-api"
+      AgentGateway__BaseUrl: "http://agent-gw:9444"
+      AgentGateway__ApiKey: "dev-agent-gateway-api-key"
+    depends_on:
+      - sqlserver
+
+  auth:
+    build:
+      context: ..
+      dockerfile: docker/auth.Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      ASPNETCORE_URLS: "http://+:8083"
+      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=HomeManagement_Dev1!;TrustServerCertificate=True;"
+      Auth__JwtSigningKey: "dev-signing-key-at-least-32-characters-long!"
+      Auth__Issuer: "homemanagement"
+      Auth__Audience: "homemanagement-api"
+    depends_on:
+      - sqlserver
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/web.Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_URLS: "http://+:8080"
+      BrokerApi__BaseUrl: "http://broker:8082"
+      AuthApi__BaseUrl: "http://auth:8083"
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: docker/gateway.Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      ASPNETCORE_URLS: "http://+:8081"
+      Auth__JwtSigningKey: "dev-signing-key-at-least-32-characters-long!"
+      ReverseProxy__Clusters__broker__Destinations__broker-1__Address: "http://broker:8082"
+      ReverseProxy__Clusters__auth__Destinations__auth-1__Address: "http://auth:8083"
+
+  agent-gw:
+    build:
+      context: ..
+      dockerfile: docker/agent-gw.Dockerfile
+    ports:
+      - "9444:9444"
+    environment:
+      ASPNETCORE_URLS: "http://+:9444"
+      AgentGateway__ApiKey: "dev-agent-gateway-api-key"
+
+volumes:
+  sqldata:

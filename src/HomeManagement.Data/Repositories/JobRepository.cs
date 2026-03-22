@@ -21,6 +21,17 @@ public sealed class JobRepository : IJobRepository
         return entity is null ? null : ToDomain(entity);
     }
 
+    public async Task<JobStatus?> GetByIdempotencyKeyAsync(Guid idempotencyKey, CancellationToken ct = default)
+    {
+        var keyString = idempotencyKey.ToString();
+        var entity = await _db.Jobs
+            .Include(j => j.MachineResults)
+            .Where(j => j.DefinitionJson != null && j.DefinitionJson.Contains(keyString))
+            .FirstOrDefaultAsync(ct);
+
+        return entity is null ? null : ToDomain(entity);
+    }
+
     public async Task<PagedResult<JobSummary>> QueryAsync(JobQuery query, CancellationToken ct = default)
     {
         IQueryable<JobEntity> q = _db.Jobs;
