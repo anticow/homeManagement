@@ -255,6 +255,9 @@ The desktop-hosted control-plane path is transitional and must be removed after 
 - Broker and GUI use the remote `IAgentGateway` client instead of the embedded in-process gateway service
 - the desktop application no longer starts the embedded gRPC control-plane host at startup
 - agent gRPC connections now include the configured API-key metadata expected by the standalone gateway
+- the desktop runtime now supports a platform mode that authenticates against `Auth.Host` and resolves inventory, patching, jobs, services, audit, credentials, and connection testing through explicit Broker/Auth clients
+- Broker-hosted job execution now starts Quartz and the async command broker loop automatically as host-native services instead of relying on desktop startup
+- focused end-to-end coverage now verifies authenticated Broker job submission through AgentGateway to Agent with persisted job completion state
 
 ### REV12-02 — Auth Service Exposed Before Completion
 

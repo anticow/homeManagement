@@ -83,6 +83,7 @@ public class HomeManagementDbContext : DbContext
             e.HasIndex(t => new { t.MachineId, t.Key }).IsUnique();
             e.HasIndex(t => t.Key);             // "find all machines tagged 'role'"
             e.HasIndex(t => new { t.Key, t.Value }); // "find machines where role=web"
+            e.HasQueryFilter(t => !t.Machine.IsDeleted);
         });
 
         // ── Patch History ──
@@ -94,6 +95,7 @@ public class HomeManagementDbContext : DbContext
             e.HasIndex(p => p.State);           // "find all pending patches"
             e.HasIndex(p => new { p.MachineId, p.TimestampUtc }); // "patch history for machine X"
             e.HasIndex(p => new { p.MachineId, p.PatchId });       // "is this patch known for machine?"
+            e.HasQueryFilter(p => !p.Machine.IsDeleted);
             e.Property(p => p.State).HasConversion<string>();
             e.Property(p => p.Severity).HasConversion<string>();
             e.Property(p => p.Category).HasConversion<string>();
@@ -151,6 +153,7 @@ public class HomeManagementDbContext : DbContext
             e.HasIndex(s => s.MachineId);
             e.HasIndex(s => new { s.MachineId, s.ServiceName });  // "services on machine X"
             e.HasIndex(s => s.CapturedUtc);
+            e.HasQueryFilter(s => !s.Machine.IsDeleted);
             e.Property(s => s.State).HasConversion<string>();
             e.Property(s => s.StartupType).HasConversion<string>();
         });

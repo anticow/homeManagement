@@ -20,7 +20,15 @@ public sealed class VaultUnlockViewModel : ViewModelBase
         UnlockCommand = ReactiveCommand.CreateFromTask<SecureString>(async (password, ct) =>
         {
             await _vault.UnlockAsync(password, ct);
-            _navigation.GoBack();
+
+            if (_navigation.CanGoBack)
+            {
+                _navigation.GoBack();
+            }
+            else
+            {
+                _navigation.NavigateTo<DashboardViewModel>();
+            }
         });
         TrackErrors(UnlockCommand);
     }

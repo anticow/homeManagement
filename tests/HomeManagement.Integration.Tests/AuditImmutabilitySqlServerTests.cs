@@ -85,6 +85,65 @@ public sealed class AuditImmutabilitySqlServerTests : IDisposable
         withFilter.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task SoftDeletedMachineDependents_AreFilteredByDefault_OnSqlServer()
+    {
+        var machineId = Guid.NewGuid();
+        var machine = new MachineEntity
+        {
+            Id = machineId,
+            Hostname = $"test-{Guid.NewGuid():N}"[..20],
+            OsType = OsType.Linux,
+            OsVersion = "Ubuntu 22.04",
+            ConnectionMode = MachineConnectionMode.Agentless,
+            Protocol = TransportProtocol.Ssh,
+            Port = 22,
+            State = MachineState.Online,
+            CreatedUtc = DateTime.UtcNow,
+            UpdatedUtc = DateTime.UtcNow,
+            LastContactUtc = DateTime.UtcNow,
+            IsDeleted = true
+        };
+
+        _context.Machines.Add(machine);
+        _context.MachineTags.Add(new MachineTagEntity
+        {
+            Id = Guid.NewGuid(),
+            MachineId = machineId,
+            Key = "role",
+            Value = "web"
+        });
+        _context.PatchHistory.Add(new PatchHistoryEntity
+        {
+            Id = Guid.NewGuid(),
+            MachineId = machineId,
+            PatchId = "KB-1",
+            Title = "Patch 1",
+            State = PatchInstallState.Installed,
+            TimestampUtc = DateTime.UtcNow
+        });
+        _context.ServiceSnapshots.Add(new ServiceSnapshotEntity
+        {
+            Id = Guid.NewGuid(),
+            MachineId = machineId,
+            ServiceName = "nginx",
+            DisplayName = "Nginx",
+            State = ServiceState.Running,
+            StartupType = ServiceStartupType.Automatic,
+            CapturedUtc = DateTime.UtcNow
+        });
+
+        await _context.SaveChangesAsync();
+
+        (await _context.MachineTags.CountAsync(tag => tag.MachineId == machineId)).Should().Be(0);
+        (await _context.PatchHistory.CountAsync(entry => entry.MachineId == machineId)).Should().Be(0);
+        (await _context.ServiceSnapshots.CountAsync(snapshot => snapshot.MachineId == machineId)).Should().Be(0);
+
+        (await _context.MachineTags.IgnoreQueryFilters().CountAsync(tag => tag.MachineId == machineId)).Should().Be(1);
+        (await _context.PatchHistory.IgnoreQueryFilters().CountAsync(entry => entry.MachineId == machineId)).Should().Be(1);
+        (await _context.ServiceSnapshots.IgnoreQueryFilters().CountAsync(snapshot => snapshot.MachineId == machineId)).Should().Be(1);
+    }
+
     private static AuditEventEntity CreateAudit() => new()
     {
         EventId = Guid.NewGuid(),
