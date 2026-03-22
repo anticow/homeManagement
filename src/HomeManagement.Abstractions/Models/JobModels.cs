@@ -20,7 +20,8 @@ public record JobDefinition(
     IReadOnlyList<Guid> TargetMachineIds,
     Dictionary<string, object> Parameters,
     int MaxParallelism = 5,
-    RetryPolicy? RetryPolicy = null);
+    RetryPolicy? RetryPolicy = null,
+    Guid? IdempotencyKey = null);
 
 public record RetryPolicy(
     int MaxRetries = 3,

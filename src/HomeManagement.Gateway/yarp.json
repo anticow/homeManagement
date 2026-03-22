@@ -1,0 +1,67 @@
+{
+  "ReverseProxy": {
+    "Routes": {
+      "broker-route": {
+        "ClusterId": "broker",
+        "AuthorizationPolicy": "default",
+        "Match": {
+          "Path": "/api/{**remainder}"
+        },
+        "Transforms": [
+          { "PathPattern": "/api/{**remainder}" }
+        ]
+      },
+      "auth-route": {
+        "ClusterId": "auth",
+        "Match": {
+          "Path": "/api/auth/{**remainder}"
+        },
+        "Transforms": [
+          { "PathPattern": "/api/auth/{**remainder}" }
+        ]
+      },
+      "admin-route": {
+        "ClusterId": "auth",
+        "AuthorizationPolicy": "default",
+        "Match": {
+          "Path": "/api/admin/{**remainder}"
+        },
+        "Transforms": [
+          { "PathPattern": "/api/admin/{**remainder}" }
+        ]
+      }
+    },
+    "Clusters": {
+      "broker": {
+        "Destinations": {
+          "broker-1": {
+            "Address": "http://hm-broker:8082"
+          }
+        },
+        "HealthCheck": {
+          "Active": {
+            "Enabled": true,
+            "Interval": "00:00:30",
+            "Timeout": "00:00:10",
+            "Path": "/healthz"
+          }
+        }
+      },
+      "auth": {
+        "Destinations": {
+          "auth-1": {
+            "Address": "http://hm-auth:8083"
+          }
+        },
+        "HealthCheck": {
+          "Active": {
+            "Enabled": true,
+            "Interval": "00:00:30",
+            "Timeout": "00:00:10",
+            "Path": "/healthz"
+          }
+        }
+      }
+    }
+  }
+}

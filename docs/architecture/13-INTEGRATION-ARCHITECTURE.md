@@ -1,6 +1,11 @@
 # 13 — Integration Architecture
 
 > How the GUI, backend modules, credential vault, remote execution engine, patch manager, and service controller interact end-to-end.
+>
+> **Revision 2 — 2026-03-21:** Control-plane ownership clarified.
+> Broker is the control-plane core. AgentGateway is an agent transport boundary, not a second orchestration engine.
+> **Revision 3 — 2026-03-21:** Authentication boundary clarified.
+> Auth.Host is the system-of-record issuer for platform authentication. Local auth is the required provider for the corrected baseline.
 
 ---
 
@@ -94,7 +99,7 @@
 | **ICredentialVault** | Encrypt/decrypt credentials, master password lifecycle | Vault file (vault.enc), in-memory decrypted entries while unlocked |
 | **IRemoteExecutor** | Protocol selection (SSH / WinRM / PS Remoting / gRPC Agent) | None (stateless per call) |
 | **ICommandBroker** (CommandBrokerService) | Fire-and-forget async command queue — bounded `Channel<T>` (256), background drain loop, scoped `IRemoteExecutor` per command, `IJobRepository` for result persistence, `CompletedStream` (`IObservable<CommandCompletedEvent>`) for reactive UI updates | In-memory command queue; emits events on `CompletedStream` |
-| **IAgentGateway** | gRPC bidirectional streaming hub, heartbeat tracking | Connected agent map, pending command requests |
+| **IAgentGateway** | Agent transport boundary for gRPC bidirectional streaming and heartbeat tracking | Connected agent map, pending transport-level command correlation only |
 | **IResiliencePipeline** | Per-host circuit breaker + retry + timeout | Circuit state per `host:port` key |
 | **IAuditLogger** | Append-only HMAC-chained event recording | Previous event hash (for chaining) |
 | **ICorrelationContext** | AsyncLocal correlation ID propagation | Current scope ID |
@@ -103,6 +108,29 @@
 ---
 
 ## 2. Integration Principles
+
+### 2.0 Control-Plane Ownership
+
+The authoritative control plane is intentionally simple:
+
+- clients submit intent
+- Broker validates, schedules, persists, and audits intent
+- AgentGateway maintains agent sessions and relays traffic
+
+This means:
+
+- desktop and web clients do not host the supported production control plane
+- AgentGateway does not own job state or domain workflow decisions
+- Broker remains the only system of record for command and job lifecycle
+
+### 2.0.1 Authentication Ownership
+
+For the platform runtime:
+
+- `Auth.Host` authenticates users and issues access plus refresh tokens
+- `Gateway`, `Broker`, and `hm-web` consume `Auth.Host` as the authoritative auth boundary
+- `hm-web` keeps access and refresh tokens on the server side and forwards Broker bearer tokens from the web tier only
+- admin user provisioning and role assignment live behind protected auth service endpoints
 
 ### 2.1 Dependency Direction
 
@@ -156,6 +184,14 @@ Each layer adds context without swallowing the original exception. The `ErrorCat
 ### 2.5 Vault Gate
 
 Any page that requires credentials checks `ICredentialVault.IsUnlocked` before loading data. If locked, the user is redirected to `VaultUnlockViewModel`, which calls `UnlockAsync(SecureString)`. On success, `NavigationService.GoBack()` returns to the original page.
+
+### 2.6 Supported Agent Flow
+
+For agent-mode machines, the supported runtime path is:
+
+`Client -> Broker -> AgentGateway -> Agent`
+
+Desktop-hosted gRPC connectivity may exist temporarily during migration, but it is not part of the supported target architecture.
 
 ---
 

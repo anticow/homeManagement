@@ -97,6 +97,13 @@ internal sealed class InventoryService : IInventoryService
         _logger.LogInformation("[{CorrelationId}] Machine soft-deleted: {MachineId}", _correlation.CorrelationId, id);
     }
 
+    public async Task BatchRemoveAsync(IReadOnlyList<Guid> ids, CancellationToken ct = default)
+    {
+        await _machineRepo.SoftDeleteRangeAsync(ids, ct);
+        await _machineRepo.SaveChangesAsync(ct);
+        _logger.LogInformation("[{CorrelationId}] Batch soft-deleted {Count} machines", _correlation.CorrelationId, ids.Count);
+    }
+
     public async Task<Machine?> GetAsync(Guid id, CancellationToken ct = default)
     {
         return await _machineRepo.GetByIdAsync(id, ct);

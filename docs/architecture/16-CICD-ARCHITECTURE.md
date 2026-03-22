@@ -217,7 +217,7 @@ No additional secrets are required for the current workflows. Future additions:
 | Add Dockerfiles for Agent and Broker | When container images are ready |
 | Add `web` image to Docker matrix | When Blazor web GUI project exists |
 | Add `auth` image to Docker matrix | When Auth service project exists |
-| Kubernetes deployment step | After Helm charts or manifests are written |
+| Kubernetes deployment step | After Helm chart deployment credentials and environment approvals are available |
 
 ### Phase B — Maturity
 
@@ -287,6 +287,10 @@ dotnet test --configuration Release
 
 # Format check (same as CI code-quality job)
 dotnet format --verify-no-changes
+
+# Helm validation (same as CI/release deployment validation)
+helm lint deploy/helm/homemanagement --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;TrustServerCertificate=False;" --set auth.jwtSigningKey="validation-signing-key-that-is-long-enough-for-ci-checks-1234567890" --set agentGateway.apiKey="validation-agent-gateway-api-key"
+helm template homemanagement deploy/helm/homemanagement --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;TrustServerCertificate=False;" --set auth.jwtSigningKey="validation-signing-key-that-is-long-enough-for-ci-checks-1234567890" --set agentGateway.apiKey="validation-agent-gateway-api-key" > rendered-homemanagement.yaml
 
 # Or use the project scripts
 .\start.ps1                    # Build + test + launch

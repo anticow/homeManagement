@@ -10,6 +10,7 @@ public sealed class AgentConfiguration
     // ── Connection ──
     public string ControlServer { get; set; } = "localhost:9444";
     public string AgentId { get; set; } = string.Empty;
+    public string ApiKey { get; set; } = string.Empty;
 
     // ── Certificates ──
     public string CertPath { get; set; } = "certs/agent.pfx";

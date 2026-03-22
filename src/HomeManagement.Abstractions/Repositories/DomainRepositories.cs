@@ -22,8 +22,10 @@ public interface IMachineRepository
     Task<Machine?> GetByIdAsync(Guid id, CancellationToken ct = default);
     Task<PagedResult<Machine>> QueryAsync(MachineQuery query, CancellationToken ct = default);
     Task AddAsync(Machine machine, CancellationToken ct = default);
+    Task AddRangeAsync(IReadOnlyList<Machine> machines, CancellationToken ct = default);
     Task UpdateAsync(Machine machine, CancellationToken ct = default);
     Task SoftDeleteAsync(Guid id, CancellationToken ct = default);
+    Task SoftDeleteRangeAsync(IReadOnlyList<Guid> ids, CancellationToken ct = default);
     Task SaveChangesAsync(CancellationToken ct = default);
 }
 
@@ -46,6 +48,7 @@ public interface IAuditEventRepository
 public interface IJobRepository
 {
     Task<JobStatus?> GetByIdAsync(Guid id, CancellationToken ct = default);
+    Task<JobStatus?> GetByIdempotencyKeyAsync(Guid idempotencyKey, CancellationToken ct = default);
     Task<PagedResult<JobSummary>> QueryAsync(JobQuery query, CancellationToken ct = default);
     Task AddAsync(JobStatus job, CancellationToken ct = default);
     Task UpdateAsync(JobStatus job, CancellationToken ct = default);

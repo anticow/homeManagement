@@ -5,6 +5,9 @@
     <NoWarn>CA1848;CA1873</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="HomeManagement.Orchestration.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Quartz" />
     <PackageReference Include="Quartz.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />

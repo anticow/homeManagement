@@ -5,6 +5,11 @@
 > and an external SQL Server data tier.
 >
 > **Revision 1 — 2026-03-18:** Initial platform architecture.
+> **Revision 2 — 2026-03-21:** Control-plane decision finalized.
+> Broker is the authoritative control-plane core. AgentGateway is the only supported agent ingress and owns live agent streams only.
+> Desktop-hosted gRPC control is transitional compatibility code and is not part of the target runtime architecture.
+> **Revision 3 — 2026-03-21:** Authentication architecture resolved.
+> `hm-auth` is the production-path authentication boundary. Local auth is implemented for the correction release; enterprise providers remain optional extensions behind configuration.
 
 ---
 
@@ -21,15 +26,34 @@ SQLite database on a single operator workstation. This document defines the arch
 - Preserves the existing agent protocol (gRPC bidirectional streaming on port 9444)
 - Maintains backward compatibility with the desktop GUI during the transition period
 
+### Control-Plane Decision
+
+The platform uses a single authoritative control plane with a deliberately simple split of responsibilities:
+
+- `hm-broker` is the control-plane core and system of record
+- `hm-agent-gw` is the agent transport edge and session manager
+- `hm-web` and the desktop GUI are clients, not controllers
+
+This keeps orchestration, persistence, audit, and authorization in one place while isolating long-lived agent connections in a separate boundary.
+
+### Responsibility Boundaries
+
+| Layer | Service | Owns | Does Not Own |
+|---|---|---|---|
+| Client | Web GUI, Desktop GUI | user interaction, view state, intent submission | agent sessions, job state, orchestration |
+| Control core | Broker | command intent, scheduling, persistence, audit, execution policy, domain APIs | long-lived gRPC agent streams |
+| Agent edge | AgentGateway | mTLS agent connections, heartbeat tracking, command/result relay, agent presence | job scheduling, persistence, audit policy, domain decisions |
+
 ### Design Principles
 
 | Principle | Rationale |
 |---|---|
-| **Interface preservation** | All `HomeManagement.Abstractions` interfaces remain unchanged — new deployment, same contracts |
+| **Interface preservation** | All `HomeManagement.Abstractions` interfaces remain unchanged where practical — deployment changes must not blur service purpose |
 | **Strangler fig migration** | Each subsystem migrates independently; desktop and web GUIs can coexist during rollout |
 | **Zero-trust networking** | All inter-service communication is mTLS; no implicit trust between pods |
 | **12-Factor compliance** | Config via environment/secrets, stateless services, disposable containers |
 | **Auth as a first-class boundary** | Every API request authenticated and authorized before reaching domain logic |
+| **Single control-plane authority** | Broker is the system of record; AgentGateway is a relay boundary, not a second orchestrator |
 
 ---
 
@@ -114,11 +138,17 @@ existing agent binary. Each service is a separate Kubernetes Deployment.
 
 | Service | Image | Replicas | Ports | State | Scaling Strategy |
 |---|---|---|---|---|---|
-| **Web GUI** | `hm-web:tag` | 2+ | 8080 (HTTP) | Stateless (session via SQL / Redis) | HPA on CPU/memory |
+| **Web GUI** | `hm-web:tag` | 1+ | 8080 (HTTP) | Server-side Blazor session per circuit | Scale with sticky sessions until distributed session state is introduced |
 | **API Gateway** | `hm-gateway:tag` | 2+ | 8081 (HTTP) | Stateless | HPA on request rate |
 | **Broker Service** | `hm-broker:tag` | 1 (active) | 8082 (HTTP), 9090 (metrics) | Stateful (in-memory queue) | Leader election for HA |
 | **Auth Service** | `hm-auth:tag` | 2+ | 8083 (HTTP) | Stateless | HPA on auth request rate |
 | **Agent Gateway** | `hm-agent-gw:tag` | 1 (active) | 9444 (gRPC) | Stateful (agent connections) | Leader election for HA |
+
+Supported deployment boundary for the current correction baseline:
+
+- Helm in `deploy/helm/homemanagement` is the only supported production artifact
+- `deploy/kubernetes/` remains reference-only scaffolding and may lag the Helm chart
+- `hm-web` defaults to a single replica until distributed session state exists; scale-out requires explicit sticky-session planning
 
 ### 3.2 Service Responsibilities
 
@@ -145,6 +175,7 @@ existing agent binary. Each service is a separate Kubernetes Deployment.
 │  ├─ Exposes REST API for domain operations                              │
 │  ├─ Manages CommandBrokerService (Channel<T> queue → execution)         │
 │  ├─ Runs Quartz.NET scheduler for cron jobs                             │
+│  ├─ Owns command intent, execution state, timeout policy, and results   │
 │  ├─ Publishes events to SignalR backplane (Redis or SQL Server)         │
 │  └─ Connects to SQL Server via EF Core                                  │
 ├─────────────────────────────────────────────────────────────────────────┤
@@ -161,9 +192,19 @@ existing agent binary. Each service is a separate Kubernetes Deployment.
 │  ├─ gRPC bidirectional streaming server (:9444, mTLS)                   │
 │  ├─ Agent registration, heartbeat tracking, connection management       │
 │  ├─ Routes commands from Broker → Agent via gRPC stream                 │
-│  ├─ Returns results from Agent → Broker via internal API                │
+│  ├─ Returns results from Agent → Broker via internal API or message bus │
+│  ├─ Exposes agent presence and health to Broker                         │
+│  ├─ Does not own orchestration, job state, or audit decisions           │
 │  └─ Publishes agent connection events to SignalR backplane              │
 └─────────────────────────────────────────────────────────────────────────┘
+
+### 3.3 Supported Runtime Topology
+
+The supported target runtime topology is:
+
+`Client -> Gateway/Auth -> Broker -> AgentGateway -> Agent`
+
+Desktop compatibility during migration is achieved by consuming Broker APIs, not by continuing to host the production control plane inside the desktop process.
 ```
 
 ---
@@ -224,6 +265,16 @@ existing agent binary. Each service is a separate Kubernetes Deployment.
 
 All providers produce the same JWT format after successful authentication. Downstream
 services only validate JWTs — they never interact with IdPs directly.
+
+### 4.3 Correction-Release Auth Scope
+
+For the current correction release:
+
+- `hm-auth` is the authoritative issuer for access and refresh tokens
+- Local username/password auth is required and fully implemented
+- bootstrap admin seeding is supported for first-run environments
+- admin user and role management is performed through protected `hm-auth` APIs
+- enterprise providers remain part of the target architecture but are optional follow-on integrations rather than release blockers for the corrected baseline
 
 ### 4.3 JWT Token Structure
 
@@ -412,24 +463,22 @@ Configuration:
 ### 4.8 Session & Token Lifecycle
 
 ```
-Login ──→ Access Token (15 min TTL) + Refresh Token (7 day TTL)
-              │
-              ├── API call → Gateway validates JWT signature + expiry
-              │                   ├── Valid → route to Broker
-              │                   └── Expired → 401 → client uses Refresh Token
-              │
-              ├── Refresh → hm-auth issues new Access Token
-              │                   ├── Refresh valid → new tokens
-              │                   └── Refresh expired / revoked → 401 → re-login
-              │
-              └── Logout / Admin revoke → refresh token blacklisted in SQL
+Browser login form ──→ hm-web posts credentials to hm-auth
+                           │
+                           ├── hm-auth returns Access Token (15 min TTL) + Refresh Token (7 day TTL)
+                           ├── hm-web stores both tokens in server-side circuit session state
+                           ├── hm-web calls Broker with Bearer access token from the server tier
+                           ├── Access token near expiry / 401 → hm-web refreshes with refresh token
+                           │                               ├── Refresh valid → replace server-side tokens
+                           │                               └── Refresh expired / revoked → clear session and redirect to login
+                           └── Logout / Admin revoke → refresh token revoked and server-side session cleared
 ```
 
 | Token | Storage | TTL | Revocation |
 |---|---|---|---|
-| Access Token (JWT) | Browser memory (never localStorage) | 15 min | Short-lived; not individually revocable |
-| Refresh Token | HttpOnly Secure cookie | 7 days | Revocable via SQL blacklist table |
-| SignalR Token | Query string (WSS only) | Matches access token | Token rotation on reconnect |
+| Access Token (JWT) | `hm-web` server-side circuit session | 15 min | Short-lived; replaced on refresh and discarded on session invalidation |
+| Refresh Token | `hm-web` server-side circuit session | 7 days | Revocable via `hm-auth`; session cleared on refresh failure or logout |
+| Browser auth state | Blazor auth state derived from server session | Matches active session | Cleared whenever server session is cleared |
 
 ### 4.9 Authorization Enforcement Points
 
@@ -617,7 +666,7 @@ Phase 3: Switchover
 | **State** | Fluxor (Redux for Blazor) | Predictable unidirectional state management for complex pages |
 | **Real-time** | SignalR (built into Blazor Server) | Agent events, job progress, audit stream pushed to browser |
 | **HTTP Client** | `HttpClient` + Refit | Typed API clients to Broker endpoints |
-| **Auth** | ASP.NET Core Identity + cookie auth | Blazor Server uses cookies; thin wrapper around JWT from hm-auth |
+| **Auth** | Server-side Blazor session backed by `hm-auth` JWTs | Browser never becomes the bearer-token authority; `hm-web` forwards Broker auth from the server tier |
 
 ### 6.2 Page Inventory
 
@@ -1223,7 +1272,7 @@ homeManagement.sln
 │   ├── docker/
 │   │   └── docker-compose.yaml          # Local dev stack
 │   └── helm/
-│       └── homemanagement/               # Helm chart (future)
+│       └── homemanagement/               # Helm chart (supported production artifact)
 │
 └── tests/
     ├── (existing 6 test projects)

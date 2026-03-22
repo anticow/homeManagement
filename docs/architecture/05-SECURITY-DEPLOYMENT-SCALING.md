@@ -49,16 +49,24 @@
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 1.3 Authorization Model (Future-Ready)
+### 1.3 Authorization Model
 
-For v1, the system assumes a single trusted operator. The architecture supports adding RBAC later:
+The corrected platform baseline no longer assumes a single trusted operator for the platform runtime. `hm-auth` is the system-of-record auth boundary, and RBAC is enforced through issued identities and protected admin APIs.
 
 ```
-Role → Permission mapping (future):
+Role → Permission mapping:
   Admin    → Full access (all machines, vault, settings)
   Operator → Execute patches, control services (scoped to machine groups)
   Viewer   → Read-only (inventory, audit logs, status)
 ```
+
+### 1.3.1 Correction-Release Auth Baseline
+
+- Local username/password authentication is implemented using Argon2id password hashes
+- Access and refresh tokens are issued by `hm-auth`
+- Refresh token revocation is persisted
+- Admin APIs require authenticated `Admin` role membership
+- Bootstrap admin seeding is supported for first-run environments
 
 ### 1.4 Secure Defaults
 
@@ -78,6 +86,12 @@ Role → Permission mapping (future):
 ## 2. Deployment Model
 
 ### 2.1 Control Application Deployment
+
+Supported production artifact for the platform runtime:
+
+- use the Helm chart in `deploy/helm/homemanagement`
+- keep environment-specific secrets, TLS, and ingress policy in Helm values overrides
+- treat `deploy/kubernetes/` as reference-only scaffolding unless it is explicitly brought back to parity
 
 ```
 Distribution: Single self-contained executable
@@ -147,6 +161,11 @@ The control application can deploy the agent to a target machine:
 5. Transport: Verify agent connects back to control
 6. Inventory: Update machine connection mode to "Agent"
 ```
+
+For CI and release validation, the minimum supported deployment check is:
+
+- `helm lint deploy/helm/homemanagement` with non-placeholder secret values
+- `helm template deploy/helm/homemanagement` with the same values to verify renderability
 
 ---
 

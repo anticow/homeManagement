@@ -2,6 +2,7 @@
   "Agent": {
     "ControlServer": "localhost:9444",
     "AgentId": "",
+    "ApiKey": "",
     "CertPath": "certs/agent.pfx",
     "CaCertPath": "certs/ca.crt",
     "HeartbeatIntervalSeconds": 30,

@@ -9,7 +9,7 @@ namespace HomeManagement.Core;
 /// known sensitive patterns (password, secret, token, key, etc.).
 /// Wired into the Serilog pipeline during <see cref="LoggingBootstrap"/> configuration.
 /// </summary>
-internal sealed partial class SensitivePropertyEnricher : ILogEventEnricher
+public sealed partial class SensitivePropertyEnricher : ILogEventEnricher
 {
     [GeneratedRegex(
         @"password|passwd|pwd|secret|token|apikey|api_key|private_key|connectionstring|credential|passphrase|bearer",

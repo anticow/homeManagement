@@ -1,0 +1,48 @@
+{{- $svcName := "hm-agent-gw" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $svcName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "homemanagement.labels" . | nindent 4 }}
+    app: {{ $svcName }}
+spec:
+  replicas: {{ .Values.agentGateway.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ $svcName }}
+  template:
+    metadata:
+      labels:
+        app: {{ $svcName }}
+    spec:
+      containers:
+        - name: agent-gateway
+          image: {{ include "homemanagement.image" (dict "global" .Values.global "image" .Values.agentGateway.image) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.agentGateway.port }}
+              name: grpc
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:{{ .Values.agentGateway.port }}"
+            - name: AgentGateway__ApiKey
+              valueFrom:
+                secretKeyRef:
+                  name: hm-secrets
+                  key: agent-gateway-api-key
+            - name: Seq__Url
+              value: {{ .Values.seq.url | quote }}
+          resources:
+            {{- toYaml .Values.agentGateway.resources | nindent 12 }}
+          livenessProbe:
+            grpc:
+              port: {{ .Values.agentGateway.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            grpc:
+              port: {{ .Values.agentGateway.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10

@@ -1,0 +1,66 @@
+{{- $svcName := "hm-broker" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $svcName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "homemanagement.labels" . | nindent 4 }}
+    app: {{ $svcName }}
+spec:
+  replicas: {{ .Values.broker.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ $svcName }}
+  template:
+    metadata:
+      labels:
+        app: {{ $svcName }}
+    spec:
+      containers:
+        - name: broker
+          image: {{ include "homemanagement.image" (dict "global" .Values.global "image" .Values.broker.image) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.broker.port }}
+              name: http
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:{{ .Values.broker.port }}"
+            - name: ConnectionStrings__HomeManagement
+              valueFrom:
+                secretKeyRef:
+                  name: hm-secrets
+                  key: connection-string
+            - name: Auth__JwtSigningKey
+              valueFrom:
+                secretKeyRef:
+                  name: hm-secrets
+                  key: jwt-signing-key
+            - name: Auth__Issuer
+              value: {{ .Values.auth.issuer | quote }}
+            - name: Auth__Audience
+              value: {{ .Values.auth.audience | quote }}
+            - name: AgentGateway__BaseUrl
+              value: "http://hm-agent-gw:{{ .Values.agentGateway.port }}"
+            - name: AgentGateway__ApiKey
+              valueFrom:
+                secretKeyRef:
+                  name: hm-secrets
+                  key: agent-gateway-api-key
+            - name: Seq__Url
+              value: {{ .Values.seq.url | quote }}
+          resources:
+            {{- toYaml .Values.broker.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10

@@ -1,0 +1,72 @@
+@page "/login"
+
+<h1>Login</h1>
+
+<form @onsubmit="HandleLoginAsync">
+    <div>
+        <label for="username">Username</label>
+        <input id="username" type="text" @bind="Username" required />
+    </div>
+    <div>
+        <label for="password">Password</label>
+        <input id="password" type="password" @bind="Password" required />
+    </div>
+    <button type="submit" disabled="@_submitting">@(_submitting ? "Signing In..." : "Sign In")</button>
+    @if (!string.IsNullOrEmpty(ErrorMessage))
+    {
+        <p class="error">@ErrorMessage</p>
+    }
+</form>
+
+@code {
+    [Inject] private HomeManagement.Web.Services.IWebSessionAuthService AuthService { get; set; } = default!;
+    [Inject] private HomeManagement.Web.Services.ServerSessionState SessionState { get; set; } = default!;
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+
+    private string Username { get; set; } = string.Empty;
+    private string Password { get; set; } = string.Empty;
+    private string? ErrorMessage { get; set; }
+    private bool _submitting;
+
+    protected override void OnInitialized()
+    {
+        if (SessionState.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/");
+        }
+    }
+
+    private async Task HandleLoginAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Username))
+        {
+            ErrorMessage = "Username is required.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(Password))
+        {
+            ErrorMessage = "Password is required.";
+            return;
+        }
+
+        _submitting = true;
+        ErrorMessage = null;
+
+        try
+        {
+            var result = await AuthService.LoginAsync(Username, Password);
+            if (!result.Success)
+            {
+                ErrorMessage = result.Error ?? "Sign in failed.";
+                return;
+            }
+
+            Navigation.NavigateTo("/");
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+}

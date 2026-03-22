@@ -19,6 +19,7 @@ env:
   DOTNET_VERSION: '8.0.x'
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
+  HELM_VERSION: '3.17.2'
 
 jobs:
   build-and-test:
@@ -93,3 +94,39 @@ jobs:
 
       - name: Check formatting
         run: dotnet format --verify-no-changes --verbosity diagnostic
+
+  helm-validate:
+    name: Helm Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4.2.0
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Lint chart
+        run: >-
+          helm lint deploy/helm/homemanagement
+          --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;TrustServerCertificate=False;"
+          --set auth.jwtSigningKey="validation-signing-key-that-is-long-enough-for-ci-checks-1234567890"
+          --set agentGateway.apiKey="validation-agent-gateway-api-key"
+
+      - name: Verify chart fails without required secret values
+        run: >-
+          ! helm template homemanagement deploy/helm/homemanagement
+
+      - name: Render chart
+        run: >-
+          helm template homemanagement deploy/helm/homemanagement
+          --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;TrustServerCertificate=False;"
+          --set auth.jwtSigningKey="validation-signing-key-that-is-long-enough-for-ci-checks-1234567890"
+          --set agentGateway.apiKey="validation-agent-gateway-api-key"
+          > /tmp/homemanagement-rendered.yaml
+
+      - name: Verify rendered chart is non-empty
+        run: test -s /tmp/homemanagement-rendered.yaml

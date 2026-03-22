@@ -14,6 +14,9 @@ public interface IInventoryService
     /// <summary>Soft-delete a machine. Audit events and patch history are preserved.</summary>
     Task RemoveAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>Soft-delete multiple machines in a single batch.</summary>
+    Task BatchRemoveAsync(IReadOnlyList<Guid> ids, CancellationToken ct = default);
+
     Task<Machine?> GetAsync(Guid id, CancellationToken ct = default);
     Task<PagedResult<Machine>> QueryAsync(MachineQuery query, CancellationToken ct = default);
     Task<Machine> RefreshMetadataAsync(Guid id, CancellationToken ct = default);

@@ -154,3 +154,49 @@ public class AppSettingEntity
     public string Value { get; set; } = string.Empty;
     public DateTime UpdatedUtc { get; set; }
 }
+
+public class AuthUserEntity
+{
+    public Guid Id { get; set; }
+    public string Username { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string PasswordHash { get; set; } = string.Empty;
+    public string Provider { get; set; } = string.Empty;
+    public DateTime CreatedUtc { get; set; }
+    public DateTime? LastLoginUtc { get; set; }
+
+    public ICollection<AuthUserRoleEntity> UserRoles { get; set; } = [];
+    public ICollection<AuthRefreshTokenEntity> RefreshTokens { get; set; } = [];
+}
+
+public class AuthRoleEntity
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string PermissionsJson { get; set; } = "[]";
+
+    public ICollection<AuthUserRoleEntity> UserRoles { get; set; } = [];
+}
+
+public class AuthUserRoleEntity
+{
+    public Guid UserId { get; set; }
+    public Guid RoleId { get; set; }
+
+    public AuthUserEntity User { get; set; } = null!;
+    public AuthRoleEntity Role { get; set; } = null!;
+}
+
+public class AuthRefreshTokenEntity
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public string TokenHash { get; set; } = string.Empty;
+    public DateTime IssuedUtc { get; set; }
+    public DateTime ExpiresUtc { get; set; }
+    public DateTime? RevokedUtc { get; set; }
+
+    public AuthUserEntity User { get; set; } = null!;
+}

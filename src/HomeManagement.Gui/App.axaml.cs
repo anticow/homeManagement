@@ -6,6 +6,7 @@ using HomeManagement.Abstractions.Interfaces;
 using HomeManagement.Core;
 using HomeManagement.Gui.Services;
 using HomeManagement.Gui.ViewModels;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -17,7 +18,6 @@ public class App : Application
 #pragma warning restore CA1001
 {
     private ServiceProvider? _serviceProvider;
-    private GrpcServerHost? _grpcHost;
     private AgentAutoRegistrationService? _agentRegistration;
     private Transport.CommandBrokerService? _commandBroker;
 
@@ -35,12 +35,22 @@ public class App : Application
                 var dataDir = GetDataDirectory();
                 Directory.CreateDirectory(dataDir);
 
+                var configuration = new ConfigurationBuilder()
+                    .SetBasePath(AppDomain.CurrentDomain.BaseDirectory)
+                    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+                    .AddEnvironmentVariables()
+                    .Build();
+
                 var services = new ServiceCollection();
+                services.AddSingleton<IConfiguration>(configuration);
                 services.AddHomeManagementLogging(dataDir);
                 services.AddHomeManagement(dataDir);
 
                 // GUI services
                 services.AddSingleton<NavigationService>();
+                services.AddSingleton<IDialogService, DialogService>();
+                services.AddSingleton<IClipboardService, ClipboardService>();
+                services.AddSingleton<IIdleTimerService, IdleTimerService>();
                 services.AddSingleton<MainWindowViewModel>();
 
                 // Page ViewModels — transient (fresh state per navigation)
@@ -65,14 +75,11 @@ public class App : Application
                 var mainVm = _serviceProvider.GetRequiredService<MainWindowViewModel>();
                 desktop.MainWindow = new MainWindow { DataContext = mainVm };
 
-                // Start embedded gRPC control server for agent connections
-                _grpcHost = new GrpcServerHost();
-                _grpcHost.StartAsync(_serviceProvider, dataDir, CancellationToken.None)
-                    .GetAwaiter().GetResult();
+                var agentGateway = _serviceProvider.GetRequiredService<IAgentGateway>();
+                agentGateway.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
 
-                // Auto-register connecting agents as machines in the inventory DB
                 _agentRegistration = new AgentAutoRegistrationService(
-                    _serviceProvider.GetRequiredService<IAgentGateway>(),
+                    agentGateway,
                     _serviceProvider.GetRequiredService<IServiceScopeFactory>(),
                     _serviceProvider.GetRequiredService<ILogger<AgentAutoRegistrationService>>());
                 _agentRegistration.Start();
@@ -88,8 +95,7 @@ public class App : Application
                     _agentRegistration = null;
                     _commandBroker?.DisposeAsync().AsTask().GetAwaiter().GetResult();
                     _commandBroker = null;
-                    _grpcHost?.StopAsync().GetAwaiter().GetResult();
-                    _grpcHost = null;
+                    agentGateway.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
                     _serviceProvider?.Dispose();
                     _serviceProvider = null;
                     Log.CloseAndFlush();
