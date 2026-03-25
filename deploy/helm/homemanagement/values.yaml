@@ -1,6 +1,6 @@
 # -- Global settings
 global:
-  imageRegistry: ghcr.io/homemanagement
+  imageRegistry: ghcr.io/anticow
   imageTag: latest
   imagePullPolicy: IfNotPresent
 
@@ -10,17 +10,17 @@ namespace: homemanagement
 # -- Database
 database:
   connectionString: ""  # Required — override via --set or values override file
-  # Example: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=...;TrustServerCertificate=True"
+  # Example: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=...;Encrypt=True;TrustServerCertificate=False"
 
-# -- Seq centralized logging
+# -- Seq centralized logging (in-cluster: http://seq.seq.svc.cluster.local:5341)
 seq:
-  url: "http://seq:5341"
+  url: "http://seq.seq.svc.cluster.local:5341"
 
 # -- Auth configuration
 auth:
   jwtSigningKey: ""  # Required — 64+ character random string
   issuer: "homemanagement"
-  audience: "homemanagement"
+  audience: "homemanagement-api"
 
 # -- Broker service
 broker:
@@ -81,7 +81,7 @@ web:
 agentGateway:
   replicaCount: 1
   apiKey: ""  # Required — shared with HomeManagement.Agent clients
-  serviceType: LoadBalancer
+  serviceType: ClusterIP
   image:
     repository: hm-agent-gw
     tag: ""
@@ -118,14 +118,23 @@ gateway:
 ingress:
   enabled: true
   className: nginx
-  host: homemanagement.local
-  sslRedirect: false
+  host: homemanagement.cowgomu.net
+  brokerHost: broker.cowgomu.net
+  authHost: authapi.cowgomu.net
+  agentGatewayHost: agentgw.cowgomu.net
+  agentGatewayApiHost: agentgw-api.cowgomu.net
+  clusterIssuer: ""
+  sslRedirect: true
   tls:
-    enabled: false
-    secretName: hm-tls-secret
+    enabled: true
+    secretName: hm-wildcard-tls
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+  grpcAnnotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
 
 # -- Service account
 serviceAccount:

@@ -1,0 +1,46 @@
+# ArgoCD Application Reference
+#
+# This is a REFERENCE manifest showing how HomeManagement is expected
+# to be defined in the ArgoCD app-of-apps repository.
+#
+# Production setup:
+#   The ArgoCD Ansible role (roles/argocd/) deploys a root Application
+#   pointing to the external repository:
+#
+#     Repository: git@github.com:anticow/argocd.git
+#     Path:       charts/root-app/
+#
+#   That root-app is expected to contain an Application CR similar to the
+#   one below, which points back to this repo's Helm chart.
+#
+# This file is NOT applied directly — it exists for documentation and
+# as a template for the ArgoCD repo.
+#
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homemanagement
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # Points to this repository's Helm chart
+    repoURL: git@github.com:anticow/homeManagement.git
+    path: deploy/helm/homemanagement
+    targetRevision: HEAD
+    helm:
+      # Secret values are injected via ArgoCD secret management
+      # or an external secrets operator — not committed to source.
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homemanagement
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

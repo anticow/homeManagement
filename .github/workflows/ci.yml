@@ -112,7 +112,7 @@ jobs:
       - name: Lint chart
         run: >-
           helm lint deploy/helm/homemanagement
-          --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;TrustServerCertificate=False;"
+          --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;Encrypt=True;TrustServerCertificate=False;"
           --set auth.jwtSigningKey="validation-signing-key-that-is-long-enough-for-ci-checks-1234567890"
           --set agentGateway.apiKey="validation-agent-gateway-api-key"
 
@@ -123,10 +123,106 @@ jobs:
       - name: Render chart
         run: >-
           helm template homemanagement deploy/helm/homemanagement
-          --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;TrustServerCertificate=False;"
+          --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;Encrypt=True;TrustServerCertificate=False;"
           --set auth.jwtSigningKey="validation-signing-key-that-is-long-enough-for-ci-checks-1234567890"
           --set agentGateway.apiKey="validation-agent-gateway-api-key"
           > /tmp/homemanagement-rendered.yaml
 
       - name: Verify rendered chart is non-empty
         run: test -s /tmp/homemanagement-rendered.yaml
+
+  docker-build-validate:
+    name: Docker Build Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        include:
+          - repository: hm-agent
+            dockerfile: docker/agent.Dockerfile
+          - repository: hm-broker
+            dockerfile: docker/broker.Dockerfile
+          - repository: hm-auth
+            dockerfile: docker/auth.Dockerfile
+          - repository: hm-web
+            dockerfile: docker/web.Dockerfile
+          - repository: hm-gateway
+            dockerfile: docker/gateway.Dockerfile
+          - repository: hm-agent-gw
+            dockerfile: docker/agent-gw.Dockerfile
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          tags: local/${{ matrix.repository }}:ci
+
+  platform-smoke-tests:
+    name: Platform Smoke Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build-and-test, docker-build-validate]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Build platform images
+        run: docker compose -f deploy/docker/docker-compose.yaml build
+
+      - name: Start platform stack
+        run: docker compose -f deploy/docker/docker-compose.yaml up -d
+
+      - name: Wait for services to be healthy
+        run: |
+          echo "Waiting for platform services..."
+          for i in $(seq 1 60); do
+            healthy=$(docker compose -f deploy/docker/docker-compose.yaml ps --format json | jq -r '.Health // "unknown"' | grep -c "healthy" || true)
+            total=$(docker compose -f deploy/docker/docker-compose.yaml ps --format json | jq -r '.Health // "unknown"' | grep -c "healthy\|unhealthy\|starting" || true)
+            echo "  Attempt $i: $healthy healthy services"
+            if [ "$healthy" -ge 5 ]; then
+              echo "All application services healthy"
+              break
+            fi
+            sleep 5
+          done
+          docker compose -f deploy/docker/docker-compose.yaml ps
+
+      - name: Run platform smoke tests
+        run: >-
+          dotnet test
+          tests/HomeManagement.Platform.Tests
+          --configuration Release
+          --filter "Category=Platform"
+          --logger "trx;LogFileName=platform-results.trx"
+          --results-directory ./TestResults
+
+      - name: Upload platform test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-test-results
+          path: ./TestResults/**/*.trx
+          retention-days: 30
+
+      - name: Collect logs on failure
+        if: failure()
+        run: docker compose -f deploy/docker/docker-compose.yaml logs
+
+      - name: Stop platform stack
+        if: always()
+        run: docker compose -f deploy/docker/docker-compose.yaml down -v

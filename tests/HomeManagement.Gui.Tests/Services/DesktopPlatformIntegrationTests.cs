@@ -98,7 +98,6 @@ public sealed class DesktopPlatformIntegrationTests : IDisposable
         {
             BrokerBaseUrl = "https://broker.cowgomu.net",
             AuthBaseUrl = "https://authapi.cowgomu.net",
-            AgentGatewayBaseUrl = "https://gateway.cowgomu.net",
             Username = "admin"
         });
 

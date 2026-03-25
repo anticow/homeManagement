@@ -90,6 +90,7 @@ app.UseAuthorization();
 
 // ── Domain API Endpoints ──
 app.MapMachineEndpoints();
+app.MapAgentEndpoints();
 app.MapPatchingEndpoints();
 app.MapServiceEndpoints();
 app.MapJobEndpoints();

@@ -289,8 +289,8 @@ dotnet test --configuration Release
 dotnet format --verify-no-changes
 
 # Helm validation (same as CI/release deployment validation)
-helm lint deploy/helm/homemanagement --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;TrustServerCertificate=False;" --set auth.jwtSigningKey="validation-signing-key-that-is-long-enough-for-ci-checks-1234567890" --set agentGateway.apiKey="validation-agent-gateway-api-key"
-helm template homemanagement deploy/helm/homemanagement --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;TrustServerCertificate=False;" --set auth.jwtSigningKey="validation-signing-key-that-is-long-enough-for-ci-checks-1234567890" --set agentGateway.apiKey="validation-agent-gateway-api-key" > rendered-homemanagement.yaml
+helm lint deploy/helm/homemanagement --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;Encrypt=True;TrustServerCertificate=False;" --set auth.jwtSigningKey="validation-signing-key-that-is-long-enough-for-ci-checks-1234567890" --set agentGateway.apiKey="validation-agent-gateway-api-key"
+helm template homemanagement deploy/helm/homemanagement --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;Encrypt=True;TrustServerCertificate=False;" --set auth.jwtSigningKey="validation-signing-key-that-is-long-enough-for-ci-checks-1234567890" --set agentGateway.apiKey="validation-agent-gateway-api-key" > rendered-homemanagement.yaml
 
 # Or use the project scripts
 .\start.ps1                    # Build + test + launch
