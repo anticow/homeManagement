@@ -8,6 +8,22 @@ services:
       - "1433:1433"
     volumes:
       - sqldata:/var/opt/mssql
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "HomeManagement_Dev1!" -Q "SELECT 1" -b
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  seq:
+    image: datalust/seq:latest
+    environment:
+      ACCEPT_EULA: "Y"
+    ports:
+      - "5380:80"
+      - "5341:5341"
+    volumes:
+      - seqdata:/data
 
   broker:
     build:
@@ -17,14 +33,24 @@ services:
       - "8082:8082"
     environment:
       ASPNETCORE_URLS: "http://+:8082"
-      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=HomeManagement_Dev1!;TrustServerCertificate=True;"
+      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=HomeManagement_Dev1!;Encrypt=True;TrustServerCertificate=True;"
       Auth__JwtSigningKey: "dev-signing-key-at-least-32-characters-long!"
       Auth__Issuer: "homemanagement"
       Auth__Audience: "homemanagement-api"
       AgentGateway__BaseUrl: "http://agent-gw:9444"
       AgentGateway__ApiKey: "dev-agent-gateway-api-key"
+      Seq__Url: "http://seq:5341"
     depends_on:
-      - sqlserver
+      sqlserver:
+        condition: service_healthy
+      seq:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   auth:
     build:
@@ -34,12 +60,22 @@ services:
       - "8083:8083"
     environment:
       ASPNETCORE_URLS: "http://+:8083"
-      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=HomeManagement_Dev1!;TrustServerCertificate=True;"
+      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=HomeManagement_Dev1!;Encrypt=True;TrustServerCertificate=True;"
       Auth__JwtSigningKey: "dev-signing-key-at-least-32-characters-long!"
       Auth__Issuer: "homemanagement"
       Auth__Audience: "homemanagement-api"
+      Seq__Url: "http://seq:5341"
     depends_on:
-      - sqlserver
+      sqlserver:
+        condition: service_healthy
+      seq:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   web:
     build:
@@ -51,6 +87,18 @@ services:
       ASPNETCORE_URLS: "http://+:8080"
       BrokerApi__BaseUrl: "http://broker:8082"
       AuthApi__BaseUrl: "http://auth:8083"
+      Seq__Url: "http://seq:5341"
+    depends_on:
+      broker:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   gateway:
     build:
@@ -61,8 +109,20 @@ services:
     environment:
       ASPNETCORE_URLS: "http://+:8081"
       Auth__JwtSigningKey: "dev-signing-key-at-least-32-characters-long!"
-      ReverseProxy__Clusters__broker__Destinations__broker-1__Address: "http://broker:8082"
-      ReverseProxy__Clusters__auth__Destinations__auth-1__Address: "http://auth:8083"
+      ReverseProxy__Clusters__broker__Destinations__primary__Address: "http://broker:8082"
+      ReverseProxy__Clusters__auth__Destinations__primary__Address: "http://auth:8083"
+      Seq__Url: "http://seq:5341"
+    depends_on:
+      broker:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   agent-gw:
     build:
@@ -73,6 +133,17 @@ services:
     environment:
       ASPNETCORE_URLS: "http://+:9444"
       AgentGateway__ApiKey: "dev-agent-gateway-api-key"
+      Seq__Url: "http://seq:5341"
+    depends_on:
+      seq:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9444/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 volumes:
   sqldata:
+  seqdata:

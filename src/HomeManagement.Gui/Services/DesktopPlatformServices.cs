@@ -26,7 +26,6 @@ public sealed class DesktopPlatformOptions
 {
     public string BrokerBaseUrl { get; init; } = string.Empty;
     public string AuthBaseUrl { get; init; } = string.Empty;
-    public string AgentGatewayBaseUrl { get; init; } = string.Empty;
     public string? Username { get; init; }
 
     public bool IsEnabled =>
@@ -39,7 +38,6 @@ public sealed class DesktopPlatformOptions
         {
             BrokerBaseUrl = configuration["BrokerApi:BaseUrl"] ?? string.Empty,
             AuthBaseUrl = configuration["AuthApi:BaseUrl"] ?? string.Empty,
-            AgentGatewayBaseUrl = configuration["AgentGateway:BaseUrl"] ?? string.Empty,
             Username = configuration["DesktopAuth:Username"]
         };
     }
@@ -453,6 +451,169 @@ internal sealed class DesktopRemoteExecutor : IRemoteExecutor
         _brokerClient.PostAsync<ConnectionTestResult>($"/api/machines/{target.MachineId}/test", body: null, ct);
 }
 
+internal sealed class DesktopBrokerAgentGatewayClient : IAgentGateway, IDisposable
+{
+    private readonly DesktopBrokerClient _brokerClient;
+    private readonly Subject<AgentConnectionEvent> _connectionEvents = new();
+    private readonly SemaphoreSlim _refreshLock = new(1, 1);
+    private readonly object _snapshotLock = new();
+
+    private List<ConnectedAgent> _snapshot = [];
+    private Timer? _pollTimer;
+    private DateTimeOffset _lastRefreshUtc = DateTimeOffset.MinValue;
+    private int _started;
+    private bool _disposed;
+
+    public DesktopBrokerAgentGatewayClient(DesktopBrokerClient brokerClient)
+    {
+        _brokerClient = brokerClient;
+    }
+
+    public IObservable<AgentConnectionEvent> ConnectionEvents => _connectionEvents.AsObservable();
+
+    public async Task StartAsync(CancellationToken ct = default)
+    {
+        if (Interlocked.Exchange(ref _started, 1) == 1)
+        {
+            return;
+        }
+
+        await RefreshSnapshotAsync(ct);
+        _pollTimer = new Timer(
+            async _ => await SafePollAsync(),
+            null,
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromSeconds(5));
+    }
+
+    public Task StopAsync(CancellationToken ct = default)
+    {
+        _pollTimer?.Dispose();
+        _pollTimer = null;
+        Interlocked.Exchange(ref _started, 0);
+        return Task.CompletedTask;
+    }
+
+    public IReadOnlyList<ConnectedAgent> GetConnectedAgents()
+    {
+        EnsureStarted();
+
+        if (_snapshot.Count == 0 || DateTimeOffset.UtcNow - _lastRefreshUtc > TimeSpan.FromSeconds(10))
+        {
+            try
+            {
+                RefreshSnapshotAsync(CancellationToken.None).GetAwaiter().GetResult();
+            }
+            catch
+            {
+            }
+        }
+
+        lock (_snapshotLock)
+        {
+            return _snapshot;
+        }
+    }
+
+    public Task<RemoteResult> SendCommandAsync(string agentId, RemoteCommand command, CancellationToken ct = default) =>
+        _brokerClient.PostAsync<RemoteResult>($"/api/agents/{Uri.EscapeDataString(agentId)}/commands", command, ct);
+
+    public Task<AgentMetadata> GetMetadataAsync(string agentId, CancellationToken ct = default) =>
+        _brokerClient.GetAsync<AgentMetadata>($"/api/agents/{Uri.EscapeDataString(agentId)}", ct);
+
+    public Task RequestUpdateAsync(string agentId, AgentUpdatePackage package, CancellationToken ct = default) =>
+        _brokerClient.PostAsync($"/api/agents/{Uri.EscapeDataString(agentId)}/updates", package, ct);
+
+    private async Task SafePollAsync()
+    {
+        try
+        {
+            await RefreshSnapshotAsync(CancellationToken.None);
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task RefreshSnapshotAsync(CancellationToken ct)
+    {
+        await _refreshLock.WaitAsync(ct);
+        try
+        {
+            var latest = await _brokerClient.GetAsync<List<ConnectedAgent>>("/api/agents", ct);
+            PublishSnapshotDiff(latest);
+            lock (_snapshotLock)
+            {
+                _snapshot = latest;
+            }
+
+            _lastRefreshUtc = DateTimeOffset.UtcNow;
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
+    }
+
+    private void PublishSnapshotDiff(IReadOnlyList<ConnectedAgent> latest)
+    {
+        IReadOnlyList<ConnectedAgent> previous;
+        lock (_snapshotLock)
+        {
+            previous = _snapshot;
+        }
+
+        var previousIndex = previous.ToDictionary(agent => agent.AgentId, StringComparer.OrdinalIgnoreCase);
+        var latestIndex = latest.ToDictionary(agent => agent.AgentId, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var agent in latest)
+        {
+            if (!previousIndex.ContainsKey(agent.AgentId))
+            {
+                _connectionEvents.OnNext(new AgentConnectionEvent(
+                    agent.AgentId,
+                    agent.Hostname,
+                    AgentConnectionEventType.Connected,
+                    DateTime.UtcNow));
+            }
+        }
+
+        foreach (var agent in previous)
+        {
+            if (!latestIndex.ContainsKey(agent.AgentId))
+            {
+                _connectionEvents.OnNext(new AgentConnectionEvent(
+                    agent.AgentId,
+                    agent.Hostname,
+                    AgentConnectionEventType.Disconnected,
+                    DateTime.UtcNow));
+            }
+        }
+    }
+
+    private void EnsureStarted()
+    {
+        if (Volatile.Read(ref _started) == 0)
+        {
+            StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _pollTimer?.Dispose();
+        _refreshLock.Dispose();
+        _connectionEvents.OnCompleted();
+        _connectionEvents.Dispose();
+    }
+}
+
 internal sealed class DesktopJobSchedulerClient : IJobScheduler
 {
     private readonly DesktopBrokerClient _brokerClient;
@@ -626,11 +787,6 @@ internal sealed class DesktopPlatformHealthService : ISystemHealthService
             await CheckComponentAsync("Auth API", _options.AuthBaseUrl, ct)
         };
 
-        if (!string.IsNullOrWhiteSpace(_options.AgentGatewayBaseUrl))
-        {
-            components.Add(await CheckComponentAsync("Agent Gateway", _options.AgentGatewayBaseUrl, ct));
-        }
-
         var overall = components.Any(component => component.Status == HealthStatus.Unhealthy)
             ? HealthStatus.Unhealthy
             : components.Any(component => component.Status == HealthStatus.Degraded)
@@ -772,8 +928,7 @@ public static class DesktopPlatformServiceCollectionExtensions
         services.AddSingleton<ICredentialVault, DesktopPlatformCredentialVault>();
         services.AddSingleton<ISystemHealthService, DesktopPlatformHealthService>();
         services.AddSingleton<IRemoteExecutor, DesktopRemoteExecutor>();
-        services.AddSingleton<RemoteAgentGatewayClient>();
-        services.AddSingleton<IAgentGateway>(sp => sp.GetRequiredService<RemoteAgentGatewayClient>());
+        services.AddSingleton<IAgentGateway, DesktopBrokerAgentGatewayClient>();
         return services;
     }
 }

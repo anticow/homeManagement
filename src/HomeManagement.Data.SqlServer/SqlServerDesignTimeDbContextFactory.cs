@@ -13,7 +13,9 @@ public sealed class SqlServerDesignTimeDbContextFactory : IDesignTimeDbContextFa
     public HomeManagementDbContext CreateDbContext(string[] args)
     {
         var options = new DbContextOptionsBuilder<HomeManagementDbContext>()
-            .UseSqlServer("Server=localhost;Database=HomeManagement;Trusted_Connection=True;TrustServerCertificate=True;")
+            .UseSqlServer(
+                "Server=localhost;Database=HomeManagement;Trusted_Connection=True;TrustServerCertificate=True;",
+                sql => sql.MigrationsAssembly(typeof(SqlServerDesignTimeDbContextFactory).Assembly.FullName))
             .Options;
 
         return new HomeManagementDbContext(options);

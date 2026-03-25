@@ -1,0 +1,28 @@
+{{- if and .Values.ingress.enabled .Values.ingress.tls.enabled .Values.ingress.clusterIssuer }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hm-ingress-certificate
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "homemanagement.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.ingress.tls.secretName }}
+  issuerRef:
+    kind: ClusterIssuer
+    name: {{ .Values.ingress.clusterIssuer }}
+  dnsNames:
+    - {{ .Values.ingress.host | quote }}
+    {{- if .Values.ingress.brokerHost }}
+    - {{ .Values.ingress.brokerHost | quote }}
+    {{- end }}
+    {{- if .Values.ingress.authHost }}
+    - {{ .Values.ingress.authHost | quote }}
+    {{- end }}
+    {{- if .Values.ingress.agentGatewayHost }}
+    - {{ .Values.ingress.agentGatewayHost | quote }}
+    {{- end }}
+    {{- if .Values.ingress.agentGatewayApiHost }}
+    - {{ .Values.ingress.agentGatewayApiHost | quote }}
+    {{- end }}
+{{- end }}

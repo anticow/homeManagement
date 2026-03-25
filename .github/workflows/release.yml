@@ -14,7 +14,7 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   HELM_VERSION: '3.17.2'
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/homemanagement
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
 
 jobs:
   validate:
@@ -53,7 +53,7 @@ jobs:
       - name: Lint chart
         run: >-
           helm lint deploy/helm/homemanagement
-          --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;TrustServerCertificate=False;"
+          --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;Encrypt=True;TrustServerCertificate=False;"
           --set auth.jwtSigningKey="validation-signing-key-that-is-long-enough-for-ci-checks-1234567890"
           --set agentGateway.apiKey="validation-agent-gateway-api-key"
 
@@ -64,7 +64,7 @@ jobs:
       - name: Render chart
         run: >-
           helm template homemanagement deploy/helm/homemanagement
-          --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;TrustServerCertificate=False;"
+          --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;Encrypt=True;TrustServerCertificate=False;"
           --set auth.jwtSigningKey="validation-signing-key-that-is-long-enough-for-ci-checks-1234567890"
           --set agentGateway.apiKey="validation-agent-gateway-api-key"
           > /tmp/homemanagement-rendered.yaml
@@ -137,7 +137,7 @@ jobs:
           retention-days: 90
 
   docker-images:
-    name: Docker (${{ matrix.image }})
+    name: Docker (${{ matrix.repository }})
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -145,15 +145,36 @@ jobs:
       matrix:
         include:
           - image: agent
+            repository: hm-agent
             dockerfile: docker/agent.Dockerfile
             context: .
           - image: broker
+            repository: hm-broker
             dockerfile: docker/broker.Dockerfile
+            context: .
+          - image: auth
+            repository: hm-auth
+            dockerfile: docker/auth.Dockerfile
+            context: .
+          - image: web
+            repository: hm-web
+            dockerfile: docker/web.Dockerfile
+            context: .
+          - image: gateway
+            repository: hm-gateway
+            dockerfile: docker/gateway.Dockerfile
+            context: .
+          - image: agent-gw
+            repository: hm-agent-gw
+            dockerfile: docker/agent-gw.Dockerfile
             context: .
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Extract version from tag
         id: version
@@ -183,8 +204,8 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.repository }}:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.repository }}:latest
 
   create-release:
     name: Create Release

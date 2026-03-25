@@ -175,4 +175,91 @@ public sealed class InventoryServiceTests
             MachineConnectionMode.Agentless, TransportProtocol.Ssh, 22, Guid.Empty,
             MachineState.Online, new Dictionary<string, string>().AsReadOnly(), null, now, now, now);
     }
+
+    // ── ImportAsync ──
+
+    [Fact]
+    public async Task ImportAsync_ValidCsv_AddsMachines()
+    {
+        var csv = "Hostname,OsType,Protocol,Port,Fqdn\nserver1,Linux,Ssh,22,\nserver2,Windows,WinRM,5986,\n";
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
+
+        await _sut.ImportAsync(stream);
+
+        await _machineRepo.Received(2).AddAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ImportAsync_EmptyStream_DoesNothing()
+    {
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(""));
+
+        await _sut.ImportAsync(stream);
+
+        await _machineRepo.DidNotReceive().AddAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ImportAsync_InvalidRows_AreSkipped()
+    {
+        var csv = "Hostname,OsType,Protocol,Port,Fqdn\n,BadOs,Ssh,22,\nserver1,Linux,Ssh,22,\n";
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
+
+        await _sut.ImportAsync(stream);
+
+        // Only server1 should be added; the first row has empty hostname and bad OsType
+        await _machineRepo.Received(1).AddAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ImportAsync_ShortRows_AreSkipped()
+    {
+        var csv = "Hostname,OsType,Protocol,Port,Fqdn\ntoo,few,cols\nserver1,Linux,Ssh,22,\n";
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
+
+        await _sut.ImportAsync(stream);
+
+        await _machineRepo.Received(1).AddAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
+    }
+
+    // ── DiscoverAsync ──
+
+    [Fact]
+    public async Task DiscoverAsync_ReachableHosts_ReturnsDiscoveredMachines()
+    {
+        _executor.TestConnectionAsync(Arg.Any<MachineTarget>(), Arg.Any<CancellationToken>())
+            .Returns(new ConnectionTestResult(true, OsType.Linux, "Ubuntu", TimeSpan.FromMilliseconds(5), null, null));
+
+        var result = await _sut.DiscoverAsync(CidrRange.Create("192.168.1.0/30"));
+
+        result.Should().NotBeEmpty();
+        result.Should().OnlyContain(m => m.State == MachineState.Online);
+    }
+
+    [Fact]
+    public async Task DiscoverAsync_NoReachableHosts_ReturnsEmpty()
+    {
+        _executor.TestConnectionAsync(Arg.Any<MachineTarget>(), Arg.Any<CancellationToken>())
+            .Returns(new ConnectionTestResult(false, null, null, TimeSpan.Zero, null, "Connection refused"));
+
+        var result = await _sut.DiscoverAsync(CidrRange.Create("10.0.0.0/30"));
+
+        result.Should().BeEmpty();
+    }
+
+    // ── RefreshMetadataAsync edge cases ──
+
+    [Fact]
+    public async Task RefreshMetadataAsync_FailedCommand_KeepsExistingHardware()
+    {
+        var id = Guid.NewGuid();
+        var machine = CreateMachine(id);
+        _machineRepo.GetByIdAsync(id, Arg.Any<CancellationToken>()).Returns(machine);
+        _executor.ExecuteAsync(Arg.Any<MachineTarget>(), Arg.Any<RemoteCommand>(), Arg.Any<CancellationToken>())
+            .Returns(new RemoteResult(1, "", "Connection refused", TimeSpan.FromSeconds(1), false));
+
+        var result = await _sut.RefreshMetadataAsync(id);
+
+        result.Hardware.Should().Be(machine.Hardware);
+    }
 }
