@@ -3,6 +3,11 @@ global:
   imageRegistry: ghcr.io/anticow
   imageTag: latest
   imagePullPolicy: IfNotPresent
+  imagePullSecret:
+    enabled: false
+    registry: ghcr.io
+    username: ""
+    password: ""  # GitHub PAT with read:packages scope
 
 # -- Namespace
 namespace: homemanagement
