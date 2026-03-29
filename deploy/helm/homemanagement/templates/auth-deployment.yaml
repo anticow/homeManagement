@@ -17,6 +17,10 @@ spec:
       labels:
         app: {{ $svcName }}
     spec:
+      {{- if .Values.global.imagePullSecret.enabled }}
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      {{- end }}
       containers:
         - name: auth
           image: {{ include "homemanagement.image" (dict "global" .Values.global "image" .Values.authService.image) }}
