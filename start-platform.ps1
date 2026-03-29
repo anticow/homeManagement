@@ -69,7 +69,7 @@ $services = @(
     @{ Name = 'Auth';           Container = 'docker-auth-1';       Url = 'http://localhost:8083/healthz' }
     @{ Name = 'Gateway';        Container = 'docker-gateway-1';    Url = 'http://localhost:8081/healthz' }
     @{ Name = 'Web';            Container = 'docker-web-1';        Url = 'http://localhost:8080/healthz' }
-    @{ Name = 'Agent Gateway';  Container = 'docker-agent-gw-1';   Url = 'http://localhost:9444/healthz' }
+    @{ Name = 'Agent Gateway';  Container = 'docker-agent-gw-1';   Url = 'http://localhost:9445/healthz' }
 )
 
 $timeout = 120
@@ -107,7 +107,7 @@ Write-Host "  Web UI:         http://localhost:8080" -ForegroundColor White
 Write-Host "  Gateway API:    http://localhost:8081" -ForegroundColor White
 Write-Host "  Broker API:     http://localhost:8082" -ForegroundColor White
 Write-Host "  Auth API:       http://localhost:8083" -ForegroundColor White
-Write-Host "  Agent Gateway:  http://localhost:9444" -ForegroundColor White
+Write-Host "  Agent Gateway:  grpc://localhost:9444 (gRPC), http://localhost:9445 (API)" -ForegroundColor White
 Write-Host "  Seq Logs:       http://localhost:5380" -ForegroundColor White
 Write-Host "  SQL Server:     localhost:1433" -ForegroundColor White
 Write-Host ''

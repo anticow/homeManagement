@@ -1,4 +1,5 @@
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 EXPOSE 8080
 
@@ -6,6 +7,7 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 COPY Directory.Build.props Directory.Packages.props ./
 COPY src/HomeManagement.Abstractions/HomeManagement.Abstractions.csproj src/HomeManagement.Abstractions/
+COPY src/HomeManagement.Data/HomeManagement.Data.csproj src/HomeManagement.Data/
 COPY src/HomeManagement.Auth/HomeManagement.Auth.csproj src/HomeManagement.Auth/
 COPY src/HomeManagement.Web/HomeManagement.Web.csproj src/HomeManagement.Web/
 RUN dotnet restore src/HomeManagement.Web/HomeManagement.Web.csproj

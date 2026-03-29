@@ -171,6 +171,6 @@ spec:
               service:
                 name: hm-agent-gw
                 port:
-                  number: {{ .Values.agentGateway.port }}
+                  number: {{ .Values.agentGateway.apiPort }}
 {{- end }}
 {{- end }}

@@ -85,7 +85,8 @@ agentGateway:
   image:
     repository: hm-agent-gw
     tag: ""
-  port: 9444
+  port: 9444       # gRPC (HTTP/2)
+  apiPort: 9445    # REST / health (HTTP/1.1)
   resources:
     requests:
       cpu: 250m

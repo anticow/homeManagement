@@ -1,0 +1,119 @@
+@page "/services"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using HomeManagement.Abstractions.Models
+@inject HomeManagement.Web.Services.IBrokerApi BrokerApi
+@inject NavigationManager Navigation
+
+<h1>Services</h1>
+
+<p>Select a machine to view its managed services.</p>
+
+@if (_loading)
+{
+    <p>Loading machines...</p>
+}
+else if (_machines is not null)
+{
+    <div>
+        <label for="machine-select">Machine:</label>
+        <select id="machine-select" @onchange="OnMachineSelected">
+            <option value="">-- Select a machine --</option>
+            @foreach (var m in _machines.Items)
+            {
+                <option value="@m.Id">@m.Hostname</option>
+            }
+        </select>
+    </div>
+
+    @if (_selectedMachineId is not null)
+    {
+        @if (_servicesLoading)
+        {
+            <p>Loading services...</p>
+        }
+        else if (_services is not null && _services.Count > 0)
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Display Name</th>
+                        <th>State</th>
+                        <th>Startup</th>
+                        <th>PID</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var svc in _services)
+                    {
+                        <tr>
+                            <td>@svc.Name</td>
+                            <td>@svc.DisplayName</td>
+                            <td>@svc.State</td>
+                            <td>@svc.StartupType</td>
+                            <td>@(svc.ProcessId?.ToString() ?? "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p>No services reported for this machine.</p>
+        }
+    }
+}
+else if (_errorMessage is not null)
+{
+    <p>@_errorMessage</p>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _servicesLoading;
+    private PagedResult<Machine>? _machines;
+    private Guid? _selectedMachineId;
+    private IReadOnlyList<ServiceInfo>? _services;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _machines = await BrokerApi.GetMachinesAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Unable to load machines: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnMachineSelected(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var id))
+        {
+            _selectedMachineId = id;
+            _servicesLoading = true;
+            try
+            {
+                _services = await BrokerApi.GetServicesAsync(id);
+            }
+            catch (Exception ex)
+            {
+                _errorMessage = $"Unable to load services: {ex.Message}";
+            }
+            finally
+            {
+                _servicesLoading = false;
+            }
+        }
+    }
+}
