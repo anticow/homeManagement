@@ -42,7 +42,7 @@ spec:
             - name: Auth__Audience
               value: {{ .Values.auth.audience | quote }}
             - name: AgentGateway__BaseUrl
-              value: "http://hm-agent-gw:{{ .Values.agentGateway.port }}"
+              value: "http://hm-agent-gw:{{ .Values.agentGateway.apiPort }}"
             - name: AgentGateway__ApiKey
               valueFrom:
                 secretKeyRef:

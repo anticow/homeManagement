@@ -1,0 +1,118 @@
+@page "/patching"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using HomeManagement.Abstractions.Models
+@inject HomeManagement.Web.Services.IBrokerApi BrokerApi
+@inject NavigationManager Navigation
+
+<h1>Patching</h1>
+
+<p>Select a machine to view patch history or initiate a scan.</p>
+
+@if (_loading)
+{
+    <p>Loading machines...</p>
+}
+else if (_machines is not null)
+{
+    <div>
+        <label for="machine-select">Machine:</label>
+        <select id="machine-select" @onchange="OnMachineSelected">
+            <option value="">-- Select a machine --</option>
+            @foreach (var m in _machines.Items)
+            {
+                <option value="@m.Id">@m.Hostname</option>
+            }
+        </select>
+    </div>
+
+    @if (_selectedMachineId is not null)
+    {
+        <h2>Patch History</h2>
+        @if (_historyLoading)
+        {
+            <p>Loading patch history...</p>
+        }
+        else if (_history is not null && _history.Count > 0)
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>Patch</th>
+                        <th>Title</th>
+                        <th>State</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var entry in _history)
+                    {
+                        <tr>
+                            <td>@entry.PatchId</td>
+                            <td>@entry.Title</td>
+                            <td>@entry.State</td>
+                            <td>@entry.TimestampUtc.ToString("g")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p>No patch history found for this machine.</p>
+        }
+    }
+}
+else if (_errorMessage is not null)
+{
+    <p>@_errorMessage</p>
+}
+
+@code {
+    private bool _loading = true;
+    private bool _historyLoading;
+    private PagedResult<Machine>? _machines;
+    private Guid? _selectedMachineId;
+    private IReadOnlyList<PatchHistoryEntry>? _history;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _machines = await BrokerApi.GetMachinesAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Unable to load machines: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnMachineSelected(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var id))
+        {
+            _selectedMachineId = id;
+            _historyLoading = true;
+            try
+            {
+                _history = await BrokerApi.GetPatchHistoryAsync(id);
+            }
+            catch (Exception ex)
+            {
+                _errorMessage = $"Unable to load patch history: {ex.Message}";
+            }
+            finally
+            {
+                _historyLoading = false;
+            }
+        }
+    }
+}

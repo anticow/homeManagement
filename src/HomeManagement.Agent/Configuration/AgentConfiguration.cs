@@ -13,6 +13,7 @@ public sealed class AgentConfiguration
     public string ApiKey { get; set; } = string.Empty;
 
     // ── Certificates ──
+    public bool UseTls { get; set; } = true;
     public string CertPath { get; set; } = "certs/agent.pfx";
     public string? CertPassword { get; set; }
     public string CaCertPath { get; set; } = "certs/ca.crt";

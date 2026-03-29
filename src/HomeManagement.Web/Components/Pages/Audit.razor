@@ -1,0 +1,77 @@
+@page "/audit"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using HomeManagement.Abstractions.Models
+@inject HomeManagement.Web.Services.IBrokerApi BrokerApi
+@inject NavigationManager Navigation
+
+<h1>Audit Log</h1>
+
+@if (_loading)
+{
+    <p>Loading audit events...</p>
+}
+else if (_errorMessage is not null)
+{
+    <p>@_errorMessage</p>
+}
+else if (_events is not null)
+{
+    @if (_events.Items.Count == 0)
+    {
+        <p>No audit events recorded.</p>
+    }
+    else
+    {
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Action</th>
+                    <th>Actor</th>
+                    <th>Target</th>
+                    <th>Outcome</th>
+                    <th>Detail</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var evt in _events.Items)
+                {
+                    <tr>
+                        <td>@evt.TimestampUtc.ToString("g")</td>
+                        <td>@evt.Action</td>
+                        <td>@evt.ActorIdentity</td>
+                        <td>@(evt.TargetMachineName ?? "—")</td>
+                        <td>@evt.Outcome</td>
+                        <td>@(evt.Detail ?? evt.ErrorMessage ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private bool _loading = true;
+    private PagedResult<AuditEvent>? _events;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _events = await BrokerApi.GetAuditEventsAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Unable to load audit events: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

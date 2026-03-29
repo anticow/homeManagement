@@ -27,17 +27,18 @@ services:
 
   broker:
     build:
-      context: ..
+      context: ../..
       dockerfile: docker/broker.Dockerfile
+    restart: on-failure:3
     ports:
       - "8082:8082"
     environment:
       ASPNETCORE_URLS: "http://+:8082"
-      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=HomeManagement_Dev1!;Encrypt=True;TrustServerCertificate=True;"
+      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=HomeManagement_Dev1!;Encrypt=True;TrustServerCertificate=True;Command Timeout=120;"
       Auth__JwtSigningKey: "dev-signing-key-at-least-32-characters-long!"
       Auth__Issuer: "homemanagement"
       Auth__Audience: "homemanagement-api"
-      AgentGateway__BaseUrl: "http://agent-gw:9444"
+      AgentGateway__BaseUrl: "http://agent-gw:9445"
       AgentGateway__ApiKey: "dev-agent-gateway-api-key"
       Seq__Url: "http://seq:5341"
     depends_on:
@@ -54,16 +55,22 @@ services:
 
   auth:
     build:
-      context: ..
+      context: ../..
       dockerfile: docker/auth.Dockerfile
+    restart: on-failure:3
     ports:
       - "8083:8083"
     environment:
       ASPNETCORE_URLS: "http://+:8083"
-      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=HomeManagement_Dev1!;Encrypt=True;TrustServerCertificate=True;"
+      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=HomeManagement_Dev1!;Encrypt=True;TrustServerCertificate=True;Command Timeout=120;"
       Auth__JwtSigningKey: "dev-signing-key-at-least-32-characters-long!"
       Auth__Issuer: "homemanagement"
       Auth__Audience: "homemanagement-api"
+      Auth__BootstrapAdmin__Enabled: "true"
+      Auth__BootstrapAdmin__Username: "admin"
+      Auth__BootstrapAdmin__Password: "admin"
+      Auth__BootstrapAdmin__DisplayName: "System Administrator"
+      Auth__BootstrapAdmin__Email: "admin@homemanagement.local"
       Seq__Url: "http://seq:5341"
     depends_on:
       sqlserver:
@@ -74,15 +81,15 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8083/healthz"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 10
+      start_period: 60s
 
   web:
     build:
-      context: ..
+      context: ../..
       dockerfile: docker/web.Dockerfile
     ports:
-      - "8080:8080"
+      - "8084:8080"
     environment:
       ASPNETCORE_URLS: "http://+:8080"
       BrokerApi__BaseUrl: "http://broker:8082"
@@ -102,7 +109,7 @@ services:
 
   gateway:
     build:
-      context: ..
+      context: ../..
       dockerfile: docker/gateway.Dockerfile
     ports:
       - "8081:8081"
@@ -126,19 +133,23 @@ services:
 
   agent-gw:
     build:
-      context: ..
+      context: ../..
       dockerfile: docker/agent-gw.Dockerfile
     ports:
       - "9444:9444"
+      - "9445:9445"
     environment:
-      ASPNETCORE_URLS: "http://+:9444"
+      Kestrel__Endpoints__Grpc__Url: "http://+:9444"
+      Kestrel__Endpoints__Grpc__Protocols: "Http2"
+      Kestrel__Endpoints__Health__Url: "http://+:9445"
+      Kestrel__Endpoints__Health__Protocols: "Http1"
       AgentGateway__ApiKey: "dev-agent-gateway-api-key"
       Seq__Url: "http://seq:5341"
     depends_on:
       seq:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9444/healthz"]
+      test: ["CMD", "curl", "-f", "http://localhost:9445/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5

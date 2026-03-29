@@ -1,0 +1,84 @@
+@page "/machines/{Id:guid}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using HomeManagement.Abstractions.Models
+@inject HomeManagement.Web.Services.IBrokerApi BrokerApi
+@inject NavigationManager Navigation
+
+@if (_loading)
+{
+    <p>Loading machine...</p>
+}
+else if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <h1>Machine</h1>
+    <p class="error">@_errorMessage</p>
+    <p><a href="/machines">&larr; Back to Machines</a></p>
+}
+else if (_machine is not null)
+{
+    <h1>@_machine.Hostname</h1>
+    <p><a href="/machines">&larr; Back to Machines</a></p>
+
+    <table>
+        <tbody>
+            <tr><td><strong>ID</strong></td><td>@_machine.Id</td></tr>
+            <tr><td><strong>Hostname</strong></td><td>@_machine.Hostname</td></tr>
+            @if (!string.IsNullOrEmpty(_machine.Fqdn))
+            {
+                <tr><td><strong>FQDN</strong></td><td>@_machine.Fqdn</td></tr>
+            }
+            <tr><td><strong>OS</strong></td><td>@_machine.OsType</td></tr>
+            <tr><td><strong>OS Version</strong></td><td>@_machine.OsVersion</td></tr>
+            <tr><td><strong>State</strong></td><td>@_machine.State</td></tr>
+            <tr><td><strong>Connection Mode</strong></td><td>@_machine.ConnectionMode</td></tr>
+            <tr><td><strong>Protocol</strong></td><td>@_machine.Protocol</td></tr>
+            <tr><td><strong>Created</strong></td><td>@_machine.CreatedUtc.ToString("g")</td></tr>
+            <tr><td><strong>Last Contact</strong></td><td>@_machine.LastContactUtc.ToString("g")</td></tr>
+        </tbody>
+    </table>
+
+    @if (_machine.Tags.Count > 0)
+    {
+        <h2>Tags</h2>
+        <table>
+            <thead>
+                <tr><th>Key</th><th>Value</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var tag in _machine.Tags)
+                {
+                    <tr><td>@tag.Key</td><td>@tag.Value</td></tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private bool _loading = true;
+    private Machine? _machine;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _machine = await BrokerApi.GetMachineAsync(Id);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Unable to load machine: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

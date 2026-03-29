@@ -71,6 +71,13 @@ public sealed class MachineRepository : IMachineRepository
     public Task UpdateAsync(Machine machine, CancellationToken ct = default)
     {
         var entity = ToEntity(machine);
+
+        // Detach any previously tracked instance with the same key to avoid identity conflicts
+        var tracked = _db.ChangeTracker.Entries<MachineEntity>()
+            .FirstOrDefault(e => e.Entity.Id == entity.Id);
+        if (tracked is not null)
+            tracked.State = Microsoft.EntityFrameworkCore.EntityState.Detached;
+
         _db.Machines.Update(entity);
         return Task.CompletedTask;
     }

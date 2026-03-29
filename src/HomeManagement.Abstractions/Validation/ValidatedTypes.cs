@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace HomeManagement.Abstractions.Validation;
@@ -5,6 +7,7 @@ namespace HomeManagement.Abstractions.Validation;
 /// <summary>
 /// A validated hostname. Constructed via <see cref="TryCreate"/> — invalid values are rejected at parse time.
 /// </summary>
+[JsonConverter(typeof(HostnameJsonConverter))]
 public readonly partial struct Hostname : IEquatable<Hostname>
 {
     // RFC 1123: letters, digits, hyphens, dots. Max 253 chars.
@@ -61,6 +64,7 @@ public readonly partial struct Hostname : IEquatable<Hostname>
 /// <summary>
 /// A validated service name. Rejects empty, overly long, or shell-injection-prone values.
 /// </summary>
+[JsonConverter(typeof(ServiceNameJsonConverter))]
 public readonly partial struct ServiceName : IEquatable<ServiceName>
 {
     // Allow alphanumeric, hyphens, underscores, dots, @. No shell metacharacters.
@@ -164,4 +168,82 @@ public readonly partial struct CidrRange : IEquatable<CidrRange>
     public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(Value);
     public static bool operator ==(CidrRange left, CidrRange right) => left.Equals(right);
     public static bool operator !=(CidrRange left, CidrRange right) => !left.Equals(right);
+}
+
+/// <summary>
+/// Serializes <see cref="Hostname"/> as a plain JSON string, and deserializes
+/// from either a string or an object with a "value" property.
+/// </summary>
+internal sealed class HostnameJsonConverter : JsonConverter<Hostname>
+{
+    public override Hostname Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+            return Hostname.Create(reader.GetString() ?? string.Empty);
+
+        if (reader.TokenType == JsonTokenType.StartObject)
+        {
+            string? value = null;
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+            {
+                if (reader.TokenType == JsonTokenType.PropertyName &&
+                    string.Equals(reader.GetString(), "value", StringComparison.OrdinalIgnoreCase))
+                {
+                    reader.Read();
+                    value = reader.GetString();
+                }
+                else if (reader.TokenType != JsonTokenType.PropertyName)
+                {
+                    reader.Skip();
+                }
+            }
+            return Hostname.Create(value ?? string.Empty);
+        }
+
+        throw new JsonException($"Unexpected token {reader.TokenType} when reading Hostname.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, Hostname value, JsonSerializerOptions options)
+    {
+        writer.WriteStringValue(value.Value);
+    }
+}
+
+/// <summary>
+/// Serializes <see cref="ServiceName"/> as a plain JSON string, and deserializes
+/// from either a string or an object with a "value" property.
+/// </summary>
+internal sealed class ServiceNameJsonConverter : JsonConverter<ServiceName>
+{
+    public override ServiceName Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+            return ServiceName.Create(reader.GetString() ?? string.Empty);
+
+        if (reader.TokenType == JsonTokenType.StartObject)
+        {
+            string? value = null;
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+            {
+                if (reader.TokenType == JsonTokenType.PropertyName &&
+                    string.Equals(reader.GetString(), "value", StringComparison.OrdinalIgnoreCase))
+                {
+                    reader.Read();
+                    value = reader.GetString();
+                }
+                else if (reader.TokenType != JsonTokenType.PropertyName)
+                {
+                    reader.Skip();
+                }
+            }
+            return ServiceName.Create(value ?? string.Empty);
+        }
+
+        throw new JsonException($"Unexpected token {reader.TokenType} when reading ServiceName.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, ServiceName value, JsonSerializerOptions options)
+    {
+        writer.WriteStringValue(value.Value);
+    }
 }

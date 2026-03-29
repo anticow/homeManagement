@@ -1,0 +1,81 @@
+@page "/jobs"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using HomeManagement.Abstractions.Models
+@inject HomeManagement.Web.Services.IBrokerApi BrokerApi
+@inject NavigationManager Navigation
+
+<h1>Jobs</h1>
+
+@if (_loading)
+{
+    <p>Loading jobs...</p>
+}
+else if (_errorMessage is not null)
+{
+    <p>@_errorMessage</p>
+}
+else if (_jobs is not null)
+{
+    @if (_jobs.Items.Count == 0)
+    {
+        <p>No jobs found.</p>
+    }
+    else
+    {
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>State</th>
+                    <th>Submitted</th>
+                    <th>Completed</th>
+                    <th>Targets</th>
+                    <th>Success</th>
+                    <th>Failed</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var job in _jobs.Items)
+                {
+                    <tr>
+                        <td>@job.Name</td>
+                        <td>@job.Type</td>
+                        <td>@job.State</td>
+                        <td>@job.SubmittedUtc.ToString("g")</td>
+                        <td>@(job.CompletedUtc?.ToString("g") ?? "—")</td>
+                        <td>@job.TotalTargets</td>
+                        <td>@job.SuccessCount</td>
+                        <td>@job.FailCount</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private bool _loading = true;
+    private PagedResult<JobSummary>? _jobs;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _jobs = await BrokerApi.GetJobsAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Unable to load jobs: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

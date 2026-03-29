@@ -67,6 +67,10 @@ spec:
       targetPort: grpc
       protocol: TCP
       name: grpc
+    - port: {{ .Values.agentGateway.apiPort }}
+      targetPort: api
+      protocol: TCP
+      name: api
 ---
 apiVersion: v1
 kind: Service

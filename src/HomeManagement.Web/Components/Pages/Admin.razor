@@ -1,0 +1,79 @@
+@page "/admin/users"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@using HomeManagement.Auth
+@inject HomeManagement.Web.Services.IAdminApi AdminApi
+@inject NavigationManager Navigation
+
+<h1>User Administration</h1>
+
+@if (_loading)
+{
+    <p>Loading users...</p>
+}
+else if (_errorMessage is not null)
+{
+    <p>@_errorMessage</p>
+}
+else if (_users is not null)
+{
+    @if (_users.Count == 0)
+    {
+        <p>No users found.</p>
+    }
+    else
+    {
+        <table>
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Display Name</th>
+                    <th>Email</th>
+                    <th>Provider</th>
+                    <th>Roles</th>
+                    <th>Created</th>
+                    <th>Last Login</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in _users)
+                {
+                    <tr>
+                        <td>@user.Username</td>
+                        <td>@user.DisplayName</td>
+                        <td>@user.Email</td>
+                        <td>@user.Provider</td>
+                        <td>@string.Join(", ", user.Roles)</td>
+                        <td>@user.CreatedUtc.ToString("g")</td>
+                        <td>@(user.LastLoginUtc?.ToString("g") ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private bool _loading = true;
+    private IReadOnlyList<AuthUser>? _users;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _users = await AdminApi.GetUsersAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Unable to load users: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

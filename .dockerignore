@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+**/node_modules/
+**/.vs/
+**/TestResults/
+tests/
+docs/
+certs/
+*.md
+*.sln.DotSettings

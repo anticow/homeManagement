@@ -24,9 +24,17 @@ spec:
           ports:
             - containerPort: {{ .Values.agentGateway.port }}
               name: grpc
+            - containerPort: {{ .Values.agentGateway.apiPort }}
+              name: api
           env:
-            - name: ASPNETCORE_URLS
+            - name: Kestrel__Endpoints__Grpc__Url
               value: "http://+:{{ .Values.agentGateway.port }}"
+            - name: Kestrel__Endpoints__Grpc__Protocols
+              value: "Http2"
+            - name: Kestrel__Endpoints__Health__Url
+              value: "http://+:{{ .Values.agentGateway.apiPort }}"
+            - name: Kestrel__Endpoints__Health__Protocols
+              value: "Http1"
             - name: AgentGateway__ApiKey
               valueFrom:
                 secretKeyRef:

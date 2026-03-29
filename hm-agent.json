@@ -1,10 +1,11 @@
 {
   "Agent": {
-    "ControlServer": "localhost:9444",
+    "ControlServer": "agentgw.cowgomu.net:443",
     "AgentId": "",
-    "ApiKey": "",
-    "CertPath": "certs/agent.pfx",
-    "CaCertPath": "certs/ca.crt",
+    "ApiKey": "dev-agent-gateway-api-key",
+    "UseTls": true,
+    "CertPath": "",
+    "CaCertPath": "",
     "HeartbeatIntervalSeconds": 30,
     "MaxConcurrentCommands": 5,
     "LogLevel": "Information"

@@ -4,11 +4,16 @@
 
 @code {
     [Inject] private HomeManagement.Web.Services.IWebSessionAuthService AuthService { get; set; } = default!;
+    [Inject] private HomeManagement.Web.Services.AuthStateProvider AuthStateProvider { get; set; } = default!;
     [Inject] private NavigationManager Navigation { get; set; } = default!;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await AuthService.LogoutAsync();
-        Navigation.NavigateTo("/login");
+        if (firstRender)
+        {
+            await AuthStateProvider.ClearPersistedSessionAsync();
+            await AuthService.LogoutAsync();
+            Navigation.NavigateTo("/login");
+        }
     }
 }

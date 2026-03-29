@@ -21,6 +21,7 @@
 @code {
     [Inject] private HomeManagement.Web.Services.IWebSessionAuthService AuthService { get; set; } = default!;
     [Inject] private HomeManagement.Web.Services.ServerSessionState SessionState { get; set; } = default!;
+    [Inject] private HomeManagement.Web.Services.AuthStateProvider AuthStateProvider { get; set; } = default!;
     [Inject] private NavigationManager Navigation { get; set; } = default!;
 
     private string Username { get; set; } = string.Empty;
@@ -62,6 +63,7 @@
                 return;
             }
 
+            await AuthStateProvider.PersistSessionAsync();
             Navigation.NavigateTo("/");
         }
         finally
