@@ -31,5 +31,5 @@ Generate Docker config JSON for imagePullSecret.
 {{- $username := .Values.global.imagePullSecret.username -}}
 {{- $password := .Values.global.imagePullSecret.password -}}
 {{- $auth := printf "%s:%s" $username $password | b64enc -}}
-{"auths":{{{ $registry | quote }}:{"username":{{ $username | quote }},"password":{{ $password | quote }},"auth":{{ $auth | quote }}}}}
+{{- printf "{\"auths\":{\"%s\":{\"username\":\"%s\",\"password\":\"%s\",\"auth\":\"%s\"}}}" $registry $username $password $auth -}}
 {{- end -}}
