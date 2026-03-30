@@ -32,8 +32,26 @@ internal sealed class AgentAutoRegistrationHostedService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Ensure the gateway client is polling for connected agents
-        await _gateway.StartAsync(stoppingToken);
+        // Wait for the agent gateway to become available (handles startup ordering)
+        const int maxRetries = 30;
+        for (var attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                await _gateway.StartAsync(stoppingToken);
+                break;
+            }
+            catch (HttpRequestException ex) when (!stoppingToken.IsCancellationRequested)
+            {
+                if (attempt == maxRetries)
+                    throw;
+
+                _logger.LogWarning(ex,
+                    "Agent gateway not reachable (attempt {Attempt}/{Max}), retrying in {Delay}s",
+                    attempt, maxRetries, attempt * 2);
+                await Task.Delay(TimeSpan.FromSeconds(attempt * 2), stoppingToken);
+            }
+        }
 
         // Wait briefly for the first poll to complete
         await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken);

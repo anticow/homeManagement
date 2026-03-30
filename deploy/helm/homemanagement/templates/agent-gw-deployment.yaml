@@ -49,12 +49,14 @@ spec:
           resources:
             {{- toYaml .Values.agentGateway.resources | nindent 12 }}
           livenessProbe:
-            grpc:
-              port: {{ .Values.agentGateway.port }}
+            httpGet:
+              path: /healthz
+              port: {{ .Values.agentGateway.apiPort }}
             initialDelaySeconds: 10
             periodSeconds: 30
           readinessProbe:
-            grpc:
-              port: {{ .Values.agentGateway.port }}
+            httpGet:
+              path: /readyz
+              port: {{ .Values.agentGateway.apiPort }}
             initialDelaySeconds: 5
             periodSeconds: 10
