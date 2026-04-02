@@ -26,6 +26,12 @@ auth:
   jwtSigningKey: ""  # Required — 64+ character random string
   issuer: "homemanagement"
   audience: "homemanagement-api"
+  bootstrapAdmin:
+    enabled: false
+    username: "admin"
+    password: ""  # Set to seed a first-run admin account
+    displayName: "System Administrator"
+    email: "admin@homemanagement.local"
 
 # -- Broker service
 broker:
