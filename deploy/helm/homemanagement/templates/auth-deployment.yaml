@@ -47,6 +47,21 @@ spec:
               value: {{ .Values.auth.audience | quote }}
             - name: Seq__Url
               value: {{ .Values.seq.url | quote }}
+            {{- if .Values.auth.bootstrapAdmin.enabled }}
+            - name: Auth__BootstrapAdmin__Enabled
+              value: "true"
+            - name: Auth__BootstrapAdmin__Username
+              value: {{ .Values.auth.bootstrapAdmin.username | quote }}
+            - name: Auth__BootstrapAdmin__Password
+              valueFrom:
+                secretKeyRef:
+                  name: hm-secrets
+                  key: bootstrap-admin-password
+            - name: Auth__BootstrapAdmin__DisplayName
+              value: {{ .Values.auth.bootstrapAdmin.displayName | quote }}
+            - name: Auth__BootstrapAdmin__Email
+              value: {{ .Values.auth.bootstrapAdmin.email | quote }}
+            {{- end }}
           resources:
             {{- toYaml .Values.authService.resources | nindent 12 }}
           livenessProbe:
