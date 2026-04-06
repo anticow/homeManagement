@@ -17,6 +17,10 @@
     <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Extensions.Logging" />
+  <PackageReference Include="Serilog.Sinks.Console" />
+  <PackageReference Include="Serilog.Sinks.File" />
     <ProjectReference Include="..\HomeManagement.Auth\HomeManagement.Auth.csproj" />
     <ProjectReference Include="..\HomeManagement.Data.SqlServer\HomeManagement.Data.SqlServer.csproj" />
   </ItemGroup>
