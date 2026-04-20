@@ -22,6 +22,20 @@ env:
   HELM_VERSION: '3.17.2'
 
 jobs:
+  security-guards:
+    name: Security Guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run host logging guard
+        shell: pwsh
+        run: |
+          & pwsh -NoProfile -File ./scripts/Test-HostLoggingGuards.ps1
+
   build-and-test:
     name: Build & Test
     runs-on: ubuntu-latest
@@ -94,6 +108,33 @@ jobs:
 
       - name: Check formatting
         run: dotnet format --verify-no-changes --verbosity diagnostic
+
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Scan for vulnerable NuGet packages
+        run: |
+          dotnet list package --vulnerable --include-transitive 2>&1 | tee /tmp/vuln-report.txt
+          if grep -q "has the following vulnerable packages" /tmp/vuln-report.txt; then
+            echo "::error::Vulnerable NuGet packages detected. Review /tmp/vuln-report.txt"
+            grep -A5 "has the following vulnerable packages" /tmp/vuln-report.txt
+            exit 1
+          fi
+          echo "No vulnerable packages found."
 
   helm-validate:
     name: Helm Validate
@@ -170,7 +211,7 @@ jobs:
     name: Platform Smoke Tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [build-and-test, docker-build-validate]
+    needs: [security-guards, build-and-test, docker-build-validate]
 
     steps:
       - name: Checkout
@@ -183,9 +224,27 @@ jobs:
 
       - name: Build platform images
         run: docker compose -f deploy/docker/docker-compose.yaml build
+        env:
+          HM_SQL_SA_PASSWORD: ${{ secrets.HM_SQL_SA_PASSWORD }}
+          HM_JWT_SIGNING_KEY: ${{ secrets.HM_JWT_SIGNING_KEY }}
+          HM_AUDIT_HMAC_KEY: ${{ secrets.HM_AUDIT_HMAC_KEY }}
+          HM_AGENT_GATEWAY_API_KEY: ${{ secrets.HM_AGENT_GATEWAY_API_KEY }}
+          HM_SEQ_ADMIN_PASSWORD: ${{ secrets.HM_SEQ_ADMIN_PASSWORD }}
+          HM_BOOTSTRAP_ADMIN_ENABLED: "false"
+          HM_BOOTSTRAP_ADMIN_USERNAME: "ci-admin"
+          HM_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.HM_BOOTSTRAP_ADMIN_PASSWORD }}
 
       - name: Start platform stack
         run: docker compose -f deploy/docker/docker-compose.yaml up -d
+        env:
+          HM_SQL_SA_PASSWORD: ${{ secrets.HM_SQL_SA_PASSWORD }}
+          HM_JWT_SIGNING_KEY: ${{ secrets.HM_JWT_SIGNING_KEY }}
+          HM_AUDIT_HMAC_KEY: ${{ secrets.HM_AUDIT_HMAC_KEY }}
+          HM_AGENT_GATEWAY_API_KEY: ${{ secrets.HM_AGENT_GATEWAY_API_KEY }}
+          HM_SEQ_ADMIN_PASSWORD: ${{ secrets.HM_SEQ_ADMIN_PASSWORD }}
+          HM_BOOTSTRAP_ADMIN_ENABLED: "true"
+          HM_BOOTSTRAP_ADMIN_USERNAME: "ci-admin"
+          HM_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.HM_BOOTSTRAP_ADMIN_PASSWORD }}
 
       - name: Wait for services to be healthy
         run: |
@@ -203,6 +262,9 @@ jobs:
           docker compose -f deploy/docker/docker-compose.yaml ps
 
       - name: Run platform smoke tests
+        env:
+          HM_BOOTSTRAP_ADMIN_USERNAME: "ci-admin"
+          HM_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.HM_BOOTSTRAP_ADMIN_PASSWORD }}
         run: >-
           dotnet test
           tests/HomeManagement.Platform.Tests
@@ -226,3 +288,12 @@ jobs:
       - name: Stop platform stack
         if: always()
         run: docker compose -f deploy/docker/docker-compose.yaml down -v
+        env:
+          HM_SQL_SA_PASSWORD: ${{ secrets.HM_SQL_SA_PASSWORD }}
+          HM_JWT_SIGNING_KEY: ${{ secrets.HM_JWT_SIGNING_KEY }}
+          HM_AUDIT_HMAC_KEY: ${{ secrets.HM_AUDIT_HMAC_KEY }}
+          HM_AGENT_GATEWAY_API_KEY: ${{ secrets.HM_AGENT_GATEWAY_API_KEY }}
+          HM_SEQ_ADMIN_PASSWORD: ${{ secrets.HM_SEQ_ADMIN_PASSWORD }}
+          HM_BOOTSTRAP_ADMIN_ENABLED: "false"
+          HM_BOOTSTRAP_ADMIN_USERNAME: "ci-admin"
+          HM_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.HM_BOOTSTRAP_ADMIN_PASSWORD }}

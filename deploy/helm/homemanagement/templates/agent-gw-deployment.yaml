@@ -44,6 +44,11 @@ spec:
                 secretKeyRef:
                   name: hm-secrets
                   key: agent-gateway-api-key
+            - name: AgentGateway__AgentApiKeysJson
+              valueFrom:
+                secretKeyRef:
+                  name: hm-secrets
+                  key: agent-gateway-agent-api-keys.json
             - name: Seq__Url
               value: {{ .Values.seq.url | quote }}
           resources:

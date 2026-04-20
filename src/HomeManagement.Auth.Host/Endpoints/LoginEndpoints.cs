@@ -10,7 +10,8 @@ public static class LoginEndpoints
     public static void MapLoginEndpoints(this WebApplication app)
     {
         app.MapPost("/api/auth/login", HandleLogin)
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .RequireRateLimiting("login");
     }
 
     private static async Task<IResult> HandleLogin(

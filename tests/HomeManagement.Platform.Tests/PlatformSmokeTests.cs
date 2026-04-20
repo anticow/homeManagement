@@ -31,7 +31,7 @@ public sealed class PlatformSmokeTests : IAsyncLifetime, IDisposable
         _authUrl = $"{baseHost}:8083";
         _gatewayUrl = $"{baseHost}:8081";
         _webUrl = $"{baseHost}:8084";
-        _agentGwUrl = $"{baseHost}:9444";
+        _agentGwUrl = $"{baseHost}:9445"; // 9444=gRPC, 9445=HTTP/1 health endpoint
     }
 
     public Task InitializeAsync() => Task.CompletedTask;
@@ -117,10 +117,14 @@ public sealed class PlatformSmokeTests : IAsyncLifetime, IDisposable
     [Fact]
     public async Task Auth_Login_WithDefaultAdmin_ReturnsToken()
     {
+        // Read bootstrap credentials from env (set by New-Secrets.ps1 / CI secrets)
+        var adminUser = Environment.GetEnvironmentVariable("HM_BOOTSTRAP_ADMIN_USERNAME") ?? "admin";
+        var adminPass = Environment.GetEnvironmentVariable("HM_BOOTSTRAP_ADMIN_PASSWORD") ?? "admin";
+
         var response = await _http.PostAsJsonAsync($"{_authUrl}/api/auth/login", new
         {
-            username = "admin",
-            password = "admin",
+            username = adminUser,
+            password = adminPass,
             provider = 0
         });
 

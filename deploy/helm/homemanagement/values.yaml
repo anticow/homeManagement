@@ -91,7 +91,8 @@ web:
 # -- Agent Gateway (gRPC)
 agentGateway:
   replicaCount: 1
-  apiKey: ""  # Required — shared with HomeManagement.Agent clients
+  apiKey: ""  # Required — shared with Broker/internal control-plane clients
+  agentApiKeysJson: "{}"  # Required for agent gRPC auth — JSON object mapping agentId -> API key
   serviceType: ClusterIP
   image:
     repository: hm-agent-gw

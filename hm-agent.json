@@ -1,8 +1,8 @@
 {
   "Agent": {
-    "ControlServer": "agentgw.cowgomu.net:443",
+    "ControlServer": "localhost:9444",
     "AgentId": "",
-    "ApiKey": "dev-agent-gateway-api-key",
+    "ApiKey": "",
     "UseTls": true,
     "CertPath": "",
     "CaCertPath": "",

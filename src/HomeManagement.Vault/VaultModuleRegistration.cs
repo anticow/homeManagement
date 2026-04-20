@@ -10,6 +10,7 @@ public sealed class VaultModuleRegistration : IModuleRegistration
 
     public void Register(IServiceCollection services)
     {
+        services.AddOptions<VaultOptions>();
         services.AddSingleton<ICredentialVault, CredentialVaultService>();
     }
 }

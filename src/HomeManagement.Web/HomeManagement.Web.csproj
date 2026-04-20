@@ -22,5 +22,6 @@
   <ItemGroup>
     <ProjectReference Include="..\HomeManagement.Auth\HomeManagement.Auth.csproj" />
     <ProjectReference Include="..\HomeManagement.Abstractions\HomeManagement.Abstractions.csproj" />
+    <ProjectReference Include="..\HomeManagement.Core\HomeManagement.Core.csproj" />
   </ItemGroup>
 </Project>

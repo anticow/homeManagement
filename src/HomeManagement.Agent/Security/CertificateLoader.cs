@@ -54,13 +54,16 @@ public sealed class CertificateLoader
     /// </summary>
     public X509Certificate2 LoadCaCertificate()
     {
-        var fullPath = Path.GetFullPath(_config.CaCertPath);
-        if (!File.Exists(fullPath))
-            throw new FileNotFoundException($"CA certificate not found at '{fullPath}'.");
+        return LoadCertificate(_config.CaCertPath, "CA certificate");
+    }
 
-        var cert = new X509Certificate2(fullPath);
-        _logger.LogInformation("Loaded CA certificate: Subject={Subject}", cert.Subject);
-        return cert;
+    public X509Certificate2 LoadServerCaCertificate()
+    {
+        var path = string.IsNullOrWhiteSpace(_config.ServerCaCertPath)
+            ? _config.CaCertPath
+            : _config.ServerCaCertPath;
+
+        return LoadCertificate(path, "server CA certificate");
     }
 
     /// <summary>
@@ -86,5 +89,16 @@ public sealed class CertificateLoader
         }
 
         return isValid;
+    }
+
+    private X509Certificate2 LoadCertificate(string path, string description)
+    {
+        var fullPath = Path.GetFullPath(path);
+        if (!File.Exists(fullPath))
+            throw new FileNotFoundException($"{description} not found at '{fullPath}'.");
+
+        var certificate = new X509Certificate2(fullPath);
+        _logger.LogInformation("Loaded {Description}: Subject={Subject}", description, certificate.Subject);
+        return certificate;
     }
 }
