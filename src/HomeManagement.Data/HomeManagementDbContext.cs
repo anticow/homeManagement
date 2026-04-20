@@ -24,6 +24,11 @@ public class HomeManagementDbContext : DbContext
     public DbSet<AuthUserRoleEntity> AuthUserRoles => Set<AuthUserRoleEntity>();
     public DbSet<AuthRefreshTokenEntity> AuthRefreshTokens => Set<AuthRefreshTokenEntity>();
 
+    public DbSet<AutomationRunEntity> AutomationRuns => Set<AutomationRunEntity>();
+    public DbSet<AutomationRunStepEntity> AutomationRunSteps => Set<AutomationRunStepEntity>();
+    public DbSet<AutomationMachineResultEntity> AutomationMachineResults => Set<AutomationMachineResultEntity>();
+    public DbSet<AutomationPlanEntity> AutomationPlans => Set<AutomationPlanEntity>();
+
     /// <summary>
     /// Intercept save to enforce audit event immutability — audit records
     /// must never be modified or deleted to preserve HMAC chain integrity.
@@ -114,9 +119,11 @@ public class HomeManagementDbContext : DbContext
             e.HasIndex(a => a.Action);
             e.HasIndex(a => new { a.Action, a.Outcome });                // "all successful patch installs"
             e.HasIndex(a => new { a.TargetMachineId, a.TimestampUtc });  // "audit trail for machine X"
+            e.HasIndex(a => a.ChainVersion);                             // "query only v1 HMAC chain events"
             e.Property(a => a.Action).HasConversion<string>();
             e.Property(a => a.Outcome).HasConversion<string>();
             e.Property(a => a.PropertiesJson).HasColumnName("Properties");
+            e.Property(a => a.ChainVersion).HasDefaultValue(0);
         });
 
         // ── Jobs ──
@@ -200,6 +207,38 @@ public class HomeManagementDbContext : DbContext
             e.HasKey(t => t.Id);
             e.HasIndex(t => t.TokenHash).IsUnique();
             e.HasIndex(t => new { t.UserId, t.ExpiresUtc });
+        });
+
+        // ── Automation Runs ──
+        modelBuilder.Entity<AutomationRunEntity>(e =>
+        {
+            e.HasKey(a => a.Id);
+            e.HasIndex(a => a.StartedUtc);
+            e.HasIndex(a => a.WorkflowType);
+            e.HasIndex(a => a.State);
+            e.HasIndex(a => a.CorrelationId);
+            e.Property(a => a.State).HasConversion<string>();
+            e.HasMany(a => a.Steps).WithOne(s => s.Run).HasForeignKey(s => s.RunId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(a => a.MachineResults).WithOne(r => r.Run).HasForeignKey(r => r.RunId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── Automation Run Steps ──
+        modelBuilder.Entity<AutomationRunStepEntity>(e =>
+        {
+            e.HasKey(s => s.Id);
+            e.HasIndex(s => s.RunId);
+            e.HasIndex(s => new { s.RunId, s.StepName });
+            e.Property(s => s.State).HasConversion<string>();
+        });
+
+        // ── Automation Machine Results ──
+        modelBuilder.Entity<AutomationMachineResultEntity>(e =>
+        {
+            e.HasKey(r => r.Id);
+            e.HasIndex(r => r.RunId);
+            e.HasIndex(r => r.MachineId);
+            e.HasIndex(r => new { r.RunId, r.MachineId });
+            e.HasIndex(r => new { r.RunId, r.Success });
         });
     }
 }

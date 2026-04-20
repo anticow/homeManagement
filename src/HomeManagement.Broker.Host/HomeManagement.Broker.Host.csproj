@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Sinks.Seq" />
     <PackageReference Include="Serilog.Enrichers.Thread" />
@@ -28,5 +29,7 @@
     <ProjectReference Include="..\HomeManagement.Inventory\HomeManagement.Inventory.csproj" />
     <ProjectReference Include="..\HomeManagement.Auditing\HomeManagement.Auditing.csproj" />
     <ProjectReference Include="..\HomeManagement.Orchestration\HomeManagement.Orchestration.csproj" />
+    <ProjectReference Include="..\HomeManagement.Automation\HomeManagement.Automation.csproj" />
+    <ProjectReference Include="..\HomeManagement.AI.Ollama\HomeManagement.AI.Ollama.csproj" />
   </ItemGroup>
 </Project>

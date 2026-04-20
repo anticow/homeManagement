@@ -5,6 +5,7 @@ using HomeManagement.Abstractions.Interfaces;
 using HomeManagement.Abstractions.Models;
 using HomeManagement.Abstractions.Repositories;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace HomeManagement.Auditing.Tests;
@@ -16,6 +17,13 @@ public sealed class AuditLoggerServiceTests
     private readonly ICorrelationContext _correlation = Substitute.For<ICorrelationContext>();
     private readonly AuditLoggerService _sut;
 
+    // A deterministic 32-byte HMAC key for tests (not a real secret)
+    private static readonly byte[] TestHmacKey = new byte[32];
+    private static IOptions<AuditOptions> TestOptions => Options.Create(new AuditOptions
+    {
+        HmacKey = Convert.ToBase64String(TestHmacKey)
+    });
+
     public AuditLoggerServiceTests()
     {
         _correlation.CorrelationId.Returns("test-corr");
@@ -24,7 +32,7 @@ public sealed class AuditLoggerServiceTests
             .Returns(ci => ci.Arg<IReadOnlyDictionary<string, string>?>());
         _repo.GetLastEventHashAsync(Arg.Any<CancellationToken>()).Returns((string?)null);
 
-        _sut = new AuditLoggerService(_repo, _filter, _correlation, NullLogger<AuditLoggerService>.Instance);
+        _sut = new AuditLoggerService(_repo, _filter, _correlation, NullLogger<AuditLoggerService>.Instance, TestOptions);
     }
 
     [Fact]
@@ -34,7 +42,7 @@ public sealed class AuditLoggerServiceTests
 
         await _sut.RecordAsync(evt);
 
-        await _repo.Received(1).AddAsync(Arg.Any<AuditEvent>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _repo.Received(1).AddAsync(Arg.Any<AuditEvent>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
         await _repo.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -48,7 +56,7 @@ public sealed class AuditLoggerServiceTests
 
         await _repo.Received(1).AddAsync(
             Arg.Is<AuditEvent>(e => e.Detail == "[REDACTED]"),
-            Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -59,7 +67,7 @@ public sealed class AuditLoggerServiceTests
 
         await _repo.Received(1).AddAsync(
             Arg.Is<AuditEvent>(e => e.CorrelationId == "test-corr"),
-            Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -70,7 +78,7 @@ public sealed class AuditLoggerServiceTests
 
         await _repo.Received(1).AddAsync(
             Arg.Is<AuditEvent>(e => e.CorrelationId == "existing-id"),
-            Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -82,7 +90,7 @@ public sealed class AuditLoggerServiceTests
         await _repo.Received(1).AddAsync(
             Arg.Any<AuditEvent>(), Arg.Any<string?>(),
             Arg.Is<string>(hash => !string.IsNullOrEmpty(hash)),
-            Arg.Any<CancellationToken>());
+            Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -96,7 +104,36 @@ public sealed class AuditLoggerServiceTests
         await _repo.Received(1).AddAsync(
             Arg.Any<AuditEvent>(), Arg.Is<string?>(h => h == "abc123"),
             Arg.Is<string>(hash => !string.IsNullOrEmpty(hash)),
-            Arg.Any<CancellationToken>());
+            Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RecordAsync_ChainVersion_IsOne()
+    {
+        var evt = CreateAuditEvent();
+        await _sut.RecordAsync(evt);
+
+        await _repo.Received(1).AddAsync(
+            Arg.Any<AuditEvent>(), Arg.Any<string?>(), Arg.Any<string>(),
+            Arg.Is<int>(v => v == 1), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void ComputeEventHash_IsDeterministic()
+    {
+        var evt = CreateAuditEvent();
+        var hash1 = AuditLoggerService.ComputeEventHash(evt, "prev", TestHmacKey);
+        var hash2 = AuditLoggerService.ComputeEventHash(evt, "prev", TestHmacKey);
+        hash1.Should().Be(hash2);
+    }
+
+    [Fact]
+    public void ComputeEventHash_DiffersByPreviousHash()
+    {
+        var evt = CreateAuditEvent();
+        var hash1 = AuditLoggerService.ComputeEventHash(evt, null, TestHmacKey);
+        var hash2 = AuditLoggerService.ComputeEventHash(evt, "different", TestHmacKey);
+        hash1.Should().NotBe(hash2);
     }
 
     [Fact]

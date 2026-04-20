@@ -54,6 +54,56 @@ public sealed class WebBrokerAgentEndToEndTests
     private const string AdminPassword = "HomeManagement_TestAdmin1!";
 
     [Fact]
+    public async Task EventHubNegotiate_AnonymousClient_IsRejected()
+    {
+        var machine = CreateAgentMachine(Guid.NewGuid(), "agent-signalr-anon");
+
+        await using var brokerFactory = new BrokerHostWebApplicationFactory(
+            new Uri("http://127.0.0.1:9445"),
+            "test-agent-gateway-key",
+            machine);
+
+        using var client = brokerFactory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/hubs/events/negotiate?negotiateVersion=1")
+        {
+            Content = JsonContent.Create(new { })
+        };
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task EventHubNegotiate_AuthorizedClient_Succeeds()
+    {
+        var machine = CreateAgentMachine(Guid.NewGuid(), "agent-signalr-auth");
+
+        await using var brokerFactory = new BrokerHostWebApplicationFactory(
+            new Uri("http://127.0.0.1:9445"),
+            "test-agent-gateway-key",
+            machine);
+        await using var authFactory = new AuthHostWebApplicationFactory();
+
+        using var authClient = authFactory.CreateClient();
+        var loginResponse = await authClient.PostAsJsonAsync("/api/auth/login", new LoginRequest(AdminUsername, AdminPassword, AuthProviderType.Local));
+        loginResponse.EnsureSuccessStatusCode();
+        var loginPayload = await loginResponse.Content.ReadFromJsonAsync<AuthResult>();
+
+        using var client = brokerFactory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", loginPayload!.AccessToken);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/hubs/events/negotiate?negotiateVersion=1")
+        {
+            Content = JsonContent.Create(new { })
+        };
+
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task PatchScan_FromWebSession_RoutesThroughBrokerGatewayAndAgent()
     {
         var machineId = Guid.NewGuid();

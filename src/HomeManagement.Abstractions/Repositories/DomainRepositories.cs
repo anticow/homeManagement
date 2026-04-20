@@ -38,10 +38,17 @@ public interface IPatchHistoryRepository
 
 public interface IAuditEventRepository
 {
-    Task AddAsync(AuditEvent auditEvent, string? previousHash, string eventHash, CancellationToken ct = default);
+    /// <param name="chainVersion">0 = legacy SHA-256 (do not use for new events); 1 = HMAC-SHA256</param>
+    Task AddAsync(AuditEvent auditEvent, string? previousHash, string eventHash, int chainVersion, CancellationToken ct = default);
     Task<PagedResult<AuditEvent>> QueryAsync(AuditQuery query, CancellationToken ct = default);
     Task<long> CountAsync(AuditQuery query, CancellationToken ct = default);
+    /// <summary>Returns the event hash of the most recent chain-version-1 event, or null if none exist (first v1 event will use GENESIS).</summary>
     Task<string?> GetLastEventHashAsync(CancellationToken ct = default);
+    /// <summary>
+    /// Verifies HMAC-SHA256 chain integrity over all chain-version-1 events.
+    /// Returns (Valid=true, count, null) on success; (Valid=false, count up to failure, failedEventId) on first tamper detected.
+    /// </summary>
+    Task<(bool Valid, long Verified, string? FailedAtEventId)> VerifyChainAsync(byte[] hmacKey, CancellationToken ct = default);
     Task SaveChangesAsync(CancellationToken ct = default);
 }
 

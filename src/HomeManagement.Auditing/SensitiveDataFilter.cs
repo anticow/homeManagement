@@ -11,7 +11,7 @@ internal sealed partial class SensitiveDataFilter : ISensitiveDataFilter
 {
     // Pattern matches common secret formats: passwords, keys, tokens, connection strings
     [GeneratedRegex(
-        @"(?i)(password|passwd|pwd|secret|token|apikey|api_key|private_key|connectionstring)\s*[:=]\s*\S+",
+        @"(?i)(password|passwd|pwd|secret|token|apikey|api_key|private_key|connectionstring)\s*[:=]\s*[^\s,;]{1,500}",
         RegexOptions.Compiled, matchTimeoutMilliseconds: 1000)]
     private static partial Regex SensitiveValuePattern();
 

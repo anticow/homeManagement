@@ -11,11 +11,16 @@ namespace HomeManagement.AgentGateway.Host.Services;
 /// </summary>
 public sealed class AgentGatewayGrpcService : AgentHub.AgentHubBase
 {
+    private readonly AgentApiKeyValidator _apiKeyValidator;
     private readonly StandaloneAgentGatewayService _gateway;
     private readonly ILogger<AgentGatewayGrpcService> _logger;
 
-    public AgentGatewayGrpcService(StandaloneAgentGatewayService gateway, ILogger<AgentGatewayGrpcService> logger)
+    public AgentGatewayGrpcService(
+        AgentApiKeyValidator apiKeyValidator,
+        StandaloneAgentGatewayService gateway,
+        ILogger<AgentGatewayGrpcService> logger)
     {
+        _apiKeyValidator = apiKeyValidator;
         _gateway = gateway;
         _logger = logger;
     }
@@ -26,6 +31,7 @@ public sealed class AgentGatewayGrpcService : AgentHub.AgentHubBase
         ServerCallContext context)
     {
         string? agentId = null;
+        var isRegistered = false;
 
         try
         {
@@ -43,7 +49,10 @@ public sealed class AgentGatewayGrpcService : AgentHub.AgentHubBase
             var handshake = firstMsg.Handshake;
             agentId = handshake.AgentId;
 
+            _apiKeyValidator.ValidateOrThrow(context, handshake);
+
             var session = _gateway.RegisterAgent(handshake, responseStream);
+            isRegistered = true;
 
             _logger.LogInformation("Agent {AgentId} ({Hostname}) connected", agentId, handshake.Hostname);
 
@@ -84,7 +93,7 @@ public sealed class AgentGatewayGrpcService : AgentHub.AgentHubBase
         }
         finally
         {
-            if (agentId is not null)
+            if (isRegistered && agentId is not null)
             {
                 _gateway.UnregisterAgent(agentId);
                 _logger.LogInformation("Agent {AgentId} disconnected", agentId);

@@ -5,17 +5,25 @@ using FluentAssertions;
 using HomeManagement.Abstractions;
 using HomeManagement.Abstractions.Models;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace HomeManagement.Vault.Tests;
 
 public sealed class CredentialVaultServiceTests : IDisposable
 {
+    private readonly string _tempDir;
     private readonly CredentialVaultService _sut;
 
     public CredentialVaultServiceTests()
     {
-        _sut = new CredentialVaultService(NullLogger<CredentialVaultService>.Instance);
+        _tempDir = Path.Combine(Path.GetTempPath(), "hm-vault-tests-" + Guid.NewGuid());
+        Directory.CreateDirectory(_tempDir);
+        _sut = CreateService(_tempDir);
     }
+
+    private static CredentialVaultService CreateService(string dir) =>
+        new(NullLogger<CredentialVaultService>.Instance,
+            Options.Create(new VaultOptions { StoragePath = dir }));
 
     [Fact]
     public void IsUnlocked_InitiallyFalse()
@@ -164,6 +172,95 @@ public sealed class CredentialVaultServiceTests : IDisposable
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
+    // ── MED-6: Persistence ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Persistence_CredentialsSurviveRestartWithSamePassword()
+    {
+        const string password = "PersistenceTest!99";
+        var payload = new byte[] { 1, 2, 3, 4, 5 };
+
+        // Add credential, then dispose
+        await _sut.UnlockAsync(CreateSecureString(password));
+        var added = await _sut.AddAsync(new CredentialCreateRequest(
+            "Persisted", CredentialType.Password, "user", payload));
+        await _sut.LockAsync();
+
+        // New service instance pointing at same directory
+        using var sut2 = CreateService(_tempDir);
+        await sut2.UnlockAsync(CreateSecureString(password));
+
+        var list = await sut2.ListAsync();
+        list.Should().ContainSingle(e => e.Id == added.Id && e.Label == "Persisted");
+
+        var retrieved = await sut2.GetPayloadAsync(added.Id);
+        retrieved.DecryptedPayload.ToArray().Should().BeEquivalentTo(payload);
+    }
+
+    [Fact]
+    public async Task Persistence_VaultFileIsCreatedOnUnlock()
+    {
+        await _sut.UnlockAsync(CreateSecureString("AnyPassword!1"));
+
+        File.Exists(Path.Combine(_tempDir, "vault.dat")).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Persistence_EmptyVaultHasNoEntriesAfterRestart()
+    {
+        const string password = "EmptyRestart!1";
+        await _sut.UnlockAsync(CreateSecureString(password));
+        await _sut.LockAsync();
+
+        using var sut2 = CreateService(_tempDir);
+        await sut2.UnlockAsync(CreateSecureString(password));
+
+        var list = await sut2.ListAsync();
+        list.Should().BeEmpty();
+    }
+
+    // ── CRIT-3: Random salt ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task MasterSalt_IsDifferentAcrossNewVaultInstances()
+    {
+        var dir2 = _tempDir + "_b";
+        Directory.CreateDirectory(dir2);
+        try
+        {
+            using var sut2 = CreateService(dir2);
+
+            await _sut.UnlockAsync(CreateSecureString("SamePassword!1"));
+            await sut2.UnlockAsync(CreateSecureString("SamePassword!1"));
+
+            // The vault files must exist and contain different salts
+            var file1 = await File.ReadAllTextAsync(Path.Combine(_tempDir, "vault.dat"));
+            var file2 = await File.ReadAllTextAsync(Path.Combine(dir2, "vault.dat"));
+
+            // If salts were deterministic, files of two empty vaults with the same password
+            // would be identical. With random salts they must differ.
+            file1.Should().NotBe(file2);
+        }
+        finally
+        {
+            Directory.Delete(dir2, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task WrongPassword_ThrowsCryptographicException_AfterFirstPersist()
+    {
+        const string rightPassword = "RightPassword!9";
+        await _sut.UnlockAsync(CreateSecureString(rightPassword));
+        await _sut.AddAsync(new CredentialCreateRequest("cred", CredentialType.Password, "u", [42]));
+        await _sut.LockAsync();
+
+        using var sut2 = CreateService(_tempDir);
+        var act = () => sut2.UnlockAsync(CreateSecureString("WrongPassword!9"));
+
+        await act.Should().ThrowAsync<System.Security.Cryptography.CryptographicException>();
+    }
+
     private static SecureString CreateSecureString(string value)
     {
         var ss = new SecureString();
@@ -173,5 +270,9 @@ public sealed class CredentialVaultServiceTests : IDisposable
         return ss;
     }
 
-    public void Dispose() => _sut.Dispose();
+    public void Dispose()
+    {
+        _sut.Dispose();
+        try { Directory.Delete(_tempDir, recursive: true); } catch { /* best-effort cleanup */ }
+    }
 }

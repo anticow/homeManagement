@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using HomeManagement.Abstractions;
 using HomeManagement.Abstractions.Models;
@@ -13,7 +15,7 @@ public sealed class AuditEventRepository : IAuditEventRepository
 
     public AuditEventRepository(HomeManagementDbContext db) => _db = db;
 
-    public async Task AddAsync(AuditEvent auditEvent, string? previousHash, string eventHash, CancellationToken ct = default)
+    public async Task AddAsync(AuditEvent auditEvent, string? previousHash, string eventHash, int chainVersion, CancellationToken ct = default)
     {
         var entity = new AuditEventEntity
         {
@@ -30,7 +32,8 @@ public sealed class AuditEventRepository : IAuditEventRepository
             Outcome = auditEvent.Outcome,
             ErrorMessage = auditEvent.ErrorMessage,
             PreviousHash = previousHash,
-            EventHash = eventHash
+            EventHash = eventHash,
+            ChainVersion = chainVersion
         };
 
         await _db.AuditEvents.AddAsync(entity, ct);
@@ -81,12 +84,51 @@ public sealed class AuditEventRepository : IAuditEventRepository
         return await q.LongCountAsync(ct);
     }
 
+    /// <summary>Returns the most recent HMAC chain (v1) event hash, or null if no v1 events exist yet.</summary>
     public async Task<string?> GetLastEventHashAsync(CancellationToken ct = default)
     {
         return await _db.AuditEvents
+            .Where(e => e.ChainVersion == 1)
             .OrderByDescending(e => e.TimestampUtc)
             .Select(e => e.EventHash)
             .FirstOrDefaultAsync(ct);
+    }
+
+    /// <summary>
+    /// Iterates all chain-version-1 events in chronological order and verifies each HMAC.
+    /// O(n) full-table scan — intended for periodic integrity checks, not hot path.
+    /// </summary>
+    public async Task<(bool Valid, long Verified, string? FailedAtEventId)> VerifyChainAsync(
+        byte[] hmacKey, CancellationToken ct = default)
+    {
+        var events = await _db.AuditEvents
+            .Where(e => e.ChainVersion == 1)
+            .OrderBy(e => e.TimestampUtc)
+            .ThenBy(e => e.EventId)
+            .Select(e => new { e.EventId, e.TimestampUtc, e.Action, e.ActorIdentity, e.Outcome, e.PreviousHash, e.EventHash })
+            .ToListAsync(ct);
+
+        long verified = 0;
+        string? previousHash = null;
+
+        foreach (var e in events)
+        {
+            var payload = $"{previousHash ?? "GENESIS"}|{e.EventId}|{e.TimestampUtc:O}|{e.Action}|{e.ActorIdentity}|{e.Outcome}";
+            using var hmac = new HMACSHA256(hmacKey);
+            var expected = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
+
+            if (!CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(expected),
+                    Encoding.UTF8.GetBytes(e.EventHash ?? string.Empty)))
+            {
+                return (false, verified, e.EventId.ToString());
+            }
+
+            previousHash = e.EventHash;
+            verified++;
+        }
+
+        return (true, verified, null);
     }
 
     public async Task SaveChangesAsync(CancellationToken ct = default)
@@ -107,3 +149,4 @@ public sealed class AuditEventRepository : IAuditEventRepository
             e.Outcome, e.ErrorMessage);
     }
 }
+

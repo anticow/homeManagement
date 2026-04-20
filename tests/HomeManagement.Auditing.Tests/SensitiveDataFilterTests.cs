@@ -12,7 +12,8 @@ public class SensitiveDataFilterTests
     [InlineData("password=secret123", "password= [REDACTED]")]
     [InlineData("token: abc-xyz", "token: [REDACTED]")]
     [InlineData("apikey=my-api-key-value", "apikey= [REDACTED]")]
-    [InlineData("connectionstring=Server=db;pwd=x", "connectionstring= [REDACTED]")]
+    // The fixed regex stops at ';' so 'pwd=x' is redacted as a separate match — this is correct behavior.
+    [InlineData("connectionstring=Server=db;pwd=x", "connectionstring= [REDACTED];pwd= [REDACTED]")]
     public void Redact_SensitivePatterns_AreRedacted(string input, string expected)
     {
         _sut.Redact(input).Should().Be(expected);

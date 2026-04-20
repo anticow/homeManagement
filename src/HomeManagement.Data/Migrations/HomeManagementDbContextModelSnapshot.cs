@@ -48,6 +48,11 @@ namespace HomeManagement.Data.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("ChainVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("CorrelationId")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -85,6 +90,8 @@ namespace HomeManagement.Data.Migrations
 
                     b.HasIndex("Action");
 
+                    b.HasIndex("ChainVersion");
+
                     b.HasIndex("CorrelationId");
 
                     b.HasIndex("TimestampUtc");
@@ -94,6 +101,301 @@ namespace HomeManagement.Data.Migrations
                     b.HasIndex("TargetMachineId", "TimestampUtc");
 
                     b.ToTable("AuditEvents");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.AuthRefreshTokenEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ExpiresUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("IssuedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("RevokedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "ExpiresUtc");
+
+                    b.ToTable("AuthRefreshTokens");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.AuthRoleEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PermissionsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("AuthRoles");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.AuthUserEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastLoginUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.HasIndex("Provider");
+
+                    b.HasIndex("Username")
+                        .IsUnique();
+
+                    b.ToTable("AuthUsers");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.AuthUserRoleEntity", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("UserId", "RoleId");
+
+                    b.HasIndex("RoleId");
+
+                    b.ToTable("AuthUserRoles");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.AutomationMachineResultEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("MachineId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MachineName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ResultDataJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Success")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MachineId");
+
+                    b.HasIndex("RunId");
+
+                    b.HasIndex("RunId", "MachineId");
+
+                    b.HasIndex("RunId", "Success");
+
+                    b.ToTable("AutomationMachineResults");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.AutomationPlanEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ApprovedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CorrelationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Objective")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PlanHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RejectionReason")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RiskLevel")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StepsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AutomationPlans");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.AutomationRunEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("CompletedMachines")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("CompletedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CorrelationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("FailedMachines")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("OutputJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OutputMarkdown")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RequestJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("StartedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("TotalMachines")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("WorkflowType")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CorrelationId");
+
+                    b.HasIndex("StartedUtc");
+
+                    b.HasIndex("State");
+
+                    b.HasIndex("WorkflowType");
+
+                    b.ToTable("AutomationRuns");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.AutomationRunStepEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("CompletedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("StartedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StepName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId");
+
+                    b.HasIndex("RunId", "StepName");
+
+                    b.ToTable("AutomationRunSteps");
                 });
 
             modelBuilder.Entity("HomeManagement.Data.Entities.JobEntity", b =>
@@ -432,6 +734,58 @@ namespace HomeManagement.Data.Migrations
                     b.ToTable("ServiceSnapshots");
                 });
 
+            modelBuilder.Entity("HomeManagement.Data.Entities.AuthRefreshTokenEntity", b =>
+                {
+                    b.HasOne("HomeManagement.Data.Entities.AuthUserEntity", "User")
+                        .WithMany("RefreshTokens")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.AuthUserRoleEntity", b =>
+                {
+                    b.HasOne("HomeManagement.Data.Entities.AuthRoleEntity", "Role")
+                        .WithMany("UserRoles")
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("HomeManagement.Data.Entities.AuthUserEntity", "User")
+                        .WithMany("UserRoles")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Role");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.AutomationMachineResultEntity", b =>
+                {
+                    b.HasOne("HomeManagement.Data.Entities.AutomationRunEntity", "Run")
+                        .WithMany("MachineResults")
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Run");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.AutomationRunStepEntity", b =>
+                {
+                    b.HasOne("HomeManagement.Data.Entities.AutomationRunEntity", "Run")
+                        .WithMany("Steps")
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Run");
+                });
+
             modelBuilder.Entity("HomeManagement.Data.Entities.JobMachineResultEntity", b =>
                 {
                     b.HasOne("HomeManagement.Data.Entities.JobEntity", "Job")
@@ -481,6 +835,25 @@ namespace HomeManagement.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Machine");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.AuthRoleEntity", b =>
+                {
+                    b.Navigation("UserRoles");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.AuthUserEntity", b =>
+                {
+                    b.Navigation("RefreshTokens");
+
+                    b.Navigation("UserRoles");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.AutomationRunEntity", b =>
+                {
+                    b.Navigation("MachineResults");
+
+                    b.Navigation("Steps");
                 });
 
             modelBuilder.Entity("HomeManagement.Data.Entities.JobEntity", b =>

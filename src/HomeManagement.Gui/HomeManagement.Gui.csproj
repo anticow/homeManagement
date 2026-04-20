@@ -11,7 +11,8 @@
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="Avalonia.Fonts.Inter" />
     <PackageReference Include="Avalonia.ReactiveUI" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <!-- Override Avalonia.X11 transitive dep to patched version (CVE-2026-39959 / GHSA-xrw6-gwf8-vvr9) -->
+    <PackageReference Include="Tmds.DBus.Protocol" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
     <PackageReference Include="Grpc.AspNetCore" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />

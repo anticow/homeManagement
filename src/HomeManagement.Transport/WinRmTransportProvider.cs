@@ -31,12 +31,14 @@ internal sealed class WinRmTransportProvider
         using var credential = await _vault.GetPayloadAsync(target.CredentialId, ct);
         var password = System.Text.Encoding.UTF8.GetString(credential.DecryptedPayload);
 
-        // Build Invoke-Command call with explicit credential
-        var scriptBlock = command.CommandText.Replace("'", "''");
+        // Encode command as Base64 Unicode to avoid PowerShell injection via special characters
+        // (backticks, dollar signs, braces). The script block is decoded at runtime by PowerShell.
+        var encodedCmd = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(command.CommandText));
         var psScript =
             $"$secPass = ConvertTo-SecureString -String $env:HM_CRED -AsPlainText -Force; " +
             $"$cred = New-Object System.Management.Automation.PSCredential('{credential.Username}', $secPass); " +
-            $"Invoke-Command -ComputerName '{target.Hostname}' -Credential $cred -ScriptBlock {{ {scriptBlock} }} | ConvertTo-Json -Depth 5";
+            $"$sb = [scriptblock]::Create([System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String('{encodedCmd}'))); " +
+            $"Invoke-Command -ComputerName '{target.Hostname}' -Credential $cred -ScriptBlock $sb | ConvertTo-Json -Depth 5";
 
         var psi = new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -Command -")
         {

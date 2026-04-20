@@ -31,5 +31,35 @@ Thumbs.db
 ## Application data (local)
 appsettings.local.json
 
+## Docker environment files (contain secrets - use .env.example as template)
+deploy/docker/.env
+
 ## Development certificates
 certs/
+
+## Agent configuration (contains secrets - use hm-agent.json.template instead)
+hm-agent.json
+hm-agent.*.json
+
+## Vault/secrets files (never commit)
+*.key
+*.pfx
+*.pem
+**/secrets/
+**/vault/
+
+## Generated credential rotation reports
+logs/rotation-reports/*.json
+
+## Build/test artifacts (never commit)
+artifacts/
+vuln.txt
+
+## Local operational config with Azure identifiers
+config-azure.json
+
+## All logs
+logs/
+
+## Evidence/transcript folders (may contain secrets)
+docs/evidence/

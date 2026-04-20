@@ -17,6 +17,7 @@ public sealed class AgentConfiguration
     public string CertPath { get; set; } = "certs/agent.pfx";
     public string? CertPassword { get; set; }
     public string CaCertPath { get; set; } = "certs/ca.crt";
+    public string? ServerCaCertPath { get; set; }
 
     // ── Behavior ──
     public int HeartbeatIntervalSeconds { get; set; } = 30;
@@ -41,4 +42,41 @@ public sealed class AgentConfiguration
     /// alongside the mTLS certificate.
     /// </summary>
     public byte[]? UpdateSigningPublicKey { get; set; }
+
+    public void Validate()
+    {
+        if (string.IsNullOrWhiteSpace(ApiKey))
+        {
+            throw new InvalidOperationException(
+                "Agent:ApiKey must be configured before the agent starts.");
+        }
+
+        if (!UseTls && !IsLoopbackControlServer(ControlServer))
+        {
+            throw new InvalidOperationException(
+                "Agent:UseTls may be false only when Agent:ControlServer targets localhost or another loopback address.");
+        }
+    }
+
+    internal static bool IsLoopbackControlServer(string controlServer)
+    {
+        if (string.IsNullOrWhiteSpace(controlServer))
+        {
+            return false;
+        }
+
+        var candidate = controlServer.Contains("://", StringComparison.Ordinal)
+            ? controlServer
+            : $"http://{controlServer}";
+
+        if (Uri.TryCreate(candidate, UriKind.Absolute, out var uri))
+        {
+            return uri.IsLoopback || string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return string.Equals(controlServer, "localhost", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(controlServer, "127.0.0.1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(controlServer, "[::1]", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(controlServer, "::1", StringComparison.OrdinalIgnoreCase);
+    }
 }

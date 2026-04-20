@@ -70,6 +70,19 @@ if (-not (Get-Command openssl -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+# Set proper OpenSSL config location (Git for Windows includes openssl)
+$openSSLConfigPath = 'C:\Program Files\Git\usr\ssl\openssl.cnf'
+if (-not (Test-Path $openSSLConfigPath)) {
+    $openSSLConfigPath = Join-Path $env:ProgramFiles 'Common Files' 'ssl' 'openssl.cnf'
+}
+if (-not (Test-Path $openSSLConfigPath)) {
+    Write-Host "Warning: OpenSSL config not found at standard locations. Using system default." -ForegroundColor Yellow
+    $openSSLConfigPath = $null
+}
+if ($openSSLConfigPath) {
+    $env:OPENSSL_CONF = $openSSLConfigPath
+}
+
 Write-Host '========================================' -ForegroundColor Cyan
 Write-Host '  HomeManagement — Agent mTLS Certs' -ForegroundColor Cyan
 Write-Host '========================================' -ForegroundColor Cyan

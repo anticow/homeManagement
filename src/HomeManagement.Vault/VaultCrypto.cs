@@ -89,4 +89,45 @@ internal static class VaultCrypto
             CryptographicOperations.ZeroMemory(key);
         }
     }
+
+    /// <summary>
+    /// Encrypt plaintext directly with a pre-derived AES-256 key (no KDF pass).
+    /// Returns nonce + ciphertext + tag. Use for bulk vault persistence where
+    /// the key is already derived via <see cref="DeriveKey"/>.
+    /// </summary>
+    internal static byte[] EncryptDirect(ReadOnlySpan<byte> plaintext, ReadOnlySpan<byte> key)
+    {
+        var nonce = RandomNumberGenerator.GetBytes(NonceLength);
+        var ciphertext = new byte[plaintext.Length];
+        var tag = new byte[TagLength];
+
+        using var aes = new AesGcm(key, TagLength);
+        aes.Encrypt(nonce, plaintext, ciphertext, tag);
+
+        // Layout: [nonce][ciphertext][tag]
+        var result = new byte[NonceLength + ciphertext.Length + TagLength];
+        nonce.CopyTo(result, 0);
+        ciphertext.CopyTo(result.AsSpan(NonceLength));
+        tag.CopyTo(result, NonceLength + ciphertext.Length);
+        return result;
+    }
+
+    /// <summary>
+    /// Decrypt a blob previously produced by <see cref="EncryptDirect"/>.
+    /// </summary>
+    internal static byte[] DecryptDirect(ReadOnlySpan<byte> encrypted, ReadOnlySpan<byte> key)
+    {
+        if (encrypted.Length < NonceLength + TagLength)
+            throw new CryptographicException("Encrypted data is too short.");
+
+        var nonce = encrypted[..NonceLength];
+        var ciphertextLength = encrypted.Length - NonceLength - TagLength;
+        var ciphertext = encrypted.Slice(NonceLength, ciphertextLength);
+        var tag = encrypted.Slice(NonceLength + ciphertextLength, TagLength);
+
+        var plaintext = new byte[ciphertextLength];
+        using var aes = new AesGcm(key, TagLength);
+        aes.Decrypt(nonce, ciphertext, tag, plaintext);
+        return plaintext;
+    }
 }

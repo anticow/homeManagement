@@ -34,7 +34,7 @@ public sealed class AuthService
 
     public async Task EnsureInitializedAsync(CancellationToken ct = default)
     {
-        await _db.Database.EnsureCreatedAsync(ct);
+        await _db.Database.MigrateAsync(ct);
         await SeedRolesAsync(ct);
         await SeedBootstrapAdminAsync(ct);
     }
@@ -66,21 +66,35 @@ public sealed class AuthService
     public async Task<AuthResult> RefreshAsync(string refreshToken, CancellationToken ct = default)
     {
         var tokenHash = HashRefreshToken(refreshToken);
-        var entry = await _db.AuthRefreshTokens
-            .Include(t => t.User)
-            .ThenInclude(u => u.UserRoles)
-            .ThenInclude(ur => ur.Role)
-            .SingleOrDefaultAsync(t => t.TokenHash == tokenHash, ct);
+        var now = DateTime.UtcNow;
+        var tokenState = await _db.AuthRefreshTokens
+            .AsNoTracking()
+            .Where(t => t.TokenHash == tokenHash)
+            .Select(t => new { t.UserId, t.ExpiresUtc, t.RevokedUtc })
+            .SingleOrDefaultAsync(ct);
 
-        if (entry is null || entry.RevokedUtc is not null || entry.ExpiresUtc <= DateTime.UtcNow)
+        if (tokenState is null || tokenState.RevokedUtc is not null || tokenState.ExpiresUtc <= now)
         {
             return new AuthResult(false, Error: "Refresh token is invalid or expired.");
         }
 
-        entry.RevokedUtc = DateTime.UtcNow;
-        await _db.SaveChangesAsync(ct);
+        var revokedUtc = DateTime.UtcNow;
+        var rowsUpdated = await _db.AuthRefreshTokens
+            .Where(t => t.TokenHash == tokenHash && t.RevokedUtc == null && t.ExpiresUtc > revokedUtc)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(t => t.RevokedUtc, revokedUtc), ct);
 
-        return await IssueTokensAsync(entry.User, ct);
+        if (rowsUpdated != 1)
+        {
+            return new AuthResult(false, Error: "Refresh token is invalid or expired.");
+        }
+
+        var user = await _db.AuthUsers
+            .Include(u => u.UserRoles)
+            .ThenInclude(ur => ur.Role)
+            .SingleAsync(u => u.Id == tokenState.UserId, ct);
+
+        return await IssueTokensAsync(user, ct);
     }
 
     public async Task<bool> RevokeAsync(string refreshToken, CancellationToken ct = default)

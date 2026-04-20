@@ -1,5 +1,9 @@
 using FluentAssertions;
+using Grpc.Core;
+using HomeManagement.Agent.Protocol;
 using HomeManagement.AgentGateway.Host.Services;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace HomeManagement.AgentGateway.Host.Tests;
 
@@ -168,5 +172,78 @@ public sealed class AgentConnectionTrackerTests
         });
 
         tracker.Count.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task Connect_WithInvalidPerAgentKey_ThrowsUnauthenticatedBeforeRegistration()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["AgentGateway:AgentApiKeys:agent-01"] = "expected-key"
+            })
+            .Build();
+
+        var validator = new AgentApiKeyValidator(configuration, NullLogger<AgentApiKeyValidator>.Instance);
+        using var gateway = new StandaloneAgentGatewayService(NullLogger<StandaloneAgentGatewayService>.Instance);
+        var service = new AgentGatewayGrpcService(
+            validator,
+            gateway,
+            NullLogger<AgentGatewayGrpcService>.Instance);
+
+        var requestStream = new TestAsyncStreamReader<AgentMessage>([
+            new AgentMessage
+            {
+                Handshake = new Handshake
+                {
+                    AgentId = "agent-01",
+                    Hostname = "host-01",
+                    AgentVersion = "1.0.0",
+                    OsType = "Linux",
+                    OsVersion = "Ubuntu",
+                    Architecture = "x64"
+                }
+            }
+        ]);
+
+        var act = () => service.Connect(
+            requestStream,
+            new TestServerStreamWriter<ControlMessage>(),
+            new TestServerCallContext(new Metadata { { "x-agent-api-key", "wrong-key" } }));
+
+        await act.Should().ThrowAsync<RpcException>()
+            .Where(ex => ex.StatusCode == StatusCode.Unauthenticated);
+
+        gateway.GetConnectedAgents().Should().BeEmpty();
+    }
+}
+
+internal sealed class TestAsyncStreamReader<T> : IAsyncStreamReader<T>
+{
+    private readonly IEnumerator<T> _enumerator;
+
+    public TestAsyncStreamReader(IEnumerable<T> messages)
+    {
+        _enumerator = messages.GetEnumerator();
+    }
+
+    public T Current => _enumerator.Current;
+
+    public Task<bool> MoveNext(CancellationToken cancellationToken)
+    {
+        return Task.FromResult(_enumerator.MoveNext());
+    }
+}
+
+internal sealed class TestServerStreamWriter<T> : IServerStreamWriter<T>
+{
+    public WriteOptions? WriteOptions { get; set; }
+
+    public List<T> Messages { get; } = [];
+
+    public Task WriteAsync(T message)
+    {
+        Messages.Add(message);
+        return Task.CompletedTask;
     }
 }
