@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace HomeManagement.AgentGateway.Host.Services;
 
-public sealed class AgentApiKeyValidator
+public sealed class AgentApiKeyValidator : IAgentApiKeyValidator
 {
     private const string HeaderName = "x-agent-api-key";
     private readonly IReadOnlyDictionary<string, string> _configuredKeys;

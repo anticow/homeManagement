@@ -11,12 +11,12 @@ namespace HomeManagement.AgentGateway.Host.Services;
 /// </summary>
 public sealed class AgentGatewayGrpcService : AgentHub.AgentHubBase
 {
-    private readonly AgentApiKeyValidator _apiKeyValidator;
+    private readonly IAgentApiKeyValidator _apiKeyValidator;
     private readonly StandaloneAgentGatewayService _gateway;
     private readonly ILogger<AgentGatewayGrpcService> _logger;
 
     public AgentGatewayGrpcService(
-        AgentApiKeyValidator apiKeyValidator,
+        IAgentApiKeyValidator apiKeyValidator,
         StandaloneAgentGatewayService gateway,
         ILogger<AgentGatewayGrpcService> logger)
     {

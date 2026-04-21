@@ -7,7 +7,6 @@ using HomeManagement.Abstractions.Validation;
 using HomeManagement.AI.Abstractions.Contracts;
 using HomeManagement.Automation;
 using HomeManagement.Data;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -15,19 +14,18 @@ namespace HomeManagement.Automation.Tests;
 
 public sealed class AutomationEnsureServiceRunningTests : IAsyncLifetime, IDisposable
 {
-    private SqliteConnection _connection = null!;
+    private string _dbPath = null!;
     private ServiceProvider _services = null!;
     private ConfigurableServiceController _serviceController = null!;
 
     public async Task InitializeAsync()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        await _connection.OpenAsync();
+        _dbPath = Path.Combine(Path.GetTempPath(), $"hm_svc_{Guid.NewGuid():N}.db");
 
         _serviceController = new ConfigurableServiceController();
 
         var collection = new ServiceCollection();
-        collection.AddDbContext<HomeManagementDbContext>(options => options.UseSqlite(_connection));
+        collection.AddDbContext<HomeManagementDbContext>(options => options.UseSqlite($"DataSource={_dbPath}"));
         collection.AddLogging();
 
         collection.AddOptions<AutomationOptions>()
@@ -46,18 +44,29 @@ public sealed class AutomationEnsureServiceRunningTests : IAsyncLifetime, IDispo
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<HomeManagementDbContext>();
         await db.Database.EnsureCreatedAsync();
+        await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
+        await db.Database.ExecuteSqlRawAsync("PRAGMA busy_timeout=10000;");
     }
 
     public async Task DisposeAsync()
     {
-        await _connection.DisposeAsync();
         await _services.DisposeAsync();
+        TryDelete(_dbPath);
+        TryDelete(_dbPath + "-wal");
+        TryDelete(_dbPath + "-shm");
     }
 
     public void Dispose()
     {
         _services.Dispose();
-        _connection.Dispose();
+        TryDelete(_dbPath);
+        TryDelete(_dbPath + "-wal");
+        TryDelete(_dbPath + "-shm");
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); } catch { /* best-effort */ }
     }
 
     [Fact]

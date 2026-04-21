@@ -33,6 +33,7 @@ builder.Services.AddOpenTelemetry()
 
 // ── Services ──
 builder.Services.AddSingleton<AgentApiKeyValidator>();
+builder.Services.AddSingleton<IAgentApiKeyValidator>(sp => sp.GetRequiredService<AgentApiKeyValidator>());
 builder.Services.AddGrpc();
 builder.Services.AddSingleton<StandaloneAgentGatewayService>();
 builder.Services.AddHealthChecks();
