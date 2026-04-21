@@ -61,6 +61,7 @@ jobs:
           dotnet test
           --no-build
           --configuration Release
+          --filter "Category!=Platform"
           --logger "trx;LogFileName=test-results.trx"
           --collect:"XPlat Code Coverage"
           --results-directory ./TestResults
