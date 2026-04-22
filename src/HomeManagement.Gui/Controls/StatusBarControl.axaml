@@ -1,0 +1,28 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="HomeManagement.Gui.Controls.StatusBarControl">
+    <Border Height="28" Background="#2D2D3D" Padding="8,0">
+        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto">
+            <TextBlock Grid.Column="0" Foreground="#888" FontSize="11" VerticalAlignment="Center" Margin="0,0,16,0">
+                <TextBlock.Text>
+                    <MultiBinding StringFormat="● {0} agents">
+                        <Binding Path="ConnectedAgentCount" />
+                    </MultiBinding>
+                </TextBlock.Text>
+            </TextBlock>
+            <TextBlock Grid.Column="1" Foreground="#888" FontSize="11" VerticalAlignment="Center" Margin="0,0,16,0">
+                <TextBlock.Text>
+                    <MultiBinding StringFormat="{}{0} jobs running">
+                        <Binding Path="RunningJobCount" />
+                    </MultiBinding>
+                </TextBlock.Text>
+            </TextBlock>
+            <TextBlock Grid.Column="2" Text="{Binding IsVaultUnlocked, StringFormat='Vault: {0}'}"
+                       Foreground="#888" FontSize="11" VerticalAlignment="Center" Margin="0,0,16,0" />
+            <TextBlock Grid.Column="3" Text="{Binding StatusMessage}"
+                       Foreground="#888" FontSize="11" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="5" Text="{Binding AppVersion, StringFormat='v{0}'}"
+                       Foreground="#555" FontSize="11" VerticalAlignment="Center" />
+        </Grid>
+    </Border>
+</UserControl>

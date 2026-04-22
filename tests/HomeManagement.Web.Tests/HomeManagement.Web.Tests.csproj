@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>HomeManagement.Web.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\HomeManagement.Agent\HomeManagement.Agent.csproj" Aliases="AgentClient" />
+    <ProjectReference Include="..\..\src\HomeManagement.AgentGateway.Host\HomeManagement.AgentGateway.Host.csproj" />
+    <ProjectReference Include="..\..\src\HomeManagement.Auth.Host\HomeManagement.Auth.Host.csproj" />
+    <ProjectReference Include="..\..\src\HomeManagement.Broker.Host\HomeManagement.Broker.Host.csproj" />
+    <ProjectReference Include="..\..\src\HomeManagement.Web\HomeManagement.Web.csproj" />
+  </ItemGroup>
+</Project>

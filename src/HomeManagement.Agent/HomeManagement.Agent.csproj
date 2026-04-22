@@ -7,6 +7,9 @@
     <NoWarn>CA1848;CA1873</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="HomeManagement.Agent.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="Google.Protobuf" />
     <PackageReference Include="Grpc.Tools" PrivateAssets="All" />

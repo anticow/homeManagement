@@ -52,7 +52,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         NavigationService navigation,
         IJobScheduler jobScheduler,
         IAgentGateway agentGateway,
-        ICredentialVault vault)
+        ICredentialVault vault,
+        DesktopPlatformOptions platformOptions)
     {
         Navigation = navigation;
 
@@ -111,7 +112,14 @@ public sealed class MainWindowViewModel : ViewModelBase
         // Set initial vault state synchronously
         IsVaultUnlocked = vault.IsUnlocked;
 
-        // Navigate to dashboard on startup
-        Navigation.NavigateTo<DashboardViewModel>();
+        // Navigate to the platform sign-in gate first when running against Broker/Auth.
+        if (platformOptions.IsEnabled && !vault.IsUnlocked)
+        {
+            Navigation.NavigateTo<VaultUnlockViewModel>();
+        }
+        else
+        {
+            Navigation.NavigateTo<DashboardViewModel>();
+        }
     }
 }

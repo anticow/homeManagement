@@ -1,0 +1,102 @@
+{{- $svcName := "hm-auth" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $svcName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "homemanagement.labels" . | nindent 4 }}
+    app: {{ $svcName }}
+spec:
+  replicas: {{ .Values.authService.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ $svcName }}
+  template:
+    metadata:
+      labels:
+        app: {{ $svcName }}
+    spec:
+      {{- if .Values.global.imagePullSecret.enabled }}
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      {{- end }}
+      containers:
+        - name: auth
+          image: {{ include "homemanagement.image" (dict "global" .Values.global "image" .Values.authService.image) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.authService.port }}
+              name: http
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:{{ .Values.authService.port }}"
+            - name: ConnectionStrings__HomeManagement
+              valueFrom:
+                secretKeyRef:
+                  name: hm-secrets
+                  key: connection-string
+            - name: Auth__JwtSigningKey
+              valueFrom:
+                secretKeyRef:
+                  name: hm-secrets
+                  key: jwt-signing-key
+            - name: Auth__Issuer
+              value: {{ .Values.auth.issuer | quote }}
+            - name: Auth__Audience
+              value: {{ .Values.auth.audience | quote }}
+            - name: Seq__Url
+              value: {{ .Values.seq.url | quote }}
+            {{- if .Values.auth.bootstrapAdmin.enabled }}
+            - name: Auth__BootstrapAdmin__Enabled
+              value: "true"
+            - name: Auth__BootstrapAdmin__Username
+              value: {{ .Values.auth.bootstrapAdmin.username | quote }}
+            - name: Auth__BootstrapAdmin__Password
+              valueFrom:
+                secretKeyRef:
+                  name: hm-secrets
+                  key: bootstrap-admin-password
+            - name: Auth__BootstrapAdmin__DisplayName
+              value: {{ .Values.auth.bootstrapAdmin.displayName | quote }}
+            - name: Auth__BootstrapAdmin__Email
+              value: {{ .Values.auth.bootstrapAdmin.email | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.authService.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+{{- if .Values.authService.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $svcName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "homemanagement.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $svcName }}
+  minReplicas: {{ .Values.authService.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.authService.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.authService.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}

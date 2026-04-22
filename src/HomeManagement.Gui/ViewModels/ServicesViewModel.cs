@@ -14,7 +14,6 @@ public sealed class ServicesViewModel : ViewModelBase
     private readonly IServiceController _serviceController;
     private readonly IInventoryService _inventory;
     private readonly IAgentGateway _agentGateway;
-    private readonly ICommandBroker _broker;
 
     private ObservableCollection<ServiceInfo> _services = [];
     private ObservableCollection<Machine> _machines = [];
@@ -58,13 +57,11 @@ public sealed class ServicesViewModel : ViewModelBase
     public ServicesViewModel(
         IServiceController serviceController,
         IInventoryService inventory,
-        IAgentGateway agentGateway,
-        ICommandBroker broker)
+        IAgentGateway agentGateway)
     {
         _serviceController = serviceController;
         _inventory = inventory;
         _agentGateway = agentGateway;
-        _broker = broker;
 
         RefreshCommand = ReactiveCommand.CreateFromTask(LoadServicesAsync);
         StartServiceCommand = ReactiveCommand.CreateFromTask<ServiceInfo>(svc => ControlServiceAsync(svc, ServiceAction.Start));
@@ -83,18 +80,6 @@ public sealed class ServicesViewModel : ViewModelBase
             .Throttle(TimeSpan.FromSeconds(3))
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(_ => LoadMachinesAsync().ConfigureAwait(false))
-            .DisposeWith(Disposables);
-
-        // Auto-refresh service list when a broker command completes for the selected machine
-        _broker.CompletedStream
-            .Where(evt => _selectedMachine is not null && evt.MachineId == _selectedMachine.Id)
-            .Throttle(TimeSpan.FromSeconds(1))
-            .ObserveOn(RxApp.MainThreadScheduler)
-            .Subscribe(evt =>
-            {
-                StatusMessage = $"Command completed on {evt.MachineName} (exit={evt.Result.ExitCode})";
-                RefreshCommand.Execute().Subscribe();
-            })
             .DisposeWith(Disposables);
     }
 
@@ -118,17 +103,11 @@ public sealed class ServicesViewModel : ViewModelBase
 
             var target = ToTarget(_selectedMachine);
 
-            // Fire the control command through the broker so the result is
-            // persisted even if the user navigates away from this page.
-            var command = BuildControlCommand(target, svc.Name, action);
-            await _broker.SubmitAsync(new CommandEnvelope(
-                MachineId: _selectedMachine.Id,
-                MachineName: _selectedMachine.Hostname.Value,
-                Target: target,
-                Command: command,
-                Description: $"{action} {svc.Name}"));
-
-            StatusMessage = $"{action} {svc.Name} submitted — will refresh when complete.";
+            var result = await _serviceController.ControlAsync(target, svc.Name, action);
+            StatusMessage = result.Success
+                ? $"{action} {svc.Name} completed on {_selectedMachine.Hostname}."
+                : $"{action} {svc.Name} failed on {_selectedMachine.Hostname}: {result.ErrorMessage}";
+            await LoadServicesAsync(CancellationToken.None);
         });
     }
 
@@ -139,26 +118,5 @@ public sealed class ServicesViewModel : ViewModelBase
     {
         var result = await _inventory.QueryAsync(new MachineQuery(), ct);
         Machines = new ObservableCollection<Machine>(result.Items);
-    }
-
-    private static RemoteCommand BuildControlCommand(MachineTarget target, ServiceName serviceName, ServiceAction action)
-    {
-        var cmdText = target.OsType == OsType.Windows
-            ? action switch
-            {
-                ServiceAction.Start => $"Start-Service -Name '{serviceName}'",
-                ServiceAction.Stop => $"Stop-Service -Name '{serviceName}' -Force",
-                ServiceAction.Restart => $"Restart-Service -Name '{serviceName}' -Force",
-                _ => $"Get-Service -Name '{serviceName}' | ConvertTo-Json -Compress"
-            }
-            : action switch
-            {
-                ServiceAction.Start => $"systemctl start {serviceName}",
-                ServiceAction.Stop => $"systemctl stop {serviceName}",
-                ServiceAction.Restart => $"systemctl restart {serviceName}",
-                _ => $"systemctl show {serviceName} --no-pager"
-            };
-
-        return new RemoteCommand(cmdText, TimeSpan.FromSeconds(60), ElevationMode.Sudo);
     }
 }

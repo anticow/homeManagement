@@ -11,12 +11,16 @@
     <PackageReference Include="Avalonia.Themes.Fluent" />
     <PackageReference Include="Avalonia.Fonts.Inter" />
     <PackageReference Include="Avalonia.ReactiveUI" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <!-- Override Avalonia.X11 transitive dep to patched version (CVE-2026-39959 / GHSA-xrw6-gwf8-vvr9) -->
+    <PackageReference Include="Tmds.DBus.Protocol" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
     <PackageReference Include="Grpc.AspNetCore" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Grpc.Tools" />
     <ProjectReference Include="..\HomeManagement.Core\HomeManagement.Core.csproj" />
+    <ProjectReference Include="..\HomeManagement.Auth\HomeManagement.Auth.csproj" />
     <!-- Module assemblies — referenced so they're loaded into AppDomain for IModuleRegistration discovery -->
     <ProjectReference Include="..\HomeManagement.Vault\HomeManagement.Vault.csproj" />
     <ProjectReference Include="..\HomeManagement.Transport\HomeManagement.Transport.csproj" />

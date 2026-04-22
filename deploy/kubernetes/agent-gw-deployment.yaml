@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hm-agent-gw
+  namespace: homemanagement
+  labels:
+    app: hm-agent-gw
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hm-agent-gw
+  template:
+    metadata:
+      labels:
+        app: hm-agent-gw
+    spec:
+      containers:
+        - name: agent-gw
+          image: ghcr.io/homemanagement/hm-agent-gw:latest
+          ports:
+            - containerPort: 9444
+              name: grpc
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:9444"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5

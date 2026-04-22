@@ -1,7 +1,10 @@
 # 11 — Agent Architecture
 
-> Lightweight cross-platform agent for Windows and Linux managed machines.
+> Lightweight cross-platform agent for Windows, Linux, and macOS managed machines.
 > Supersedes agent-related fragments in docs 02, 05, and 08.
+>
+> **Revision 2 — 2026-03-21:** Control-plane topology aligned to platform architecture.
+> Agents connect to the standalone AgentGateway service, not the desktop GUI. Broker remains the system of record for commands and execution state.
 
 ---
 
@@ -9,15 +12,15 @@
 
 The **hm-agent** is a self-contained, single-binary service (~10 MB) that runs on
 each managed machine in **agent mode** (`MachineConnectionMode.Agent`).
-It initiates an **outbound** gRPC connection to the control machine, removing
-every requirement for inbound firewall rules on the target.
+It initiates an **outbound** gRPC connection to the standalone **AgentGateway** service,
+removing every requirement for inbound firewall rules on the target.
 
 ```
 ┌──────────────────────────────────────┐
-│        Control Machine (GUI)         │
+│      Platform Control Plane         │
 │  ┌────────────────────────────────┐  │
-│  │  AgentGateway  (gRPC server)   │  │
-│  │  :9444 — mTLS, bidirectional   │  │
+│  │ AgentGateway (gRPC edge)       │  │
+│  │ :9444 — mTLS, bidirectional    │  │
 │  └──────────────┬─────────────────┘  │
 │                 │                     │
 └─────────────────┼─────────────────────┘
@@ -29,6 +32,14 @@ every requirement for inbound firewall rules on the target.
 │  Linux host  │          │  Windows host │
 │  systemd     │          │  Win Service  │
 └──────────────┘          └───────────────┘
+          \                    /
+           \                  /
+            \                /
+             ┌──────────────┐
+             │   hm-agent   │
+             │  macOS host  │
+             │   launchd    │
+             └──────────────┘
 ```
 
 ### Design goals
@@ -36,11 +47,13 @@ every requirement for inbound firewall rules on the target.
 | # | Goal | Mechanism |
 |---|------|-----------|
 | G1 | **Minimal footprint** | Single binary, no runtime dependencies, < 50 MB RSS |
-| G2 | **Firewall-friendly** | Agent opens outbound TCP only (port 9444) |
+| G2 | **Firewall-friendly** | Agent opens outbound TCP only (port 9444 directly or 443 through ingress) |
 | G3 | **Secure by default** | mTLS with private CA; no passwords in config |
 | G4 | **Self-updating** | Controller pushes update packages; agent verifies, installs, restarts |
 | G5 | **Resilient** | Exponential-backoff reconnect; command timeout; local log buffer |
 | G6 | **Observable** | Structured JSON logs; heartbeat telemetry; audit correlation IDs |
+
+The agent does not know about GUI or Broker internals. It speaks only to AgentGateway over the gRPC protocol.
 
 ---
 
@@ -51,7 +64,8 @@ hm-agent process
 ├── Hosting
 │   ├── AgentHostService           : BackgroundService — bootstraps gRPC, schedules heartbeats
 │   ├── SystemdLifetime            : IHostLifetime  (Linux)
-│   └── WindowsServiceLifetime     : IHostLifetime  (Windows)
+│   ├── WindowsServiceLifetime     : IHostLifetime  (Windows)
+│   └── ConsoleLifetime + launchd  : Host lifetime wrapper (macOS)
 │
 ├── Communication
 │   ├── GrpcChannelManager         : Owns the gRPC channel + mTLS credentials
@@ -61,12 +75,12 @@ hm-agent process
 ├── Handlers (one per command domain)
 │   ├── ShellCommandHandler        : Runs OS processes, captures stdout/stderr
 │   ├── PatchCommandHandler        : Detects / applies patches (delegates to OS APIs or scripts)
-│   ├── ServiceCommandHandler      : Start / stop / restart / status (systemd / SC)
+│   ├── ServiceCommandHandler      : Start / stop / restart / status (systemd / SC / launchctl)
 │   ├── SystemInfoHandler          : Hardware + OS metadata collection
 │   └── UpdateCommandHandler       : Self-update lifecycle
 │
 ├── Security
-│   ├── CertificateLoader          : Loads agent.pfx + ca.crt, validates chain
+│   ├── CertificateLoader          : Loads agent.pfx + CA trust anchors, validates client/server chains
 │   ├── CommandValidator           : Allowlist, rate limiter, elevation guard
 │   └── IntegrityChecker           : SHA-256 / Ed25519 verification for update packages
 │
@@ -83,20 +97,20 @@ hm-agent process
 
 | Class | Responsibility |
 |-------|---------------|
-| `AgentHostService` | `IHostedService`. On start: load config → load certs → open gRPC channel → enter command loop. Inbound `Channel<CommandRequest>` (bounded capacity 128) decouples the gRPC receive loop from command execution; `CommandProcessingLoopAsync` drains the queue with `SemaphoreSlim`-bounded concurrency. On stop: drain pending commands → close channel. |
+| `AgentHostService` | `IHostedService`. On start: load config → load certs → open gRPC channel to AgentGateway → enter command loop. Inbound `Channel<CommandRequest>` (bounded capacity 128) decouples the gRPC receive loop from command execution; `CommandProcessingLoopAsync` drains the queue according to the configured concurrency policy. On stop: drain pending commands → close channel. |
 | `GrpcChannelManager` | Creates `GrpcChannel` with `SslCredentials`; exposes `GetChannel()`. Recreates channel on reconnect. |
 | `CommandDispatcher` | Receives `CommandRequest` from gRPC stream → resolves `ICommandHandler` by `CommandType` enum → calls `HandleAsync` → returns `CommandResponse`. |
 | `ShellCommandHandler` | Spawns `System.Diagnostics.Process` with redirected I/O. Applies `ElevationMode`. Enforces per-command `Timeout`. |
-| `PatchCommandHandler` | Delegates to `PatchStrategy` (Windows Update API on Windows, `apt`/`yum`/`dnf` on Linux). Returns `PatchResult` JSON. |
-| `ServiceCommandHandler` | Delegates to `ServiceStrategy` (`systemctl` on Linux, `sc.exe` / `Get-Service` on Windows). Returns `ServiceActionResult` JSON. |
-| `SystemInfoHandler` | Reads `/proc`, WMI, registry, `uname`, etc. Returns `AgentMetadata`-shaped JSON. |
+| `PatchCommandHandler` | Delegates to `PatchStrategy` (Windows Update API on Windows, `apt`/`yum`/`dnf` on Linux, `softwareupdate` plus optional Homebrew on macOS). Returns `PatchResult` JSON. |
+| `ServiceCommandHandler` | Delegates to `ServiceStrategy` (`systemctl` on Linux, `sc.exe` / `Get-Service` on Windows, `launchctl` on macOS). Returns `ServiceActionResult` JSON. |
+| `SystemInfoHandler` | Reads `/proc`, WMI, registry, `uname`, `sysctl`, and `diskutil` data. Returns `AgentMetadata`-shaped JSON. |
 | `UpdateCommandHandler` | Downloads binary → verifies SHA-256 + Ed25519 signature → stages in temp dir → signals `AgentHostService` to restart with new binary. |
-| `CertificateLoader` | Loads `X509Certificate2` from PFX; validates issuer against bundled CA; rejects expired/revoked certs. |
+| `CertificateLoader` | Loads `X509Certificate2` from PFX; validates the agent certificate against the client CA and the server certificate against either `serverCaCertPath` or the fallback client CA; rejects expired/revoked certs. |
 | `CommandValidator` | Enforces: command allowlist, max 10 commands/sec sliding window, elevation requires explicit flag in request. |
 | `IntegrityChecker` | Verifies `AgentUpdatePackage.BinarySha256` against downloaded file; optionally checks Ed25519 detached signature. |
 | `ReconnectPolicy` | On channel fault: sleep `min(baseDelay × 2^attempt, maxDelay)` with ±20 % jitter; reset on successful handshake. |
 | `CommandTimeoutEnforcer` | Wraps each command execution in `CancellationTokenSource(timeout)`; kills the spawned process if it exceeds the deadline. |
-| `AgentPlatformDetector` | Returns `OsType`, architecture, init system (systemd / Windows Service), package manager. |
+| `AgentPlatformDetector` | Returns `OsType`, architecture, init system (systemd / Windows Service / launchd), package manager. |
 
 ---
 
@@ -118,12 +132,12 @@ option csharp_namespace = "HomeManagement.Agent.Protocol";
 // ──────────────────────────────────────────────
 service AgentHub {
   // Agent opens this stream on startup.
-  // Controller writes CommandRequest; agent writes AgentMessage.
+  // AgentGateway writes CommandRequest; agent writes AgentMessage.
   rpc Connect (stream AgentMessage) returns (stream ControlMessage);
 }
 
 // ──────────────────────────────────────────────
-//  Agent → Controller
+//  Agent → AgentGateway
 // ──────────────────────────────────────────────
 message AgentMessage {
   oneof payload {
@@ -164,7 +178,7 @@ message CommandResponse {
 }
 
 // ──────────────────────────────────────────────
-//  Controller → Agent
+//  AgentGateway → Agent
 // ──────────────────────────────────────────────
 message ControlMessage {
   oneof payload {
@@ -202,29 +216,29 @@ message Shutdown {
 
 message Ack {
   string in_response_to = 1;  // "handshake" | "heartbeat"
-  string controller_version = 2;
+  string controller_version = 2;  // AgentGateway version at the protocol edge
 }
 ```
 
 ### 3.1  Message flow
 
 ```
-Agent                                    Controller
+Agent                                   AgentGateway / Control Plane Edge
   │                                          │
   │──── Handshake ─────────────────────────►│  (first message after mTLS)
   │                                          │
-  │◄──── Ack (handshake) ──────────────────│  (controller confirms identity)
+  │◄──── Ack (handshake) ──────────────────│  (gateway confirms stream acceptance)
   │                                          │
   │──── Heartbeat (every 30 s) ────────────►│
   │◄──── Ack (heartbeat) ──────────────────│
   │                                          │
-  │◄──── CommandRequest (request_id=A) ────│  (controller sends a task)
+  │◄──── CommandRequest (request_id=A) ────│  (broker-originated task relayed by gateway)
   │                                          │
   │      [ agent executes locally ]          │
   │                                          │
-  │──── CommandResponse (request_id=A) ────►│  (agent returns result)
+  │──── CommandResponse (request_id=A) ────►│  (gateway relays result back to broker)
   │                                          │
-  │◄──── UpdateDirective ──────────────────│  (controller pushes update)
+  │◄──── UpdateDirective ──────────────────│  (broker-originated update relayed by gateway)
   │      [ agent downloads, verifies,        │
   │        stages, restarts ]                │
   │                                          │
@@ -271,7 +285,7 @@ Private CA (on control machine)
    - Not expired, not on CRL
    - CN matches the `agent_id` in the subsequent `Handshake` protobuf
 4. **Agent validates server cert:**
-   - Issuer = private CA (from bundled `ca.crt`)
+  - Issuer = `serverCaCertPath` when configured, otherwise bundled `ca.crt`
    - CN = expected control server name
 5. gRPC stream established; agent sends `Handshake` message.
 6. Controller sends `Ack`; agent is now in the connected pool.
@@ -659,6 +673,7 @@ conflicts and simplifies the protocol.
   // ── Certificates ──
   "certPath": "certs/agent.pfx",
   "caCertPath": "certs/ca.crt",
+  "serverCaCertPath": "certs/server-ca.crt",
 
   // ── Behavior ──
   "heartbeatIntervalSeconds": 30,
@@ -688,12 +703,14 @@ conflicts and simplifies the protocol.
 ```
 Linux: /opt/hm-agent/
 Windows: C:\ProgramData\HMAgent\
+macOS: /Library/Application Support/HomeManagement/Agent/
 
 ├── hm-agent(.exe)          # Main binary
 ├── hm-agent.json           # Configuration (ACL: 600 / service account only)
 ├── certs/
 │   ├── agent.pfx           # Agent identity cert (ACL: 600)
-│   └── ca.crt              # CA trust anchor (ACL: 644)
+│   ├── ca.crt              # Client-cert CA trust anchor (ACL: 644)
+│   └── server-ca.crt       # Optional server TLS trust anchor (ACL: 644)
 ├── logs/
 │   ├── agent-20260314.log  # Rotated daily, 7-day retention
 │   └── ...
@@ -741,6 +758,34 @@ AmbientCapabilities=CAP_NET_BIND_SERVICE
 WantedBy=multi-user.target
 ```
 
+**macOS (launchd):**
+
+```xml
+<!-- /Library/LaunchDaemons/net.cowgomu.hm-agent.plist -->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>net.cowgomu.hm-agent</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/Library/Application Support/HomeManagement/Agent/hm-agent</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Library/Application Support/HomeManagement/Agent</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Library/Application Support/HomeManagement/Agent/logs/launchd.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Library/Application Support/HomeManagement/Agent/logs/launchd.stderr.log</string>
+  </dict>
+</plist>
+```
+
 **Windows Service:**
 
 ```powershell
@@ -766,20 +811,24 @@ The agent uses a strategy pattern to abstract OS-specific operations:
 ICommandHandler
 ├── ShellCommandHandler
 │   ├── LinuxShellStrategy     → /bin/bash -c
-│   └── WindowsShellStrategy   → powershell.exe -NoProfile -NonInteractive -Command
+│   ├── WindowsShellStrategy   → powershell.exe -NoProfile -NonInteractive -Command
+│   └── MacOsShellStrategy     → /bin/zsh -c (fallback /bin/bash -c)
 │
 ├── PatchCommandHandler
 │   ├── AptPatchStrategy       → apt / apt-get
 │   ├── YumDnfPatchStrategy    → yum / dnf
-│   └── WindowsUpdateStrategy  → Windows Update Agent API
+│   ├── WindowsUpdateStrategy  → Windows Update Agent API
+│   └── MacOsPatchStrategy     → softwareupdate / brew
 │
 ├── ServiceCommandHandler
 │   ├── SystemdServiceStrategy → systemctl
-│   └── WindowsServiceStrategy → sc.exe / Get-Service
+│   ├── WindowsServiceStrategy → sc.exe / Get-Service
+│   └── LaunchdServiceStrategy → launchctl
 │
 └── SystemInfoHandler
     ├── LinuxSystemInfoStrategy  → /proc, uname, os-release
-    └── WindowsSystemInfoStrategy→ WMI, Environment, Registry
+  ├── WindowsSystemInfoStrategy→ WMI, Environment, Registry
+  └── MacOsSystemInfoStrategy  → sysctl, sw_vers, diskutil
 ```
 
 Strategy selection happens once at startup via `AgentPlatformDetector`:
@@ -787,10 +836,24 @@ Strategy selection happens once at startup via `AgentPlatformDetector`:
 ```csharp
 // Simplified selection logic
 var platform = AgentPlatformDetector.Detect();
-// platform.OsType     → Windows | Linux
-// platform.InitSystem → Systemd | WindowsService
-// platform.PkgManager → Apt | Yum | Dnf | WindowsUpdate
+// platform.OsType     → Windows | Linux | MacOs
+// platform.InitSystem → Systemd | WindowsService | Launchd
+// platform.PkgManager → Apt | Yum | Dnf | WindowsUpdate | SoftwareUpdate | Homebrew
 ```
+
+### 9.1  Platform implementation map
+
+| Platform | Service model | Config path | Command shell | Service control | Patch/update substrate |
+|----------|---------------|-------------|---------------|-----------------|------------------------|
+| Linux | `systemd` | `/opt/hm-agent/hm-agent.json` | `/bin/bash -c` | `systemctl` | `apt`, `yum`, `dnf` |
+| Windows | SCM service | `C:\ProgramData\HMAgent\hm-agent.json` | `powershell.exe -NoProfile -NonInteractive -Command` | `Get-Service`, `sc.exe` | Windows Update Agent API |
+| macOS | `launchd` LaunchDaemon | `/Library/Application Support/HomeManagement/Agent/hm-agent.json` | `/bin/zsh -c` with `/bin/bash -c` fallback | `launchctl` | `softwareupdate`, optional Homebrew |
+
+Implementation notes:
+
+- Linux remains the production baseline: self-contained `linux-x64` and `linux-arm64` binaries, dedicated `hm-agent` account, hardened `systemd` unit.
+- Windows keeps native service integration: SCM registration, PowerShell shell strategy, Job Object cleanup, and Windows Update API for patch orchestration.
+- macOS should be implemented as a first-class transport peer, not a compatibility shim: publish `osx-x64` and `osx-arm64`, install a LaunchDaemon, add `LaunchdServiceStrategy`, `MacOsSystemInfoStrategy`, and `MacOsPatchStrategy`, and keep file-based cert/config handling initially aligned with Linux and Windows.
 
 ---
 
@@ -941,9 +1004,11 @@ Agent-related audit events:
    ├── hm-agent.json          — pre-configured with controlServer, agentId
    ├── certs/
    │   ├── agent.pfx
-   │   └── ca.crt
+  │   ├── ca.crt
+  │   └── server-ca.crt      — optional, required when ingress TLS uses a different issuer than agent mTLS
    ├── install-linux.sh       — copies files, creates user, installs systemd unit
-   └── install-windows.ps1    — copies files, creates service, sets ACLs
+  ├── install-windows.ps1    — copies files, creates service, sets ACLs
+  └── install-macos.sh       — copies files, installs LaunchDaemon, sets root-only permissions
 4. Admin copies package to target, runs install script
 5. Agent starts → connects to controller → appears in GUI
 ```
@@ -955,6 +1020,8 @@ Agent-related audit events:
 | `win-x64` | Windows 10+ / Server 2016+ | x86_64 | Yes (.exe) |
 | `linux-x64` | Ubuntu 20.04+, RHEL 8+, Debian 11+ | x86_64 | Yes (ELF) |
 | `linux-arm64` | Ubuntu 20.04+, Debian 11+, Raspberry Pi OS 64-bit | ARM64 | Yes (ELF) |
+| `osx-x64` | macOS 13+ | x86_64 | Yes (Mach-O) |
+| `osx-arm64` | macOS 13+ | ARM64 / Apple Silicon | Yes (Mach-O) |
 
 ```bash
 # Build command

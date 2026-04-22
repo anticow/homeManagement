@@ -24,11 +24,13 @@ public static class ServiceRegistration
         string dataDirectory,
         IEnumerable<Assembly>? moduleAssemblies = null)
     {
-        var dbPath = Path.Combine(dataDirectory, "homemanagement.db");
-
-        // ── Data layer ──
-        services.AddDbContext<HomeManagementDbContext>(options =>
-            options.UseSqlite($"Data Source={dbPath}"));
+        // ── Data layer (only register SQLite if no provider was registered by a platform host) ──
+        if (!services.Any(s => s.ServiceType == typeof(DbContextOptions<HomeManagementDbContext>)))
+        {
+            var dbPath = Path.Combine(dataDirectory, "homemanagement.db");
+            services.AddDbContext<HomeManagementDbContext>(options =>
+                options.UseSqlite($"Data Source={dbPath}"));
+        }
 
         // ── Cross-cutting infrastructure ──
         services.AddSingleton<ICorrelationContext, CorrelationContext>();
@@ -113,7 +115,7 @@ public static class ServiceRegistration
     }
 
     /// <summary>
-    /// Run EF Core migrations and configure SQLite WAL mode for concurrent read performance.
+    /// Run EF Core migrations and apply provider-specific optimizations.
     /// </summary>
     public static async Task InitializeDatabaseAsync(IServiceProvider services)
     {
@@ -121,9 +123,11 @@ public static class ServiceRegistration
         var db = scope.ServiceProvider.GetRequiredService<HomeManagementDbContext>();
         await db.Database.MigrateAsync();
 
-        // Enable WAL mode for better concurrent read/write performance.
-        // WAL allows readers to not block writers and vice versa.
-        await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
+        // Enable WAL mode for better concurrent read/write performance (SQLite only).
+        if (db.Database.IsSqlite())
+        {
+            await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
+        }
     }
 }
 

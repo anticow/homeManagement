@@ -21,6 +21,17 @@ public sealed class JobRepository : IJobRepository
         return entity is null ? null : ToDomain(entity);
     }
 
+    public async Task<JobStatus?> GetByIdempotencyKeyAsync(Guid idempotencyKey, CancellationToken ct = default)
+    {
+        var keyString = idempotencyKey.ToString();
+        var entity = await _db.Jobs
+            .Include(j => j.MachineResults)
+            .Where(j => j.DefinitionJson != null && j.DefinitionJson.Contains(keyString))
+            .FirstOrDefaultAsync(ct);
+
+        return entity is null ? null : ToDomain(entity);
+    }
+
     public async Task<PagedResult<JobSummary>> QueryAsync(JobQuery query, CancellationToken ct = default)
     {
         IQueryable<JobEntity> q = _db.Jobs;
@@ -60,7 +71,16 @@ public sealed class JobRepository : IJobRepository
     public Task UpdateAsync(JobStatus job, CancellationToken ct = default)
     {
         var entity = ToEntity(job);
-        _db.Jobs.Update(entity);
+        var trackedEntity = _db.Jobs.Local.FirstOrDefault(existing => existing.Id == entity.Id);
+        if (trackedEntity is not null)
+        {
+            _db.Entry(trackedEntity).CurrentValues.SetValues(entity);
+        }
+        else
+        {
+            _db.Jobs.Update(entity);
+        }
+
         return Task.CompletedTask;
     }
 

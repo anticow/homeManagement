@@ -1,0 +1,14 @@
+{
+  "Agent": {
+    "ControlServer": "{{CONTROL_SERVER}}",
+    "AgentId": "{{AGENT_ID}}",
+    "ApiKey": "{{KEYVAULT:agent-apikey-{{AGENT_ID}}}}",
+    "UseTls": true,
+    "CertPath": "{{KEYVAULT:agent-cert-path-{{AGENT_ID}}}}",
+    "CaCertPath": "{{KEYVAULT:agent-cacert-path}}",
+    "ServerCaCertPath": "{{KEYVAULT_OPTIONAL:agent-server-cacert-path}}",
+    "HeartbeatIntervalSeconds": 30,
+    "MaxConcurrentCommands": 5,
+    "LogLevel": "Information"
+  }
+}

@@ -23,6 +23,7 @@ public sealed class AgentHostService : BackgroundService
     private readonly ReconnectPolicy _reconnectPolicy;
     private readonly ShutdownCoordinator _shutdown;
     private readonly UpdateCommandHandler _updateHandler;
+    private readonly AgentCommandExecutionService _commandExecutionService;
     private readonly ILogger<AgentHostService> _logger;
 
     // Thread-safe outbound message queue
@@ -34,8 +35,6 @@ public sealed class AgentHostService : BackgroundService
     private readonly Channel<CommandRequest> _inboundCommands = Channel.CreateBounded<CommandRequest>(
         new BoundedChannelOptions(128) { FullMode = BoundedChannelFullMode.Wait });
 
-    private readonly SemaphoreSlim _commandSemaphore;
-
     public AgentHostService(
         IOptions<AgentConfiguration> config,
         GrpcChannelManager channelManager,
@@ -43,6 +42,7 @@ public sealed class AgentHostService : BackgroundService
         ReconnectPolicy reconnectPolicy,
         ShutdownCoordinator shutdown,
         UpdateCommandHandler updateHandler,
+        AgentCommandExecutionService commandExecutionService,
         ILogger<AgentHostService> logger)
     {
         _config = config.Value;
@@ -51,8 +51,8 @@ public sealed class AgentHostService : BackgroundService
         _reconnectPolicy = reconnectPolicy;
         _shutdown = shutdown;
         _updateHandler = updateHandler;
+        _commandExecutionService = commandExecutionService;
         _logger = logger;
-        _commandSemaphore = new SemaphoreSlim(config.Value.MaxConcurrentCommands);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -92,7 +92,13 @@ public sealed class AgentHostService : BackgroundService
         var channel = _channelManager.CreateChannel();
         var client = new AgentHub.AgentHubClient(channel);
 
-        using var call = client.Connect(cancellationToken: ct);
+        var headers = new Metadata();
+        if (!string.IsNullOrWhiteSpace(_config.ApiKey))
+        {
+            headers.Add("x-agent-api-key", _config.ApiKey);
+        }
+
+        using var call = client.Connect(headers, cancellationToken: ct);
 
         // Send handshake
         var handshake = BuildHandshake();
@@ -164,24 +170,7 @@ public sealed class AgentHostService : BackgroundService
     /// </summary>
     private async Task CommandProcessingLoopAsync(CancellationToken ct)
     {
-        await foreach (var request in _inboundCommands.Reader.ReadAllAsync(ct))
-        {
-            await HandleCommandAsync(request, ct);
-        }
-    }
-
-    private async Task HandleCommandAsync(CommandRequest request, CancellationToken ct)
-    {
-        await _commandSemaphore.WaitAsync(ct);
-        try
-        {
-            var response = await _dispatcher.DispatchAsync(request, ct);
-            await _outbound.Writer.WriteAsync(new AgentMessage { CommandResponse = response }, ct);
-        }
-        finally
-        {
-            _commandSemaphore.Release();
-        }
+        await _commandExecutionService.ProcessAsync(_inboundCommands.Reader, _outbound.Writer, ct);
     }
 
     private async Task SendLoopAsync(IClientStreamWriter<AgentMessage> stream, CancellationToken ct)

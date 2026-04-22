@@ -1,0 +1,90 @@
+{{- $ns := .Values.namespace -}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hm-broker
+  namespace: {{ $ns }}
+  labels:
+    {{- include "homemanagement.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: hm-broker
+  ports:
+    - port: {{ .Values.broker.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hm-auth
+  namespace: {{ $ns }}
+  labels:
+    {{- include "homemanagement.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: hm-auth
+  ports:
+    - port: {{ .Values.authService.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hm-web
+  namespace: {{ $ns }}
+  labels:
+    {{- include "homemanagement.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: hm-web
+  ports:
+    - port: {{ .Values.web.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hm-agent-gw
+  namespace: {{ $ns }}
+  labels:
+    {{- include "homemanagement.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.agentGateway.serviceType }}
+  selector:
+    app: hm-agent-gw
+  ports:
+    - port: {{ .Values.agentGateway.port }}
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+    - port: {{ .Values.agentGateway.apiPort }}
+      targetPort: api
+      protocol: TCP
+      name: api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hm-gateway
+  namespace: {{ $ns }}
+  labels:
+    {{- include "homemanagement.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: hm-gateway
+  ports:
+    - port: {{ .Values.gateway.port }}
+      targetPort: http
+      protocol: TCP
+      name: http

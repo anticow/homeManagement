@@ -19,6 +19,15 @@ public class HomeManagementDbContext : DbContext
     public DbSet<ScheduledJobEntity> ScheduledJobs => Set<ScheduledJobEntity>();
     public DbSet<ServiceSnapshotEntity> ServiceSnapshots => Set<ServiceSnapshotEntity>();
     public DbSet<AppSettingEntity> AppSettings => Set<AppSettingEntity>();
+    public DbSet<AuthUserEntity> AuthUsers => Set<AuthUserEntity>();
+    public DbSet<AuthRoleEntity> AuthRoles => Set<AuthRoleEntity>();
+    public DbSet<AuthUserRoleEntity> AuthUserRoles => Set<AuthUserRoleEntity>();
+    public DbSet<AuthRefreshTokenEntity> AuthRefreshTokens => Set<AuthRefreshTokenEntity>();
+
+    public DbSet<AutomationRunEntity> AutomationRuns => Set<AutomationRunEntity>();
+    public DbSet<AutomationRunStepEntity> AutomationRunSteps => Set<AutomationRunStepEntity>();
+    public DbSet<AutomationMachineResultEntity> AutomationMachineResults => Set<AutomationMachineResultEntity>();
+    public DbSet<AutomationPlanEntity> AutomationPlans => Set<AutomationPlanEntity>();
 
     /// <summary>
     /// Intercept save to enforce audit event immutability — audit records
@@ -79,6 +88,7 @@ public class HomeManagementDbContext : DbContext
             e.HasIndex(t => new { t.MachineId, t.Key }).IsUnique();
             e.HasIndex(t => t.Key);             // "find all machines tagged 'role'"
             e.HasIndex(t => new { t.Key, t.Value }); // "find machines where role=web"
+            e.HasQueryFilter(t => !t.Machine.IsDeleted);
         });
 
         // ── Patch History ──
@@ -90,6 +100,7 @@ public class HomeManagementDbContext : DbContext
             e.HasIndex(p => p.State);           // "find all pending patches"
             e.HasIndex(p => new { p.MachineId, p.TimestampUtc }); // "patch history for machine X"
             e.HasIndex(p => new { p.MachineId, p.PatchId });       // "is this patch known for machine?"
+            e.HasQueryFilter(p => !p.Machine.IsDeleted);
             e.Property(p => p.State).HasConversion<string>();
             e.Property(p => p.Severity).HasConversion<string>();
             e.Property(p => p.Category).HasConversion<string>();
@@ -108,9 +119,11 @@ public class HomeManagementDbContext : DbContext
             e.HasIndex(a => a.Action);
             e.HasIndex(a => new { a.Action, a.Outcome });                // "all successful patch installs"
             e.HasIndex(a => new { a.TargetMachineId, a.TimestampUtc });  // "audit trail for machine X"
+            e.HasIndex(a => a.ChainVersion);                             // "query only v1 HMAC chain events"
             e.Property(a => a.Action).HasConversion<string>();
             e.Property(a => a.Outcome).HasConversion<string>();
             e.Property(a => a.PropertiesJson).HasColumnName("Properties");
+            e.Property(a => a.ChainVersion).HasDefaultValue(0);
         });
 
         // ── Jobs ──
@@ -147,6 +160,7 @@ public class HomeManagementDbContext : DbContext
             e.HasIndex(s => s.MachineId);
             e.HasIndex(s => new { s.MachineId, s.ServiceName });  // "services on machine X"
             e.HasIndex(s => s.CapturedUtc);
+            e.HasQueryFilter(s => !s.Machine.IsDeleted);
             e.Property(s => s.State).HasConversion<string>();
             e.Property(s => s.StartupType).HasConversion<string>();
         });
@@ -155,6 +169,76 @@ public class HomeManagementDbContext : DbContext
         modelBuilder.Entity<AppSettingEntity>(e =>
         {
             e.HasKey(a => a.Key);
+        });
+
+        // ── Auth Users ──
+        modelBuilder.Entity<AuthUserEntity>(e =>
+        {
+            e.HasKey(u => u.Id);
+            e.HasIndex(u => u.Username).IsUnique();
+            e.HasIndex(u => u.Email).IsUnique();
+            e.HasIndex(u => u.Provider);
+            e.Property(u => u.Username).HasMaxLength(128);
+            e.Property(u => u.Email).HasMaxLength(256);
+            e.Property(u => u.Provider).HasMaxLength(64);
+            e.HasMany(u => u.UserRoles).WithOne(ur => ur.User).HasForeignKey(ur => ur.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(u => u.RefreshTokens).WithOne(t => t.User).HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── Auth Roles ──
+        modelBuilder.Entity<AuthRoleEntity>(e =>
+        {
+            e.HasKey(r => r.Id);
+            e.HasIndex(r => r.Name).IsUnique();
+            e.Property(r => r.Name).HasMaxLength(64);
+            e.HasMany(r => r.UserRoles).WithOne(ur => ur.Role).HasForeignKey(ur => ur.RoleId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── Auth User Roles ──
+        modelBuilder.Entity<AuthUserRoleEntity>(e =>
+        {
+            e.HasKey(ur => new { ur.UserId, ur.RoleId });
+            e.HasIndex(ur => ur.RoleId);
+        });
+
+        // ── Auth Refresh Tokens ──
+        modelBuilder.Entity<AuthRefreshTokenEntity>(e =>
+        {
+            e.HasKey(t => t.Id);
+            e.HasIndex(t => t.TokenHash).IsUnique();
+            e.HasIndex(t => new { t.UserId, t.ExpiresUtc });
+        });
+
+        // ── Automation Runs ──
+        modelBuilder.Entity<AutomationRunEntity>(e =>
+        {
+            e.HasKey(a => a.Id);
+            e.HasIndex(a => a.StartedUtc);
+            e.HasIndex(a => a.WorkflowType);
+            e.HasIndex(a => a.State);
+            e.HasIndex(a => a.CorrelationId);
+            e.Property(a => a.State).HasConversion<string>();
+            e.HasMany(a => a.Steps).WithOne(s => s.Run).HasForeignKey(s => s.RunId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(a => a.MachineResults).WithOne(r => r.Run).HasForeignKey(r => r.RunId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── Automation Run Steps ──
+        modelBuilder.Entity<AutomationRunStepEntity>(e =>
+        {
+            e.HasKey(s => s.Id);
+            e.HasIndex(s => s.RunId);
+            e.HasIndex(s => new { s.RunId, s.StepName });
+            e.Property(s => s.State).HasConversion<string>();
+        });
+
+        // ── Automation Machine Results ──
+        modelBuilder.Entity<AutomationMachineResultEntity>(e =>
+        {
+            e.HasKey(r => r.Id);
+            e.HasIndex(r => r.RunId);
+            e.HasIndex(r => r.MachineId);
+            e.HasIndex(r => new { r.RunId, r.MachineId });
+            e.HasIndex(r => new { r.RunId, r.Success });
         });
     }
 }

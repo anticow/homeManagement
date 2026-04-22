@@ -9,10 +9,13 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="NSubstitute" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Serilog" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\HomeManagement.Core\HomeManagement.Core.csproj" />
+    <ProjectReference Include="..\..\src\HomeManagement.Data\HomeManagement.Data.csproj" />
   </ItemGroup>
 </Project>

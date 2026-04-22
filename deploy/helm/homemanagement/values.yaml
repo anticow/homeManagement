@@ -1,0 +1,163 @@
+# -- Global settings
+global:
+  imageRegistry: ghcr.io/anticow
+  imageTag: latest
+  imagePullPolicy: IfNotPresent
+  imagePullSecret:
+    enabled: false
+    registry: ghcr.io
+    username: ""
+    password: ""  # GitHub PAT with read:packages scope
+
+# -- Namespace
+namespace: homemanagement
+
+# -- Database
+database:
+  connectionString: ""  # Required — override via --set or values override file
+  # Example: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=...;Encrypt=True;TrustServerCertificate=False"
+
+# -- Seq centralized logging (in-cluster: http://seq.seq.svc.cluster.local:5341)
+seq:
+  url: "http://seq.seq.svc.cluster.local:5341"
+
+# -- Auth configuration
+auth:
+  jwtSigningKey: ""  # Required — 64+ character random string
+  issuer: "homemanagement"
+  audience: "homemanagement-api"
+  bootstrapAdmin:
+    enabled: false
+    username: "admin"
+    password: ""  # Set to seed a first-run admin account
+    displayName: "System Administrator"
+    email: "admin@homemanagement.local"
+
+# -- Broker service
+broker:
+  replicaCount: 1
+  image:
+    repository: hm-broker
+    tag: ""  # Defaults to global.imageTag
+  port: 8082
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+# -- Auth service
+authService:
+  replicaCount: 2
+  image:
+    repository: hm-auth
+    tag: ""
+  port: 8083
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# -- Web GUI (Blazor Server)
+web:
+  replicaCount: 1
+  image:
+    repository: hm-web
+    tag: ""
+  port: 8080
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 75
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# -- Agent Gateway (gRPC)
+agentGateway:
+  replicaCount: 1
+  apiKey: ""  # Required — shared with Broker/internal control-plane clients
+  agentApiKeysJson: "{}"  # Required for agent gRPC auth — JSON object mapping agentId -> API key
+  serviceType: ClusterIP
+  image:
+    repository: hm-agent-gw
+    tag: ""
+  port: 9444       # gRPC (HTTP/2)
+  apiPort: 9445    # REST / health (HTTP/1.1)
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+# -- API Gateway (YARP)
+gateway:
+  replicaCount: 2
+  image:
+    repository: hm-gateway
+    tag: ""
+  port: 8081
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# -- Ingress
+ingress:
+  enabled: true
+  className: nginx
+  host: homemanagement.cowgomu.net
+  brokerHost: broker.cowgomu.net
+  authHost: authapi.cowgomu.net
+  agentGatewayHost: agentgw.cowgomu.net
+  agentGatewayApiHost: agentgw-api.cowgomu.net
+  clusterIssuer: ""
+  sslRedirect: true
+  tls:
+    enabled: true
+    secretName: hm-wildcard-tls
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+  grpcAnnotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+
+# -- Service account
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# -- Prometheus monitoring
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+    interval: 30s

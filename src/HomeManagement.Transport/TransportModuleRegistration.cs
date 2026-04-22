@@ -1,5 +1,6 @@
 using HomeManagement.Abstractions.CrossCutting;
 using HomeManagement.Abstractions.Interfaces;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace HomeManagement.Transport;
@@ -17,11 +18,12 @@ public sealed class TransportModuleRegistration : IModuleRegistration
         services.AddSingleton<SshTransportProvider>();
         services.AddSingleton<WinRmTransportProvider>();
         services.AddSingleton<AgentTransportProvider>();
-        // AgentGateway: single instance shared between IAgentGateway consumers and the gRPC service
-        services.AddSingleton<AgentGatewayService>();
-        services.AddSingleton<IAgentGateway>(sp => sp.GetRequiredService<AgentGatewayService>());
+        services.AddSingleton<RemoteAgentGatewayClient>();
+        services.AddSingleton<IAgentGateway>(sp => sp.GetRequiredService<RemoteAgentGatewayClient>());
+        services.AddHostedService<AgentAutoRegistrationHostedService>();
         // Command broker: async queue for fire-and-forget command dispatch with persistent results
         services.AddSingleton<CommandBrokerService>();
+        services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<CommandBrokerService>());
         services.AddSingleton<ICommandBroker>(sp => sp.GetRequiredService<CommandBrokerService>());
         services.AddScoped<IRemoteExecutor, RemoteExecutorRouter>();
     }

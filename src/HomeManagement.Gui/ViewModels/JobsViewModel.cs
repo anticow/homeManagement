@@ -29,7 +29,7 @@ public sealed class JobsViewModel : ViewModelBase
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> RefreshCommand { get; }
     public ReactiveCommand<JobId, System.Reactive.Unit> CancelJobCommand { get; }
 
-    public JobsViewModel(IJobScheduler jobScheduler, ICommandBroker broker)
+    public JobsViewModel(IJobScheduler jobScheduler)
     {
         _jobScheduler = jobScheduler;
 
@@ -45,15 +45,6 @@ public sealed class JobsViewModel : ViewModelBase
 
         // Live progress updates from the scheduler's progress stream
         _jobScheduler.ProgressStream
-            .ObserveOn(RxApp.MainThreadScheduler)
-            .SelectMany(_ => RefreshCommand.Execute())
-            .Subscribe()
-            .DisposeWith(Disposables);
-
-        // Also refresh when the broker completes any command (job results written to DB)
-        broker.CompletedStream
-            .Where(evt => evt.JobId.HasValue)
-            .Throttle(TimeSpan.FromSeconds(2))
             .ObserveOn(RxApp.MainThreadScheduler)
             .SelectMany(_ => RefreshCommand.Execute())
             .Subscribe()

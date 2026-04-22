@@ -42,6 +42,8 @@ internal static class Program
                     if (string.IsNullOrEmpty(agentConfig.AgentId))
                         agentConfig.AgentId = Environment.MachineName.ToLowerInvariant();
 
+                    agentConfig.Validate();
+
                     services.AddSingleton(Options.Create(agentConfig));
 
                     // Security
@@ -52,6 +54,10 @@ internal static class Program
                     // Communication
                     services.AddSingleton<GrpcChannelManager>();
                     services.AddSingleton<CommandDispatcher>();
+                    services.AddSingleton(sp => new AgentCommandExecutionService(
+                        sp.GetRequiredService<CommandDispatcher>(),
+                        sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<AgentCommandExecutionService>>(),
+                        sp.GetRequiredService<IOptions<AgentConfiguration>>().Value.MaxConcurrentCommands));
                     services.AddSingleton<ShutdownCoordinator>();
 
                     // Resilience
