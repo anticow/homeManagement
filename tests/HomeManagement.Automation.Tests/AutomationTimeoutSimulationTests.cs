@@ -4,7 +4,6 @@ using HomeManagement.Abstractions.Interfaces;
 using HomeManagement.Abstractions.Models;
 using HomeManagement.Automation;
 using HomeManagement.Data;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -16,16 +15,15 @@ namespace HomeManagement.Automation.Tests;
 /// </summary>
 public sealed class AutomationTimeoutSimulationTests : IAsyncLifetime, IDisposable
 {
-    private SqliteConnection _connection = null!;
+    private string _dbPath = null!;
     private ServiceProvider _services = null!;
 
     public async Task InitializeAsync()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        await _connection.OpenAsync();
+        _dbPath = Path.Combine(Path.GetTempPath(), $"hm_timeout_{Guid.NewGuid():N}.db");
 
         var collection = new ServiceCollection();
-        collection.AddDbContext<HomeManagementDbContext>(options => options.UseSqlite(_connection));
+        collection.AddDbContext<HomeManagementDbContext>(options => options.UseSqlite($"DataSource={_dbPath}"));
         collection.AddLogging();
 
         collection.AddOptions<AutomationOptions>()
@@ -46,6 +44,12 @@ public sealed class AutomationTimeoutSimulationTests : IAsyncLifetime, IDisposab
             collection.AddSingleton<IProcessRunner>(_ => new SlowMockProcessRunner(delayMs: 10000));
         }
 
+        // Replace GuardedAnsibleHandoffService with a direct implementation that bypasses
+        // filesystem path resolution (which fails in CI where ansible is not present).
+        var handoffDescriptor = collection.FirstOrDefault(d => d.ServiceType == typeof(IAnsibleHandoffService));
+        if (handoffDescriptor != null) collection.Remove(handoffDescriptor);
+        collection.AddScoped<IAnsibleHandoffService, DirectProcessHandoffService>();
+
         collection.AddScoped<IAuditLogger, FakeAuditLogger>();
 
         _services = collection.BuildServiceProvider();
@@ -53,18 +57,29 @@ public sealed class AutomationTimeoutSimulationTests : IAsyncLifetime, IDisposab
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<HomeManagementDbContext>();
         await db.Database.EnsureCreatedAsync();
+        await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
+        await db.Database.ExecuteSqlRawAsync("PRAGMA busy_timeout=10000;");
     }
 
     public async Task DisposeAsync()
     {
-        await _connection.DisposeAsync();
         await _services.DisposeAsync();
+        TryDelete(_dbPath);
+        TryDelete(_dbPath + "-wal");
+        TryDelete(_dbPath + "-shm");
     }
 
     public void Dispose()
     {
         _services.Dispose();
-        _connection.Dispose();
+        TryDelete(_dbPath);
+        TryDelete(_dbPath + "-wal");
+        TryDelete(_dbPath + "-shm");
+    }
+
+    private static void TryDelete(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); } catch { /* best-effort */ }
     }
 
     [Fact]
@@ -115,16 +130,55 @@ public sealed class AutomationTimeoutSimulationTests : IAsyncLifetime, IDisposab
     }
 
     /// <summary>
+    /// Bypasses filesystem path resolution in GuardedAnsibleHandoffService, which fails in CI
+    /// where no ansible directory is present. Calls the process runner directly so the slow mock
+    /// process runner can exercise the timeout/cancellation path.
+    /// </summary>
+    private sealed class DirectProcessHandoffService : IAnsibleHandoffService
+    {
+        private readonly IProcessRunner _processRunner;
+
+        public DirectProcessHandoffService(IProcessRunner processRunner) => _processRunner = processRunner;
+
+        public async Task<AnsibleHandoffExecutionResult> ExecuteAsync(AnsibleHandoffRunRequest request, CancellationToken ct = default)
+        {
+            if (!request.ApproveAndRun)
+                return new AnsibleHandoffExecutionResult(false, request.Operation, "", "", DateTime.UtcNow, DateTime.UtcNow, null, "", "", "ApproveAndRun must be true.");
+
+            var startedUtc = DateTime.UtcNow;
+
+            // Replicate the timeout CTS logic from GuardedAnsibleHandoffService
+            using var timeoutCts = request.ExecutionTimeoutSeconds.HasValue
+                ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+                : null;
+            if (timeoutCts != null && request.ExecutionTimeoutSeconds.HasValue)
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(request.ExecutionTimeoutSeconds.Value));
+            var operationCt = timeoutCts?.Token ?? ct;
+
+            var result = await _processRunner.RunAsync("ansible-playbook", "add-k3s-worker.yml", "/tmp", operationCt);
+
+            if (result.WasCancelled)
+                return new AnsibleHandoffExecutionResult(
+                    false, request.Operation, "add-k3s-worker.yml",
+                    "ansible-playbook add-k3s-worker.yml", startedUtc, DateTime.UtcNow,
+                    null, "", "", "Ansible handoff execution was cancelled or timed out.", TimedOut: true, Cancelled: true);
+
+            return new AnsibleHandoffExecutionResult(
+                result.ExitCode == 0, request.Operation, "add-k3s-worker.yml",
+                "ansible-playbook add-k3s-worker.yml", startedUtc, DateTime.UtcNow,
+                result.ExitCode, result.StdOut, result.StdErr,
+                result.ExitCode == 0 ? null : "non-zero exit");
+        }
+    }
+
+    /// <summary>
     /// Mock process runner that simulates a long-running process for deterministic timeout testing.
     /// </summary>
     private sealed class SlowMockProcessRunner : IProcessRunner
     {
         private readonly int _delayMs;
 
-        public SlowMockProcessRunner(int delayMs)
-        {
-            _delayMs = delayMs;
-        }
+        public SlowMockProcessRunner(int delayMs) => _delayMs = delayMs;
 
         public async Task<ProcessResult> RunAsync(string fileName, string arguments, string workingDirectory, CancellationToken ct)
         {

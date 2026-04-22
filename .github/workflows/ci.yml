@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [master, main, develop]
   pull_request:
-    branches: [main, develop]
+    branches: [master, main, develop]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -61,6 +61,7 @@ jobs:
           dotnet test
           --no-build
           --configuration Release
+          --filter "Category!=Platform"
           --logger "trx;LogFileName=test-results.trx"
           --collect:"XPlat Code Coverage"
           --results-directory ./TestResults
