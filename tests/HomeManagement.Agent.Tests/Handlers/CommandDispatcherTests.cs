@@ -146,7 +146,7 @@ public sealed class CommandDispatcherTests
 
         var response = await dispatcher.DispatchAsync(request, CancellationToken.None);
 
-        response.DurationMs.Should().BeGreaterOrEqualTo(0);
+        response.DurationMs.Should().BeGreaterThanOrEqualTo(0);
     }
 
     // ── Case-insensitive routing ──
