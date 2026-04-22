@@ -42,6 +42,8 @@ internal static class Program
                     if (string.IsNullOrEmpty(agentConfig.AgentId))
                         agentConfig.AgentId = Environment.MachineName.ToLowerInvariant();
 
+                    agentConfig.Validate();
+
                     services.AddSingleton(Options.Create(agentConfig));
 
                     // Security

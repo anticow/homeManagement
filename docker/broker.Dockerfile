@@ -18,6 +18,9 @@ COPY src/HomeManagement.Inventory/HomeManagement.Inventory.csproj src/HomeManage
 COPY src/HomeManagement.Auditing/HomeManagement.Auditing.csproj src/HomeManagement.Auditing/
 COPY src/HomeManagement.Orchestration/HomeManagement.Orchestration.csproj src/HomeManagement.Orchestration/
 COPY src/HomeManagement.Core/HomeManagement.Core.csproj src/HomeManagement.Core/
+COPY src/HomeManagement.AI.Abstractions/HomeManagement.AI.Abstractions.csproj src/HomeManagement.AI.Abstractions/
+COPY src/HomeManagement.Automation/HomeManagement.Automation.csproj src/HomeManagement.Automation/
+COPY src/HomeManagement.AI.Ollama/HomeManagement.AI.Ollama.csproj src/HomeManagement.AI.Ollama/
 COPY src/HomeManagement.Broker.Host/HomeManagement.Broker.Host.csproj src/HomeManagement.Broker.Host/
 RUN dotnet restore src/HomeManagement.Broker.Host/HomeManagement.Broker.Host.csproj
 
@@ -26,5 +29,8 @@ RUN dotnet publish src/HomeManagement.Broker.Host/HomeManagement.Broker.Host.csp
     -c Release -o /app/publish --no-restore
 
 FROM base AS final
+RUN adduser --disabled-password --gecos "" appuser && \
+    mkdir -p /app/logs && chown appuser:appuser /app/logs
 COPY --from=build /app/publish .
+USER appuser
 ENTRYPOINT ["dotnet", "HomeManagement.Broker.Host.dll"]

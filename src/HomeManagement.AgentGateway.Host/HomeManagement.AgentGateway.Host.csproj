@@ -6,6 +6,9 @@
     <NoWarn>CA1848;CA1873</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="HomeManagement.AgentGateway.Host.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Grpc.AspNetCore" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Sinks.Seq" />

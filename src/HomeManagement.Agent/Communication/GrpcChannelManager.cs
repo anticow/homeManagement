@@ -44,45 +44,48 @@ public sealed class GrpcChannelManager : IDisposable
             if (_config.UseTls)
             {
                 var address = $"https://{_config.ControlServer}";
-
-                if (!string.IsNullOrEmpty(_config.CertPath))
+                var handler = new SocketsHttpHandler
                 {
-                    // mTLS: client certificate + custom CA validation
-                    var agentCert = _certLoader.LoadAgentCertificate();
-                    var caCert = _certLoader.LoadCaCertificate();
+                    PooledConnectionIdleTimeout = Timeout.InfiniteTimeSpan,
+                    KeepAlivePingDelay = TimeSpan.FromSeconds(20),
+                    KeepAlivePingTimeout = TimeSpan.FromSeconds(10),
+                    EnableMultipleHttp2Connections = true
+                };
 
-                    if (!_certLoader.ValidateChain(agentCert, caCert))
+                var sslOptions = new SslClientAuthenticationOptions();
+
+                if (!string.IsNullOrWhiteSpace(_config.CertPath))
+                {
+                    var agentCert = _certLoader.LoadAgentCertificate();
+                    var clientCaCert = _certLoader.LoadCaCertificate();
+
+                    if (!_certLoader.ValidateChain(agentCert, clientCaCert))
                         throw new InvalidOperationException("Agent certificate chain validation failed.");
 
-                    var handler = new SocketsHttpHandler
-                    {
-                        SslOptions = new SslClientAuthenticationOptions
-                        {
-                            ClientCertificates = [agentCert],
-                            RemoteCertificateValidationCallback = (_, cert, chain, errors) =>
-                                ValidateServerCertificate(cert, chain, errors, caCert)
-                        },
-                        PooledConnectionIdleTimeout = Timeout.InfiniteTimeSpan,
-                        KeepAlivePingDelay = TimeSpan.FromSeconds(20),
-                        KeepAlivePingTimeout = TimeSpan.FromSeconds(10),
-                        EnableMultipleHttp2Connections = true
-                    };
-
-                    newChannel = GrpcChannel.ForAddress(address, new GrpcChannelOptions { HttpHandler = handler });
+                    sslOptions.ClientCertificates = [agentCert];
                 }
-                else
+
+                if (!string.IsNullOrWhiteSpace(_config.ServerCaCertPath)
+                    || (!string.IsNullOrWhiteSpace(_config.CertPath) && !string.IsNullOrWhiteSpace(_config.CaCertPath)))
                 {
-                    // Standard TLS with system-trusted CAs (e.g., Let's Encrypt)
-                    var handler = new SocketsHttpHandler
-                    {
-                        PooledConnectionIdleTimeout = Timeout.InfiniteTimeSpan,
-                        KeepAlivePingDelay = TimeSpan.FromSeconds(20),
-                        KeepAlivePingTimeout = TimeSpan.FromSeconds(10),
-                        EnableMultipleHttp2Connections = true
-                    };
+                    _logger.LogInformation(
+                        "Server certificate trust anchor path resolved to {ServerCaCertPath}",
+                        string.IsNullOrWhiteSpace(_config.ServerCaCertPath)
+                            ? _config.CaCertPath
+                            : _config.ServerCaCertPath);
 
-                    newChannel = GrpcChannel.ForAddress(address, new GrpcChannelOptions { HttpHandler = handler });
+                    var serverCaCert = _certLoader.LoadServerCaCertificate();
+                    sslOptions.RemoteCertificateValidationCallback = (_, cert, chain, errors) =>
+                        ValidateServerCertificate(cert, chain, errors, serverCaCert);
                 }
+
+                if (sslOptions.ClientCertificates is not null
+                    || sslOptions.RemoteCertificateValidationCallback is not null)
+                {
+                    handler.SslOptions = sslOptions;
+                }
+
+                newChannel = GrpcChannel.ForAddress(address, new GrpcChannelOptions { HttpHandler = handler });
             }
             else
             {

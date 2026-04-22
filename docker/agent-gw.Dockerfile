@@ -18,5 +18,7 @@ RUN dotnet publish src/HomeManagement.AgentGateway.Host/HomeManagement.AgentGate
     -c Release -o /app/publish --no-restore
 
 FROM base AS final
+RUN adduser --disabled-password --gecos "" appuser
 COPY --from=build /app/publish .
+USER appuser
 ENTRYPOINT ["dotnet", "HomeManagement.AgentGateway.Host.dll"]

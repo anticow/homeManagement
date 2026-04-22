@@ -1,5 +1,7 @@
 # 17 — Remediation And Decision Tracker
 
+> **Status: CLOSED** — All 4 architecture decisions resolved as of 2026-04-20. Retained for historical reference.
+>
 > Tracking document for open findings from the 2026-03-21 independent code, architecture, and deployment review.
 >
 > Purpose:

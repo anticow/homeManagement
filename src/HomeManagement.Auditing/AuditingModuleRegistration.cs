@@ -10,6 +10,7 @@ public sealed class AuditingModuleRegistration : IModuleRegistration
 
     public void Register(IServiceCollection services)
     {
+        services.AddOptions<AuditOptions>();
         services.AddSingleton<ISensitiveDataFilter, SensitiveDataFilter>();
         services.AddScoped<IAuditLogger, AuditLoggerService>();
     }
