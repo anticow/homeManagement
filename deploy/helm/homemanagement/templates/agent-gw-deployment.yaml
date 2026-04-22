@@ -17,6 +17,10 @@ spec:
       labels:
         app: {{ $svcName }}
     spec:
+      {{- if .Values.global.imagePullSecret.enabled }}
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      {{- end }}
       containers:
         - name: agent-gateway
           image: {{ include "homemanagement.image" (dict "global" .Values.global "image" .Values.agentGateway.image) }}
@@ -24,25 +28,40 @@ spec:
           ports:
             - containerPort: {{ .Values.agentGateway.port }}
               name: grpc
+            - containerPort: {{ .Values.agentGateway.apiPort }}
+              name: api
           env:
-            - name: ASPNETCORE_URLS
+            - name: Kestrel__Endpoints__Grpc__Url
               value: "http://+:{{ .Values.agentGateway.port }}"
+            - name: Kestrel__Endpoints__Grpc__Protocols
+              value: "Http2"
+            - name: Kestrel__Endpoints__Health__Url
+              value: "http://+:{{ .Values.agentGateway.apiPort }}"
+            - name: Kestrel__Endpoints__Health__Protocols
+              value: "Http1"
             - name: AgentGateway__ApiKey
               valueFrom:
                 secretKeyRef:
                   name: hm-secrets
                   key: agent-gateway-api-key
+            - name: AgentGateway__AgentApiKeysJson
+              valueFrom:
+                secretKeyRef:
+                  name: hm-secrets
+                  key: agent-gateway-agent-api-keys.json
             - name: Seq__Url
               value: {{ .Values.seq.url | quote }}
           resources:
             {{- toYaml .Values.agentGateway.resources | nindent 12 }}
           livenessProbe:
-            grpc:
-              port: {{ .Values.agentGateway.port }}
+            httpGet:
+              path: /healthz
+              port: {{ .Values.agentGateway.apiPort }}
             initialDelaySeconds: 10
             periodSeconds: 30
           readinessProbe:
-            grpc:
-              port: {{ .Values.agentGateway.port }}
+            httpGet:
+              path: /readyz
+              port: {{ .Values.agentGateway.apiPort }}
             initialDelaySeconds: 5
             periodSeconds: 10

@@ -1,4 +1,5 @@
 using HomeManagement.Auth;
+using Refit;
 
 namespace HomeManagement.Web.Services;
 
@@ -28,13 +29,21 @@ public sealed class WebSessionAuthService : IWebSessionAuthService
 
     public async Task<AuthResult> LoginAsync(string username, string password, CancellationToken ct = default)
     {
-        var result = await _authApi.LoginAsync(new LoginRequest(username, password, AuthProviderType.Local), ct);
-        if (result.Success && result.AccessToken is not null && result.RefreshToken is not null)
+        try
         {
-            _sessionState.SetSession(result.AccessToken, result.RefreshToken);
-        }
+            var result = await _authApi.LoginAsync(new LoginRequest(username, password, AuthProviderType.Local), ct);
+            if (result.Success && result.AccessToken is not null && result.RefreshToken is not null)
+            {
+                _sessionState.SetSession(result.AccessToken, result.RefreshToken);
+            }
 
-        return result;
+            return result;
+        }
+        catch (ApiException ex)
+        {
+            var errorResult = await ex.GetContentAsAsync<AuthResult>();
+            return errorResult ?? new AuthResult(false, Error: ex.Message);
+        }
     }
 
     public async Task<bool> RefreshAsync(CancellationToken ct = default)

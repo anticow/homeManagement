@@ -17,6 +17,10 @@ spec:
       labels:
         app: {{ $svcName }}
     spec:
+      {{- if .Values.global.imagePullSecret.enabled }}
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      {{- end }}
       containers:
         - name: broker
           image: {{ include "homemanagement.image" (dict "global" .Values.global "image" .Values.broker.image) }}
@@ -42,7 +46,7 @@ spec:
             - name: Auth__Audience
               value: {{ .Values.auth.audience | quote }}
             - name: AgentGateway__BaseUrl
-              value: "http://hm-agent-gw:{{ .Values.agentGateway.port }}"
+              value: "http://hm-agent-gw:{{ .Values.agentGateway.apiPort }}"
             - name: AgentGateway__ApiKey
               valueFrom:
                 secretKeyRef:

@@ -22,3 +22,14 @@ Resolve image reference: registry/repository:tag
 {{- define "homemanagement.image" -}}
 {{ .global.imageRegistry }}/{{ .image.repository }}:{{ .image.tag | default .global.imageTag }}
 {{- end -}}
+
+{{/*
+Generate Docker config JSON for imagePullSecret.
+*/}}
+{{- define "homemanagement.dockerconfigjson" -}}
+{{- $registry := .Values.global.imagePullSecret.registry -}}
+{{- $username := .Values.global.imagePullSecret.username -}}
+{{- $password := .Values.global.imagePullSecret.password -}}
+{{- $auth := printf "%s:%s" $username $password | b64enc -}}
+{{- printf "{\"auths\":{\"%s\":{\"username\":\"%s\",\"password\":\"%s\",\"auth\":\"%s\"}}}" $registry $username $password $auth -}}
+{{- end -}}

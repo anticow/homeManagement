@@ -3,8 +3,9 @@
     "ControlServer": "localhost:9444",
     "AgentId": "",
     "ApiKey": "",
-    "CertPath": "certs/agent.pfx",
-    "CaCertPath": "certs/ca.crt",
+    "UseTls": true,
+    "CertPath": "",
+    "CaCertPath": "",
     "HeartbeatIntervalSeconds": 30,
     "MaxConcurrentCommands": 5,
     "LogLevel": "Information"

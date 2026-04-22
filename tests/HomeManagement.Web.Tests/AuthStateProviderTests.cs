@@ -1,6 +1,10 @@
 using System.Security.Claims;
 using FluentAssertions;
 using HomeManagement.Web.Services;
+using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.JSInterop;
+using NSubstitute;
 
 namespace HomeManagement.Web.Tests;
 
@@ -9,12 +13,20 @@ namespace HomeManagement.Web.Tests;
 /// </summary>
 public sealed class AuthStateProviderTests
 {
+    private static AuthStateProvider CreateProvider(ServerSessionState session)
+    {
+        var jsRuntime = Substitute.For<IJSRuntime>();
+        var dataProtection = new EphemeralDataProtectionProvider();
+        var storage = new ProtectedSessionStorage(jsRuntime, dataProtection);
+        return new AuthStateProvider(session, storage);
+    }
+
     // ── Initial state ──
 
     [Fact]
     public async Task GetAuthenticationStateAsync_Initial_UserIsNotAuthenticated()
     {
-        var provider = new AuthStateProvider(new ServerSessionState());
+        var provider = CreateProvider(new ServerSessionState());
 
         var state = await provider.GetAuthenticationStateAsync();
 
@@ -27,7 +39,7 @@ public sealed class AuthStateProviderTests
     public async Task SessionSet_UserBecomesAuthenticated()
     {
         var session = new ServerSessionState();
-        var provider = new AuthStateProvider(session);
+        var provider = CreateProvider(session);
 
         session.SetSession(CreateToken("alice", ["Admin"]), "refresh-a");
         var state = await provider.GetAuthenticationStateAsync();
@@ -39,7 +51,7 @@ public sealed class AuthStateProviderTests
     public async Task SessionSet_SetsCorrectUsername()
     {
         var session = new ServerSessionState();
-        var provider = new AuthStateProvider(session);
+        var provider = CreateProvider(session);
 
         session.SetSession(CreateToken("bob", ["Viewer"]), "refresh-a");
         var state = await provider.GetAuthenticationStateAsync();
@@ -51,7 +63,7 @@ public sealed class AuthStateProviderTests
     public async Task SessionSet_SetsCorrectAuthenticationType()
     {
         var session = new ServerSessionState();
-        var provider = new AuthStateProvider(session);
+        var provider = CreateProvider(session);
 
         session.SetSession(CreateToken("charlie", ["Operator"]), "refresh-a");
         var state = await provider.GetAuthenticationStateAsync();
@@ -63,7 +75,7 @@ public sealed class AuthStateProviderTests
     public async Task SessionSet_SingleRole_HasRoleClaim()
     {
         var session = new ServerSessionState();
-        var provider = new AuthStateProvider(session);
+        var provider = CreateProvider(session);
 
         session.SetSession(CreateToken("dave", ["Admin"]), "refresh-a");
         var state = await provider.GetAuthenticationStateAsync();
@@ -75,7 +87,7 @@ public sealed class AuthStateProviderTests
     public async Task SessionSet_MultipleRoles_HasAllRoleClaims()
     {
         var session = new ServerSessionState();
-        var provider = new AuthStateProvider(session);
+        var provider = CreateProvider(session);
 
         session.SetSession(CreateToken("eve", ["Viewer", "Auditor"]), "refresh-a");
         var state = await provider.GetAuthenticationStateAsync();
@@ -88,7 +100,7 @@ public sealed class AuthStateProviderTests
     public async Task SessionSet_NoRoles_StillAuthenticated()
     {
         var session = new ServerSessionState();
-        var provider = new AuthStateProvider(session);
+        var provider = CreateProvider(session);
 
         session.SetSession(CreateToken("frank", []), "refresh-a");
         var state = await provider.GetAuthenticationStateAsync();
@@ -101,7 +113,7 @@ public sealed class AuthStateProviderTests
     public async Task SessionSet_CalledTwice_OverridesPreviousUser()
     {
         var session = new ServerSessionState();
-        var provider = new AuthStateProvider(session);
+        var provider = CreateProvider(session);
 
         session.SetSession(CreateToken("old-user", ["Admin"]), "refresh-a");
         session.SetSession(CreateToken("new-user", ["Viewer"]), "refresh-b");
@@ -118,7 +130,7 @@ public sealed class AuthStateProviderTests
     public async Task ClearAuthenticationState_AfterLogin_UserIsNoLongerAuthenticated()
     {
         var session = new ServerSessionState();
-        var provider = new AuthStateProvider(session);
+        var provider = CreateProvider(session);
         session.SetSession(CreateToken("alice", ["Admin"]), "refresh-a");
 
         session.Clear();
@@ -147,7 +159,7 @@ public sealed class AuthStateProviderTests
     public async Task SetAuthenticatedUser_NotifiesStateChanged()
     {
         var session = new ServerSessionState();
-        var provider = new AuthStateProvider(session);
+        var provider = CreateProvider(session);
         var notifications = 0;
         provider.AuthenticationStateChanged += _ =>
         {
@@ -167,7 +179,7 @@ public sealed class AuthStateProviderTests
     {
         var session = new ServerSessionState();
         session.SetSession(CreateToken("alice", ["Admin"]), "refresh-a");
-        var provider = new AuthStateProvider(session);
+        var provider = CreateProvider(session);
         var notifications = 0;
         provider.AuthenticationStateChanged += _ =>
         {

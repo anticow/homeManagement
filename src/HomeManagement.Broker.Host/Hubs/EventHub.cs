@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace HomeManagement.Broker.Host.Hubs;
@@ -6,6 +7,7 @@ namespace HomeManagement.Broker.Host.Hubs;
 /// SignalR hub for real-time event broadcasting — job progress, agent status, audit events.
 /// Clients subscribe to specific event groups.
 /// </summary>
+[Authorize]
 public sealed class EventHub : Hub
 {
     /// <summary>

@@ -4,6 +4,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using System.IO;
 
 namespace HomeManagement.Auth.Tests;
 
@@ -95,6 +96,68 @@ public sealed class AuthServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RefreshAsync_ConcurrentRequests_OnlyOneSucceeds()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"hm-auth-refresh-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            await using (var seedContext = CreateFileDbContext(dbPath))
+            {
+                var seedService = CreateService(seedContext, new AuthOptions
+                {
+                    JwtSigningKey = TestSigningKey,
+                    Issuer = "test",
+                    Audience = "test"
+                });
+
+                await seedService.EnsureInitializedAsync();
+                await seedService.CreateLocalUserAsync(new CreateUserCommand(
+                    "operator",
+                    "OperatorPassword123!",
+                    "Operator User",
+                    "operator@test.local",
+                    ["Operator"]));
+
+                var login = await seedService.LoginAsync(new LoginRequest("operator", "OperatorPassword123!"));
+
+                await using var context1 = CreateFileDbContext(dbPath);
+                await using var context2 = CreateFileDbContext(dbPath);
+
+                var service1 = CreateService(context1, new AuthOptions
+                {
+                    JwtSigningKey = TestSigningKey,
+                    Issuer = "test",
+                    Audience = "test"
+                });
+                var service2 = CreateService(context2, new AuthOptions
+                {
+                    JwtSigningKey = TestSigningKey,
+                    Issuer = "test",
+                    Audience = "test"
+                });
+
+                var results = await Task.WhenAll(
+                    service1.RefreshAsync(login.RefreshToken!),
+                    service2.RefreshAsync(login.RefreshToken!));
+
+                results.Count(result => result.Success).Should().Be(1);
+                results.Count(result => !result.Success).Should().Be(1);
+            }
+        }
+        finally
+        {
+            // EF Core SQLite connection pooling holds file handles on Windows after DisposeAsync.
+            // Clear all pools to release the lock before deleting the temp file.
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath))
+            {
+                File.Delete(dbPath);
+            }
+        }
+    }
+
+    [Fact]
     public async Task AssignRolesAsync_UpdatesPersistedRoles()
     {
         var service = CreateInitializedService();
@@ -127,7 +190,7 @@ public sealed class AuthServiceTests : IDisposable
 
     private AuthService CreateInitializedService()
     {
-        var service = CreateService(new AuthOptions
+        var service = CreateService(_db, new AuthOptions
         {
             JwtSigningKey = TestSigningKey,
             Issuer = "test",
@@ -138,10 +201,24 @@ public sealed class AuthServiceTests : IDisposable
         return service;
     }
 
+    private static HomeManagementDbContext CreateFileDbContext(string dbPath)
+    {
+        var options = new DbContextOptionsBuilder<HomeManagementDbContext>()
+            .UseSqlite($"Data Source={dbPath}")
+            .Options;
+
+        return new HomeManagementDbContext(options);
+    }
+
     private AuthService CreateService(AuthOptions options)
     {
+        return CreateService(_db, options);
+    }
+
+    private static AuthService CreateService(HomeManagementDbContext db, AuthOptions options)
+    {
         var jwt = new JwtTokenService(Options.Create(options), NullLogger<JwtTokenService>.Instance);
-        return new AuthService(_db, jwt, Options.Create(options), NullLogger<AuthService>.Instance);
+        return new AuthService(db, jwt, Options.Create(options), NullLogger<AuthService>.Instance);
     }
 
     public void Dispose()

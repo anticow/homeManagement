@@ -47,7 +47,7 @@
 > Gateway.csproj now references HomeManagement.Core. AgentGateway:ApiKey added to config.
 > Confirmed secure: command injection sanitization, YARP SSRF, JWT validation, vault memory safety,
 > audit chain integrity, EF Core parameterization, test data hygiene, .gitignore patterns.
-> Remaining deployment notes: AllowedHosts=* and TrustServerCertificate=True are dev-only defaults.
+> Remaining deployment notes: AllowedHosts=* and TrustServerCertificate=True are dev-only defaults. Deployment-facing examples should use Encrypt=True;TrustServerCertificate=False.
 > Build: 35/35 projects, 0 errors, 0 warnings, 383 unit tests passing.
 >
 > **Revision 10 — 2026-03-21:** P4 quality & deployment infrastructure sprint.

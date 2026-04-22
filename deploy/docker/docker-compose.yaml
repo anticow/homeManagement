@@ -3,76 +3,165 @@ services:
     image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "HomeManagement_Dev1!"
+      MSSQL_SA_PASSWORD: "${HM_SQL_SA_PASSWORD}"
     ports:
-      - "1433:1433"
+      - "127.0.0.1:1433:1433"
     volumes:
       - sqldata:/var/opt/mssql
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "${HM_SQL_SA_PASSWORD}" -Q "SELECT 1" -b
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  seq:
+    image: datalust/seq:2024.3
+    environment:
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_ADMINPASSWORD: "${HM_SEQ_ADMIN_PASSWORD}"
+    ports:
+      - "127.0.0.1:5380:80"
+      - "127.0.0.1:5341:5341"
+    volumes:
+      - seqdata:/data
 
   broker:
     build:
-      context: ..
+      context: ../..
       dockerfile: docker/broker.Dockerfile
+    restart: on-failure:3
     ports:
       - "8082:8082"
     environment:
       ASPNETCORE_URLS: "http://+:8082"
-      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=HomeManagement_Dev1!;TrustServerCertificate=True;"
-      Auth__JwtSigningKey: "dev-signing-key-at-least-32-characters-long!"
+      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=${HM_SQL_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True;Command Timeout=120;"
+      AgentGateway__ApiKey: "${HM_AGENT_GATEWAY_API_KEY}"
+      Auth__JwtSigningKey: "${HM_JWT_SIGNING_KEY}"
       Auth__Issuer: "homemanagement"
       Auth__Audience: "homemanagement-api"
-      AgentGateway__BaseUrl: "http://agent-gw:9444"
-      AgentGateway__ApiKey: "dev-agent-gateway-api-key"
+      Audit__HmacKey: "${HM_AUDIT_HMAC_KEY}"
+      Vault__StoragePath: "/data/vault"
+      Seq__Url: "http://seq:5341"
+    volumes:
+      - vaultdata:/data/vault
     depends_on:
-      - sqlserver
+      sqlserver:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+      seq:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   auth:
     build:
-      context: ..
+      context: ../..
       dockerfile: docker/auth.Dockerfile
+    restart: on-failure:3
     ports:
       - "8083:8083"
     environment:
       ASPNETCORE_URLS: "http://+:8083"
-      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=HomeManagement_Dev1!;TrustServerCertificate=True;"
-      Auth__JwtSigningKey: "dev-signing-key-at-least-32-characters-long!"
+      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=${HM_SQL_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True;Command Timeout=120;"
+      Auth__JwtSigningKey: "${HM_JWT_SIGNING_KEY}"
       Auth__Issuer: "homemanagement"
       Auth__Audience: "homemanagement-api"
+      Auth__BootstrapAdmin__Enabled: "${HM_BOOTSTRAP_ADMIN_ENABLED}"
+      Auth__BootstrapAdmin__Username: "${HM_BOOTSTRAP_ADMIN_USERNAME}"
+      Auth__BootstrapAdmin__Password: "${HM_BOOTSTRAP_ADMIN_PASSWORD}"
+      Auth__BootstrapAdmin__DisplayName: "System Administrator"
+      Auth__BootstrapAdmin__Email: "admin@homemanagement.local"
+      Seq__Url: "http://seq:5341"
     depends_on:
-      - sqlserver
+      sqlserver:
+        condition: service_healthy
+      seq:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
 
   web:
     build:
-      context: ..
+      context: ../..
       dockerfile: docker/web.Dockerfile
     ports:
-      - "8080:8080"
+      - "8084:8080"
     environment:
       ASPNETCORE_URLS: "http://+:8080"
       BrokerApi__BaseUrl: "http://broker:8082"
       AuthApi__BaseUrl: "http://auth:8083"
+      Seq__Url: "http://seq:5341"
+    depends_on:
+      broker:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   gateway:
     build:
-      context: ..
+      context: ../..
       dockerfile: docker/gateway.Dockerfile
     ports:
       - "8081:8081"
     environment:
       ASPNETCORE_URLS: "http://+:8081"
-      Auth__JwtSigningKey: "dev-signing-key-at-least-32-characters-long!"
-      ReverseProxy__Clusters__broker__Destinations__broker-1__Address: "http://broker:8082"
-      ReverseProxy__Clusters__auth__Destinations__auth-1__Address: "http://auth:8083"
+      Auth__JwtSigningKey: "${HM_JWT_SIGNING_KEY}"
+      ReverseProxy__Clusters__broker__Destinations__primary__Address: "http://broker:8082"
+      ReverseProxy__Clusters__auth__Destinations__primary__Address: "http://auth:8083"
+      Seq__Url: "http://seq:5341"
+    depends_on:
+      broker:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   agent-gw:
     build:
-      context: ..
+      context: ../..
       dockerfile: docker/agent-gw.Dockerfile
     ports:
       - "9444:9444"
+      - "9445:9445"
     environment:
-      ASPNETCORE_URLS: "http://+:9444"
-      AgentGateway__ApiKey: "dev-agent-gateway-api-key"
+      Kestrel__Endpoints__Grpc__Url: "http://+:9444"
+      Kestrel__Endpoints__Grpc__Protocols: "Http2"
+      Kestrel__Endpoints__Health__Url: "http://+:9445"
+      Kestrel__Endpoints__Health__Protocols: "Http1"
+      AgentGateway__ApiKey: "${HM_AGENT_GATEWAY_API_KEY}"
+      Seq__Url: "http://seq:5341"
+    depends_on:
+      seq:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9445/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 volumes:
   sqldata:
+  seqdata:
+  vaultdata:

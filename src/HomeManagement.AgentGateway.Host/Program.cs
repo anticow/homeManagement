@@ -32,15 +32,22 @@ builder.Services.AddOpenTelemetry()
         .AddPrometheusExporter());
 
 // ── Services ──
-builder.Services.AddSingleton<ApiKeyInterceptor>();
-builder.Services.AddGrpc(options =>
-{
-    options.Interceptors.Add<ApiKeyInterceptor>();
-});
+builder.Services.AddSingleton<AgentApiKeyValidator>();
+builder.Services.AddSingleton<IAgentApiKeyValidator>(sp => sp.GetRequiredService<AgentApiKeyValidator>());
+builder.Services.AddGrpc();
 builder.Services.AddSingleton<StandaloneAgentGatewayService>();
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
+
+// ── Security headers ──
+app.Use(async (ctx, next) =>
+{
+    ctx.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+    ctx.Response.Headers.Append("X-Frame-Options", "DENY");
+    ctx.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
+    await next();
+});
 
 // ── Health ──
 app.MapHealthChecks("/healthz");

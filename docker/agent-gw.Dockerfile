@@ -1,4 +1,5 @@
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 EXPOSE 9444
 
@@ -17,5 +18,7 @@ RUN dotnet publish src/HomeManagement.AgentGateway.Host/HomeManagement.AgentGate
     -c Release -o /app/publish --no-restore
 
 FROM base AS final
+RUN adduser --disabled-password --gecos "" appuser
 COPY --from=build /app/publish .
+USER appuser
 ENTRYPOINT ["dotnet", "HomeManagement.AgentGateway.Host.dll"]

@@ -8,6 +8,7 @@
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="8.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="8.0.2" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
@@ -56,6 +57,8 @@
     <PackageVersion Include="Avalonia.Themes.Fluent" Version="11.2.3" />
     <PackageVersion Include="Avalonia.Fonts.Inter" Version="11.2.3" />
     <PackageVersion Include="Avalonia.ReactiveUI" Version="11.2.3" />
+    <!-- Pin transitive dep pulled by Avalonia.X11 to patched version (CVE-2026-39959 / GHSA-xrw6-gwf8-vvr9) -->
+    <PackageVersion Include="Tmds.DBus.Protocol" Version="0.21.3" />
 
     <!-- Testing -->
     <PackageVersion Include="xunit" Version="2.9.2" />

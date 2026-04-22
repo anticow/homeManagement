@@ -12,6 +12,8 @@
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Avalonia.ReactiveUI" />
+    <!-- Override Avalonia.X11 transitive dep to patched version (CVE-2026-39959 / GHSA-xrw6-gwf8-vvr9) -->
+    <PackageReference Include="Tmds.DBus.Protocol" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\HomeManagement.Gui\HomeManagement.Gui.csproj" />

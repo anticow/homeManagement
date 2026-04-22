@@ -1,8 +1,13 @@
 # -- Global settings
 global:
-  imageRegistry: ghcr.io/homemanagement
+  imageRegistry: ghcr.io/anticow
   imageTag: latest
   imagePullPolicy: IfNotPresent
+  imagePullSecret:
+    enabled: false
+    registry: ghcr.io
+    username: ""
+    password: ""  # GitHub PAT with read:packages scope
 
 # -- Namespace
 namespace: homemanagement
@@ -10,17 +15,23 @@ namespace: homemanagement
 # -- Database
 database:
   connectionString: ""  # Required — override via --set or values override file
-  # Example: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=...;TrustServerCertificate=True"
+  # Example: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=...;Encrypt=True;TrustServerCertificate=False"
 
-# -- Seq centralized logging
+# -- Seq centralized logging (in-cluster: http://seq.seq.svc.cluster.local:5341)
 seq:
-  url: "http://seq:5341"
+  url: "http://seq.seq.svc.cluster.local:5341"
 
 # -- Auth configuration
 auth:
   jwtSigningKey: ""  # Required — 64+ character random string
   issuer: "homemanagement"
-  audience: "homemanagement"
+  audience: "homemanagement-api"
+  bootstrapAdmin:
+    enabled: false
+    username: "admin"
+    password: ""  # Set to seed a first-run admin account
+    displayName: "System Administrator"
+    email: "admin@homemanagement.local"
 
 # -- Broker service
 broker:
@@ -80,12 +91,14 @@ web:
 # -- Agent Gateway (gRPC)
 agentGateway:
   replicaCount: 1
-  apiKey: ""  # Required — shared with HomeManagement.Agent clients
-  serviceType: LoadBalancer
+  apiKey: ""  # Required — shared with Broker/internal control-plane clients
+  agentApiKeysJson: "{}"  # Required for agent gRPC auth — JSON object mapping agentId -> API key
+  serviceType: ClusterIP
   image:
     repository: hm-agent-gw
     tag: ""
-  port: 9444
+  port: 9444       # gRPC (HTTP/2)
+  apiPort: 9445    # REST / health (HTTP/1.1)
   resources:
     requests:
       cpu: 250m
@@ -118,14 +131,23 @@ gateway:
 ingress:
   enabled: true
   className: nginx
-  host: homemanagement.local
-  sslRedirect: false
+  host: homemanagement.cowgomu.net
+  brokerHost: broker.cowgomu.net
+  authHost: authapi.cowgomu.net
+  agentGatewayHost: agentgw.cowgomu.net
+  agentGatewayApiHost: agentgw-api.cowgomu.net
+  clusterIssuer: ""
+  sslRedirect: true
   tls:
-    enabled: false
-    secretName: hm-tls-secret
+    enabled: true
+    secretName: hm-wildcard-tls
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+  grpcAnnotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
 
 # -- Service account
 serviceAccount:

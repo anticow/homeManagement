@@ -1,4 +1,5 @@
 using HomeManagement.Web.Services;
+using HomeManagement.Core;
 using Microsoft.AspNetCore.Components.Authorization;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -20,6 +21,7 @@ builder.Host.UseSerilog((context, services, config) => config
     .Enrich.WithProperty("Service", "hm-web")
     .Enrich.WithMachineName()
     .Enrich.WithThreadId()
+    .Enrich.With<SensitivePropertyEnricher>()
     .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture)
     .WriteTo.Seq(context.Configuration["Seq:Url"] ?? "http://localhost:5341"));
 
@@ -57,11 +59,20 @@ builder.Services.AddHttpClient(BrokerApiClient.HttpClientName, c =>
     c.BaseAddress = new Uri(brokerBaseUrl));
 builder.Services.AddScoped<IBrokerApi, BrokerApiClient>();
 
+builder.Services.AddHttpClient(AdminApiClient.HttpClientName, c =>
+    c.BaseAddress = new Uri(authBaseUrl));
+builder.Services.AddScoped<IAdminApi, AdminApiClient>();
+
 // ── Auth state ──
 builder.Services.AddScoped<AuthStateProvider>();
 builder.Services.AddScoped<AuthenticationStateProvider>(
     sp => sp.GetRequiredService<AuthStateProvider>());
 builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddAuthentication(Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/login";
+    });
 builder.Services.AddAuthorizationCore();
 
 // ── SignalR client for real-time events ──
@@ -76,7 +87,16 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+// ── Security headers ──
+app.Use(async (ctx, next) =>
+{
+    ctx.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+    ctx.Response.Headers.Append("X-Frame-Options", "DENY");
+    ctx.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
+    ctx.Response.Headers.Append("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    await next();
+});
+
 app.UseStaticFiles();
 app.UseAntiforgery();
 
