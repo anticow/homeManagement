@@ -31,7 +31,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -223,11 +222,11 @@ public sealed class WebBrokerAgentEndToEndTests
 
     private sealed class AuthHostWebApplicationFactory : WebApplicationFactory<AuthHostAssemblyMarker>
     {
-        private readonly SqliteConnection _connection = new("Data Source=:memory:");
+        private readonly string _databasePath;
 
         public AuthHostWebApplicationFactory()
         {
-            _connection.Open();
+            _databasePath = Path.Combine(Path.GetTempPath(), $"hm-auth-e2e-{Guid.NewGuid():N}.db");
         }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -236,7 +235,7 @@ public sealed class WebBrokerAgentEndToEndTests
             {
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["ConnectionStrings:HomeManagement"] = "Data Source=:memory:",
+                    ["ConnectionStrings:HomeManagement"] = $"Data Source={_databasePath}",
                     ["Auth:JwtSigningKey"] = SharedSigningKey,
                     ["Auth:Issuer"] = SharedIssuer,
                     ["Auth:Audience"] = SharedAudience,
@@ -253,14 +252,22 @@ public sealed class WebBrokerAgentEndToEndTests
                 services.RemoveAll<DbContextOptions<HomeManagementDbContext>>();
                 services.RemoveAll<HomeManagementDbContext>();
 
-                services.AddDbContext<HomeManagementDbContext>(options => options.UseSqlite(_connection));
+                services.AddDbContext<HomeManagementDbContext>(options =>
+                    options.UseSqlite($"Data Source={_databasePath}"));
             });
         }
 
         public override async ValueTask DisposeAsync()
         {
             await base.DisposeAsync();
-            await _connection.DisposeAsync();
+            TryDelete(_databasePath);
+            TryDelete(_databasePath + "-wal");
+            TryDelete(_databasePath + "-shm");
+        }
+
+        private static void TryDelete(string path)
+        {
+            try { if (File.Exists(path)) File.Delete(path); } catch { /* best-effort */ }
         }
     }
 
@@ -458,6 +465,8 @@ public sealed class WebBrokerAgentEndToEndTests
             builder.Services.AddSingleton<TestApiKeyInterceptor>();
             builder.Services.AddGrpc(options => options.Interceptors.Add<TestApiKeyInterceptor>());
             builder.Services.AddSingleton<StandaloneAgentGatewayService>();
+            // Use a passthrough validator — TestApiKeyInterceptor handles key validation
+            builder.Services.AddSingleton<IAgentApiKeyValidator, PassthroughAgentApiKeyValidator>();
             builder.Services.AddHealthChecks();
 
             var app = builder.Build();
@@ -630,6 +639,12 @@ public sealed class WebBrokerAgentEndToEndTests
             _channel.Dispose();
             _cts.Dispose();
         }
+    }
+
+    private sealed class PassthroughAgentApiKeyValidator : IAgentApiKeyValidator
+    {
+        // Auth is handled by TestApiKeyInterceptor; no per-agent key validation needed in tests.
+        public void ValidateOrThrow(ServerCallContext context, Handshake handshake) { }
     }
 
     private sealed class TestApiKeyInterceptor : Interceptor
