@@ -15,6 +15,7 @@
     <PackageReference Include="coverlet.collector" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
     <ProjectReference Include="..\..\src\HomeManagement.Auth\HomeManagement.Auth.csproj" />
     <ProjectReference Include="..\..\src\HomeManagement.Auth.Host\HomeManagement.Auth.Host.csproj" />
     <ProjectReference Include="..\..\src\HomeManagement.Data\HomeManagement.Data.csproj" />
