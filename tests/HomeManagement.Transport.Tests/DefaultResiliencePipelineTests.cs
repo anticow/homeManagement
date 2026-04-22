@@ -233,6 +233,6 @@ public sealed class DefaultResiliencePipelineTests
 
         // Should retry then exhaust
         await act.Should().ThrowAsync<InvalidOperationException>();
-        callCount.Should().BeGreaterOrEqualTo(2);
+        callCount.Should().BeGreaterThanOrEqualTo(2);
     }
 }

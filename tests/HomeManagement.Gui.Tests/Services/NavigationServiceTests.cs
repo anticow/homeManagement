@@ -100,7 +100,7 @@ public sealed class NavigationServiceTests : IDisposable
             backCount++;
         }
 
-        backCount.Should().BeLessOrEqualTo(20);
+        backCount.Should().BeLessThanOrEqualTo(20);
     }
 
     [Fact]

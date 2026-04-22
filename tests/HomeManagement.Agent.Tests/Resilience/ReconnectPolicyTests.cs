@@ -45,7 +45,7 @@ public sealed class ReconnectPolicyTests
         var capped = policy.NextDelay();
 
         // 5 minutes ±20% jitter → 240s to 360s
-        capped.TotalSeconds.Should().BeLessOrEqualTo(360);
+        capped.TotalSeconds.Should().BeLessThanOrEqualTo(360);
     }
 
     [Fact]

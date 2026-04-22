@@ -80,7 +80,7 @@ public class ServiceControllerServiceTests
 
         var result = await _sut.ListServicesAsync(target);
 
-        result.Should().HaveCountGreaterOrEqualTo(2);
+        result.Should().HaveCountGreaterThanOrEqualTo(2);
     }
 
     [Fact]
@@ -125,7 +125,7 @@ public class ServiceControllerServiceTests
         await foreach (var svc in _sut.ListServicesStreamAsync(target))
             items.Add(svc);
 
-        items.Should().HaveCountGreaterOrEqualTo(2);
+        items.Should().HaveCountGreaterThanOrEqualTo(2);
     }
 
     // ── ControlAsync ──
