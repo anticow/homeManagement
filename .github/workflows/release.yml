@@ -47,7 +47,7 @@ jobs:
           --results-directory ./TestResults
 
       - name: Setup Helm
-        uses: azure/setup-helm@v4.2.0
+        uses: azure/setup-helm@v5.0.0
         with:
           version: ${{ env.HELM_VERSION }}
 
@@ -199,7 +199,7 @@ jobs:
 
       - name: Build and push
         if: steps.check.outputs.exists == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
