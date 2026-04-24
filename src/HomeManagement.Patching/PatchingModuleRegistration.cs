@@ -17,3 +17,17 @@ public sealed class PatchingModuleRegistration : IModuleRegistration
         // PatchService is NOT registered here — use Action1PatchService instead.
     }
 }
+
+public static class PatchingServiceCollectionExtensions
+{
+    /// <summary>
+    /// Registers the agent-gateway-based <see cref="IPatchService"/> implementation.
+    /// Use this in tests or environments where Action1 is unavailable but agent-based
+    /// patch detection through the gateway is still required.
+    /// </summary>
+    public static IServiceCollection AddAgentBasedPatchService(this IServiceCollection services)
+    {
+        services.AddScoped<HomeManagement.Abstractions.Interfaces.IPatchService, PatchService>();
+        return services;
+    }
+}
