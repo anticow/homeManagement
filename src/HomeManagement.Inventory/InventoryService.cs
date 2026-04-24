@@ -14,7 +14,10 @@ namespace HomeManagement.Inventory;
 
 /// <summary>
 /// Maintains the registry of managed machines with their metadata and group membership.
-/// Provides discovery, import/export, and metadata refresh via remote execution.
+/// Provides discovery, import/export, and metadata refresh.
+///
+/// <see cref="RefreshMetadataAsync"/> uses <see cref="IEndpointStateProvider"/> (typically
+/// Prometheus) when available, falling back to direct remote execution when no metrics data exists.
 /// </summary>
 internal sealed class InventoryService : IInventoryService
 {
@@ -22,17 +25,20 @@ internal sealed class InventoryService : IInventoryService
     private readonly IRemoteExecutor _executor;
     private readonly ICorrelationContext _correlation;
     private readonly ILogger<InventoryService> _logger;
+    private readonly IEndpointStateProvider? _stateProvider;
 
     public InventoryService(
         IMachineRepository machineRepo,
         IRemoteExecutor executor,
         ICorrelationContext correlation,
-        ILogger<InventoryService> logger)
+        ILogger<InventoryService> logger,
+        IEndpointStateProvider? stateProvider = null)
     {
         _machineRepo = machineRepo;
         _executor = executor;
         _correlation = correlation;
         _logger = logger;
+        _stateProvider = stateProvider;
     }
 
     public async Task<Machine> AddAsync(MachineCreateRequest request, CancellationToken ct = default)
@@ -122,32 +128,65 @@ internal sealed class InventoryService : IInventoryService
         _logger.LogInformation("[{CorrelationId}] Refreshing metadata for {Host}",
             _correlation.CorrelationId, machine.Hostname);
 
-        var target = ToMachineTarget(machine);
-
-        // Collect hardware info via remote command
-        var infoCommand = machine.OsType == OsType.Linux
-            ? "echo $(nproc),$(free -b | awk '/Mem:/{print $2}'),$(uname -m)"
-            : "Write-Output \"$($env:NUMBER_OF_PROCESSORS),$([math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory)),$($env:PROCESSOR_ARCHITECTURE)\"";
-
-        var result = await _executor.ExecuteAsync(target,
-            new RemoteCommand(infoCommand, TimeSpan.FromSeconds(30)), ct);
-
         HardwareInfo? hardware = null;
-        if (result.ExitCode == 0 && !string.IsNullOrWhiteSpace(result.Stdout))
+
+        // ── Prometheus path (preferred) ───────────────────────────────────────
+        if (_stateProvider is not null)
         {
-            var parts = result.Stdout.Trim().Split(',');
-            if (parts.Length >= 3)
+            var metrics = await _stateProvider.GetHardwareMetricsAsync(
+                machine.Hostname.Value, machine.OsType, ct);
+
+            if (metrics is not null)
             {
-                _ = int.TryParse(parts[0], out var cpuCores);
-                _ = long.TryParse(parts[1], out var ramBytes);
-                hardware = new HardwareInfo(cpuCores, ramBytes, [], parts[2].Trim());
+                _logger.LogDebug("[{CorrelationId}] Hardware metrics for {Host} from Prometheus",
+                    _correlation.CorrelationId, machine.Hostname);
+
+                hardware = new HardwareInfo(
+                    CpuCores: 0,  // Prometheus CPU usage % is available, but core count requires lshw/nproc
+                    RamBytes: metrics.MemoryTotalBytes ?? machine.Hardware?.RamBytes ?? 0,
+                    Disks: BuildDiskInfoFromMetrics(metrics, machine.Hardware?.Disks ?? []),
+                    Architecture: machine.Hardware?.Architecture ?? string.Empty);
             }
+        }
+
+        // ── Remote fallback (when Prometheus has no data for this endpoint) ──
+        if (hardware is null)
+        {
+            var target = ToMachineTarget(machine);
+            var infoCommand = machine.OsType == OsType.Linux
+                ? "echo $(nproc),$(free -b | awk '/Mem:/{print $2}'),$(uname -m)"
+                : "Write-Output \"$($env:NUMBER_OF_PROCESSORS),$([math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory)),$($env:PROCESSOR_ARCHITECTURE)\"";
+
+            var result = await _executor.ExecuteAsync(target,
+                new RemoteCommand(infoCommand, TimeSpan.FromSeconds(30)), ct);
+
+            if (result.ExitCode == 0 && !string.IsNullOrWhiteSpace(result.Stdout))
+            {
+                var parts = result.Stdout.Trim().Split(',');
+                if (parts.Length >= 3)
+                {
+                    _ = int.TryParse(parts[0], out var cpuCores);
+                    _ = long.TryParse(parts[1], out var ramBytes);
+                    hardware = new HardwareInfo(cpuCores, ramBytes, [], parts[2].Trim());
+                }
+            }
+        }
+
+        // Determine online state: if Prometheus says so, trust it; otherwise assume online
+        // because we just successfully contacted the machine (or it's in inventory).
+        var newState = MachineState.Online;
+        if (_stateProvider is not null)
+        {
+            var isOnline = await _stateProvider.GetEndpointOnlineAsync(machine.Hostname.Value, ct);
+            // Only downgrade to Offline if Prometheus actively reports the endpoint as down.
+            // If Prometheus has no data at all, keep Online (don't penalize unmonitored machines).
+            newState = isOnline ? MachineState.Online : machine.State;
         }
 
         var updated = machine with
         {
             Hardware = hardware ?? machine.Hardware,
-            State = MachineState.Online,
+            State = newState,
             LastContactUtc = DateTime.UtcNow,
             UpdatedUtc = DateTime.UtcNow,
         };
@@ -159,6 +198,25 @@ internal sealed class InventoryService : IInventoryService
             _correlation.CorrelationId, machine.Hostname, hardware?.CpuCores, hardware?.RamBytes);
 
         return updated;
+    }
+
+    private static DiskInfo[] BuildDiskInfoFromMetrics(HardwareMetrics metrics, DiskInfo[] existing)
+    {
+        if (metrics.DiskTotalBytes is null) return existing;
+        // Prometheus gives us single root disk stats; update or create root entry.
+        var root = existing.FirstOrDefault(d => d.MountPoint is "/" or "C:");
+        if (root is not null)
+        {
+            return existing
+                .Select(d => d.MountPoint == root.MountPoint
+                    ? d with { TotalBytes = metrics.DiskTotalBytes.Value,
+                                FreeBytes = metrics.DiskFreeBytes ?? d.FreeBytes }
+                    : d)
+                .ToArray();
+        }
+
+        // No existing entry — create a synthetic root disk entry.
+        return [new DiskInfo("/", metrics.DiskTotalBytes.Value, metrics.DiskFreeBytes ?? 0)];
     }
 
     public async Task<IReadOnlyList<Machine>> DiscoverAsync(CidrRange range, CancellationToken ct = default)

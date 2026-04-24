@@ -2,7 +2,7 @@
   <PropertyGroup>
     <RootNamespace>HomeManagement.Patching</RootNamespace>
     <Description>Patch detection and application module.</Description>
-    <NoWarn>CA1848;CA1873</NoWarn>
+    <NoWarn>CA1848;CA1873;CS0612;CS0618</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="HomeManagement.Patching.Tests" />

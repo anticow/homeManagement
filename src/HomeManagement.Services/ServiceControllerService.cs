@@ -13,6 +13,11 @@ namespace HomeManagement.Services;
 /// <summary>
 /// Manages system services on remote machines. Delegates OS-specific control commands
 /// to strategy implementations and executes them via <see cref="IRemoteExecutor"/>.
+///
+/// State reads (GetStatusAsync, ListServicesAsync) use <see cref="IEndpointStateProvider"/>
+/// (typically Prometheus) when available and fall back to direct remote execution when
+/// the provider returns no data or is not registered.
+/// Control operations (ControlAsync) always use direct remote execution.
 /// </summary>
 internal sealed class ServiceControllerService : IServiceController
 {
@@ -22,6 +27,7 @@ internal sealed class ServiceControllerService : IServiceController
     private readonly ILogger<ServiceControllerService> _logger;
     private readonly LinuxServiceStrategy _linuxStrategy;
     private readonly WindowsServiceStrategy _windowsStrategy;
+    private readonly IEndpointStateProvider? _stateProvider;
 
     public ServiceControllerService(
         IRemoteExecutor executor,
@@ -29,7 +35,8 @@ internal sealed class ServiceControllerService : IServiceController
         ICorrelationContext correlation,
         ILogger<ServiceControllerService> logger,
         LinuxServiceStrategy linuxStrategy,
-        WindowsServiceStrategy windowsStrategy)
+        WindowsServiceStrategy windowsStrategy,
+        IEndpointStateProvider? stateProvider = null)
     {
         _executor = executor;
         _snapshotRepo = snapshotRepo;
@@ -37,39 +44,105 @@ internal sealed class ServiceControllerService : IServiceController
         _logger = logger;
         _linuxStrategy = linuxStrategy;
         _windowsStrategy = windowsStrategy;
+        _stateProvider = stateProvider;
     }
 
     public async Task<ServiceInfo> GetStatusAsync(MachineTarget target, ServiceName serviceName, CancellationToken ct = default)
     {
+        // Try Prometheus first — avoids a remote round-trip when data is current.
+        if (_stateProvider is not null)
+        {
+            var state = await _stateProvider.GetServiceStateAsync(
+                target.Hostname.Value, serviceName.Value, target.OsType, ct);
+
+            if (state != ServiceState.Unknown)
+            {
+                _logger.LogDebug("[{CorrelationId}] Service state for {Service}@{Host} from Prometheus: {State}",
+                    _correlation.CorrelationId, serviceName, target.Hostname, state);
+
+                var info = new ServiceInfo(
+                    serviceName,
+                    serviceName.Value,  // DisplayName: best effort from Prometheus (no display name available)
+                    state,
+                    ServiceStartupType.Automatic,  // Startup type not available from Prometheus
+                    ProcessId: null,
+                    Uptime: null,
+                    Dependencies: []);
+
+                await RecordSnapshotAsync(target.MachineId, info, ct);
+                return info;
+            }
+
+            _logger.LogDebug("[{CorrelationId}] Prometheus returned Unknown for {Service}@{Host}; falling back to remote exec",
+                _correlation.CorrelationId, serviceName, target.Hostname);
+        }
+
+        // Fallback: direct remote command
         var strategy = GetStrategy(target.OsType);
         var command = new RemoteCommand(strategy.BuildStatusCommand(serviceName), TimeSpan.FromSeconds(30));
         var result = await _executor.ExecuteAsync(target, command, ct);
 
-        var info = strategy.ParseStatusOutput(result.Stdout, serviceName);
-
-        // Snapshot for history
-        await RecordSnapshotAsync(target.MachineId, info, ct);
-
-        return info;
+        var remoteInfo = strategy.ParseStatusOutput(result.Stdout, serviceName);
+        await RecordSnapshotAsync(target.MachineId, remoteInfo, ct);
+        return remoteInfo;
     }
 
     public async Task<IReadOnlyList<ServiceInfo>> ListServicesAsync(
         MachineTarget target, ServiceFilter? filter = null, CancellationToken ct = default)
     {
-        var strategy = GetStrategy(target.OsType);
-        var command = new RemoteCommand(strategy.BuildListCommand(filter), TimeSpan.FromSeconds(60));
-        var result = await _executor.ExecuteAsync(target, command, ct);
+        // Prometheus can return all service states without SSH/WinRM round-trip.
+        // Falls back to remote if Prometheus returns nothing (endpoint not scraped yet).
+        if (_stateProvider is not null)
+        {
+            // GetEndpointOnlineAsync returns false when the endpoint has no metrics —
+            // only use Prometheus path when we know the endpoint is being scraped.
+            var online = await _stateProvider.GetEndpointOnlineAsync(target.Hostname.Value, ct);
+            if (!online)
+            {
+                _logger.LogDebug("[{CorrelationId}] Endpoint {Host} not in Prometheus; falling back to remote exec",
+                    _correlation.CorrelationId, target.Hostname);
+            }
+            else
+            {
+                // For known-online endpoints, state reads come from Prometheus via GetStatusAsync calls.
+                // Full service listing without name falls back to remote (PromQL all-services query
+                // is expensive and requires a known filter to be useful).
+                if (filter?.NamePattern is not null)
+                {
+                    var state = await _stateProvider.GetServiceStateAsync(
+                        target.Hostname.Value, filter.NamePattern, target.OsType, ct);
+                    if (state != ServiceState.Unknown)
+                    {
+                        if (filter.State.HasValue && state != filter.State.Value)
+                            return [];
 
-        if (result.ExitCode != 0)
+                        return [new ServiceInfo(
+                            ServiceName.Create(filter.NamePattern),
+                            filter.NamePattern,
+                            state,
+                            ServiceStartupType.Automatic,
+                            ProcessId: null,
+                            Uptime: null,
+                            Dependencies: [])];
+                    }
+                }
+            }
+        }
+
+        // Fallback: remote listing
+        var remoteStrategy = GetStrategy(target.OsType);
+        var remoteCommand = new RemoteCommand(remoteStrategy.BuildListCommand(filter), TimeSpan.FromSeconds(60));
+        var remoteResult = await _executor.ExecuteAsync(target, remoteCommand, ct);
+
+        if (remoteResult.ExitCode != 0)
         {
             _logger.LogWarning("[{CorrelationId}] Service listing failed on {Host}: {Stderr}",
-                _correlation.CorrelationId, target.Hostname, result.Stderr);
+                _correlation.CorrelationId, target.Hostname, remoteResult.Stderr);
             return [];
         }
 
-        var services = strategy.ParseListOutput(result.Stdout);
+        var services = remoteStrategy.ParseListOutput(remoteResult.Stdout);
 
-        // Apply name pattern filter if specified
         if (filter?.NamePattern is not null)
         {
             services = services
@@ -109,7 +182,7 @@ internal sealed class ServiceControllerService : IServiceController
         var result = await _executor.ExecuteAsync(target, command, ct);
         sw.Stop();
 
-        // Get resulting state
+        // Get resulting state — prefer Prometheus for fast post-action status read
         var postStatus = await GetStatusAsync(target, serviceName, ct);
 
         var actionResult = new ServiceActionResult(
