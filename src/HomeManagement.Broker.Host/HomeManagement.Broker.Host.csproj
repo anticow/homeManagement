@@ -31,5 +31,7 @@
     <ProjectReference Include="..\HomeManagement.Orchestration\HomeManagement.Orchestration.csproj" />
     <ProjectReference Include="..\HomeManagement.Automation\HomeManagement.Automation.csproj" />
     <ProjectReference Include="..\HomeManagement.AI.Ollama\HomeManagement.AI.Ollama.csproj" />
+    <ProjectReference Include="..\HomeManagement.Integration.Action1\HomeManagement.Integration.Action1.csproj" />
+    <ProjectReference Include="..\HomeManagement.Integration.Prometheus\HomeManagement.Integration.Prometheus.csproj" />
   </ItemGroup>
 </Project>
