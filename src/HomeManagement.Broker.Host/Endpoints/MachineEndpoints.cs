@@ -53,6 +53,24 @@ public static class MachineEndpoints
             return Results.NoContent();
         });
 
+        group.MapGet("/summary", async (
+            IInventoryService inventory,
+            IEndpointStateProvider? stateProvider,
+            CancellationToken ct) =>
+        {
+            var result = await inventory.QueryAsync(new MachineQuery { PageSize = 500 }, ct);
+            var total = result.TotalCount;
+
+            if (stateProvider is null)
+                return Results.Ok(new MachineSummary(total, 0, total));
+
+            var checks = await Task.WhenAll(
+                result.Items.Select(m => stateProvider.GetEndpointOnlineAsync(m.Hostname.Value, ct)));
+
+            var online = checks.Count(x => x);
+            return Results.Ok(new MachineSummary(total, online, total - online));
+        });
+
         group.MapPost("/{id:guid}/test", async (Guid id, IInventoryService inventory, IRemoteExecutor executor, CancellationToken ct) =>
         {
             var machine = await inventory.GetAsync(id, ct);

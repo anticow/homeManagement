@@ -31,5 +31,5 @@ public sealed class Action1Options
     /// When true, the Action1 integration is active.
     /// When false, a no-op DisabledAction1PatchService is registered instead.
     /// </summary>
-    public bool Enabled { get; set; } = true;
+    public bool Enabled { get; set; }
 }

@@ -21,7 +21,15 @@ public static class Action1IntegrationRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.Configure<Action1Options>(configuration.GetSection(Action1Options.Section));
+        services
+            .AddOptions<Action1Options>()
+            .Bind(configuration.GetSection(Action1Options.Section))
+            .Validate(o => !o.Enabled || !string.IsNullOrWhiteSpace(o.ApiKey),
+                "Action1:ApiKey is required when Action1:Enabled is true. " +
+                "Set via environment variable Action1__ApiKey or Kubernetes secret.")
+            .Validate(o => !o.Enabled || !string.IsNullOrWhiteSpace(o.OrganizationId),
+                "Action1:OrganizationId is required when Action1:Enabled is true.")
+            .ValidateOnStart();
 
         // Read options eagerly to decide which implementation to register.
         var options = configuration.GetSection(Action1Options.Section).Get<Action1Options>()

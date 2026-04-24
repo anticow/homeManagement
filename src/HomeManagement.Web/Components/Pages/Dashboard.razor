@@ -1,6 +1,61 @@
 @page "/"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using HomeManagement.Abstractions.Models
+@inject HomeManagement.Web.Services.IBrokerApi BrokerApi
+@inject NavigationManager Navigation
 
 <h1>Dashboard</h1>
 
-<p>Welcome to HomeManagement. Select a section from the navigation menu.</p>
+@if (_loading)
+{
+    <p>Loading...</p>
+}
+else if (_summary is not null)
+{
+    <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:24px;">
+        <div style="padding:20px; background:#f5f5f5; border-radius:8px; min-width:140px; text-align:center;">
+            <div style="font-size:2rem; font-weight:bold;">@_summary.Total</div>
+            <div style="color:#555;">Total Machines</div>
+        </div>
+        <div style="padding:20px; background:#e8f5e9; border-radius:8px; min-width:140px; text-align:center;">
+            <div style="font-size:2rem; font-weight:bold; color:#388e3c;">@_summary.Online</div>
+            <div style="color:#555;">Online</div>
+        </div>
+        <div style="padding:20px; background:#ffebee; border-radius:8px; min-width:140px; text-align:center;">
+            <div style="font-size:2rem; font-weight:bold; color:#c62828;">@_summary.Offline</div>
+            <div style="color:#555;">Offline / Unknown</div>
+        </div>
+    </div>
+    <p style="color:#666;">Select a section from the navigation menu.</p>
+}
+else if (_errorMessage is not null)
+{
+    <p style="color:red;">@_errorMessage</p>
+    <p>Select a section from the navigation menu.</p>
+}
+
+@code {
+    private bool _loading = true;
+    private MachineSummary? _summary;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _summary = await BrokerApi.GetMachineSummaryAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Unable to load summary: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

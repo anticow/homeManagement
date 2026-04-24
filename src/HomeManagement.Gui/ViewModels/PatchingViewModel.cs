@@ -18,6 +18,7 @@ public sealed class PatchingViewModel : ViewModelBase
     private ObservableCollection<PatchInfo> _detectedPatches = [];
     private Machine? _selectedMachine;
     private string? _statusMessage;
+    private bool _isScanning;
 
     public ObservableCollection<Machine> Machines
     {
@@ -42,6 +43,23 @@ public sealed class PatchingViewModel : ViewModelBase
         get => _statusMessage;
         set => this.RaiseAndSetIfChanged(ref _statusMessage, value);
     }
+
+    public bool IsScanning
+    {
+        get => _isScanning;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _isScanning, value);
+            this.RaisePropertyChanged(nameof(ScanButtonLabel));
+        }
+    }
+
+    public int PatchCount => DetectedPatches.Count;
+
+    public string ScanButtonLabel => IsScanning ? "Scanning…" : "Scan for Patches";
+
+    /// <summary>Identifies the active patch management backend.</summary>
+    public static string SourceLabel => "Action1 RMM";
 
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> ScanCommand { get; }
     public ReactiveCommand<System.Reactive.Unit, System.Reactive.Unit> ApplyCommand { get; }
@@ -83,9 +101,19 @@ public sealed class PatchingViewModel : ViewModelBase
                 return;
             }
 
-            var target = ToTarget(_selectedMachine);
-            var patches = await _patchService.DetectAsync(target, ct);
-            DetectedPatches = new ObservableCollection<PatchInfo>(patches);
+            IsScanning = true;
+            try
+            {
+                var target = ToTarget(_selectedMachine);
+                var patches = await _patchService.DetectAsync(target, ct);
+                DetectedPatches = new ObservableCollection<PatchInfo>(patches);
+                this.RaisePropertyChanged(nameof(PatchCount));
+                StatusMessage = $"{patches.Count} patch(es) detected via Action1.";
+            }
+            finally
+            {
+                IsScanning = false;
+            }
         });
     }
 

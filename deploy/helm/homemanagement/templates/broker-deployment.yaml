@@ -54,6 +54,34 @@ spec:
                   key: agent-gateway-api-key
             - name: Seq__Url
               value: {{ .Values.seq.url | quote }}
+            - name: Action1__Enabled
+              value: {{ .Values.action1.enabled | quote }}
+            - name: Action1__OrganizationId
+              value: {{ .Values.action1.organizationId | quote }}
+            - name: Action1__BaseUrl
+              value: {{ .Values.action1.baseUrl | quote }}
+            - name: Action1__SyncIntervalMinutes
+              value: {{ .Values.action1.syncIntervalMinutes | quote }}
+            {{- if .Values.action1.enabled }}
+            - name: Action1__ApiKey
+              valueFrom:
+                secretKeyRef:
+                  name: hm-secrets
+                  key: action1-api-key
+            - name: Action1__WebhookSecret
+              valueFrom:
+                secretKeyRef:
+                  name: hm-secrets
+                  key: action1-webhook-secret
+            {{- end }}
+            - name: Prometheus__Enabled
+              value: {{ .Values.prometheus.enabled | quote }}
+            - name: Prometheus__Url
+              value: {{ .Values.prometheus.url | quote }}
+            - name: Prometheus__ScrapeLabel
+              value: {{ .Values.prometheus.scrapeLabel | quote }}
+            - name: Prometheus__QueryTimeoutSeconds
+              value: {{ .Values.prometheus.queryTimeoutSeconds | quote }}
           resources:
             {{- toYaml .Values.broker.resources | nindent 12 }}
           livenessProbe:

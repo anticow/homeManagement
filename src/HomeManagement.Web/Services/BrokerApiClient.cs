@@ -25,6 +25,9 @@ public sealed class BrokerApiClient : IBrokerApi
         _authService = authService;
     }
 
+    public Task<HomeManagement.Abstractions.Models.MachineSummary> GetMachineSummaryAsync(CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetMachineSummaryAsync(ct), ct);
+
     public Task<HomeManagement.Abstractions.Models.PagedResult<HomeManagement.Abstractions.Models.Machine>> GetMachinesAsync(int page = 1, int pageSize = 25, CancellationToken ct = default)
         => ExecuteAsync(api => api.GetMachinesAsync(page, pageSize, ct), ct);
 

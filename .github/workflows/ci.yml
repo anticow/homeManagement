@@ -266,6 +266,11 @@ jobs:
         env:
           HM_BOOTSTRAP_ADMIN_USERNAME: "ci-admin"
           HM_BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.HM_BOOTSTRAP_ADMIN_PASSWORD }}
+          # Action1 and Prometheus integrations are disabled in CI (no external services).
+          # To enable Action1 in a pipeline that has access to the API, set:
+          #   HM_ACTION1_ENABLED: "true" and add HM_ACTION1_API_KEY / HM_ACTION1_WEBHOOK_SECRET secrets.
+          HM_ACTION1_ENABLED: "false"
+          HM_PROMETHEUS_ENABLED: "false"
         run: >-
           dotnet test
           tests/HomeManagement.Platform.Tests
