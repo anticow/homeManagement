@@ -1,6 +1,6 @@
 using HomeManagement.Abstractions;
+using HomeManagement.Abstractions.Interfaces;
 using HomeManagement.Abstractions.Models;
-using HomeManagement.Abstractions.Validation;
 using HomeManagement.Integration.Prometheus.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -15,7 +15,7 @@ namespace HomeManagement.Integration.Prometheus;
 /// All methods degrade gracefully: if Prometheus is unreachable or returns
 /// no data, the methods return "Unknown" / null rather than throwing.
 /// </summary>
-public class PrometheusEndpointStateProvider
+public class PrometheusEndpointStateProvider : IEndpointStateProvider
 {
     private readonly PrometheusClient _client;
     private readonly PrometheusOptions _options;
@@ -105,6 +105,33 @@ public class PrometheusEndpointStateProvider
 
         _logger.LogDebug("Prometheus: endpoint {Host} online={Online}", hostname, isOnline);
         return new EndpointAvailability(hostname, isOnline, DateTime.UtcNow);
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> GetEndpointOnlineAsync(string hostname, CancellationToken ct = default)
+    {
+        var availability = await GetEndpointAvailabilityAsync(hostname, ct);
+        return availability.IsOnline;
+    }
+
+    /// <inheritdoc/>
+    public async Task<HardwareMetrics?> GetHardwareMetricsAsync(
+        string hostname, OsType osType, CancellationToken ct = default)
+    {
+        var metrics = await GetEndpointMetricsAsync(hostname, osType, ct);
+        // If all metrics are null, Prometheus has no data for this host — return null
+        // so callers know to fall back to direct remote queries.
+        if (metrics.CpuUsagePercent is null && metrics.MemoryTotalBytes is null &&
+            metrics.DiskTotalBytes is null)
+            return null;
+
+        return new HardwareMetrics(
+            CpuUsagePercent: metrics.CpuUsagePercent,
+            MemoryTotalBytes: (long?)metrics.MemoryTotalBytes,
+            MemoryUsedBytes: (long?)metrics.MemoryUsedBytes,
+            DiskTotalBytes: (long?)metrics.DiskTotalBytes,
+            DiskFreeBytes: (long?)metrics.DiskFreeBytes,
+            Uptime: metrics.Uptime);
     }
 
     // ── Metrics ───────────────────────────────────────────────────────────────

@@ -1,3 +1,4 @@
+using HomeManagement.Abstractions.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -26,6 +27,7 @@ public static class PrometheusIntegrationRegistration
         if (!options.Enabled)
         {
             services.AddSingleton<PrometheusEndpointStateProvider, DisabledPrometheusEndpointStateProvider>();
+            services.AddSingleton<IEndpointStateProvider, DisabledPrometheusEndpointStateProvider>();
             return services;
         }
 
@@ -39,6 +41,8 @@ public static class PrometheusIntegrationRegistration
 
         // ── State provider ────────────────────────────────────────────────────
         services.AddScoped<PrometheusEndpointStateProvider>();
+        services.AddScoped<IEndpointStateProvider>(sp =>
+            sp.GetRequiredService<PrometheusEndpointStateProvider>());
 
         return services;
     }

@@ -13,6 +13,11 @@ namespace HomeManagement.Patching;
 /// Delegates OS-specific commands to <see cref="IPatchStrategy"/> implementations
 /// and executes them via <see cref="IRemoteExecutor"/>.
 /// </summary>
+/// <remarks>
+/// DEPRECATED: Use <c>HomeManagement.Integration.Action1.Action1PatchService</c> instead.
+/// This class is retained for test backward-compatibility only and will be removed in a future release.
+/// </remarks>
+[System.Obsolete("PatchService is superseded by Action1PatchService and is no longer registered in DI. Use Action1PatchService via IPatchService.")]
 internal sealed class PatchService : IPatchService
 {
     private readonly IRemoteExecutor _executor;
