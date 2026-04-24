@@ -23,6 +23,7 @@ using HomeManagement.Broker.Host.Endpoints;
 using HomeManagement.Broker.Host.Hubs;
 using HomeManagement.Core;
 using HomeManagement.Data;
+using HomeManagement.Patching;
 using HomeManagement.Web.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -316,6 +317,12 @@ public sealed class WebBrokerAgentEndToEndTests
                     options.UseSqlite($"Data Source={_databasePath}"));
 
                 services.AddScoped<IInventoryService>(_ => new TestInventoryService(_machine));
+
+                // Use agent-gateway-based patch service so this E2E test can verify
+                // that patch scans route through the broker to the connected agent.
+                // The Action1 integration (DisabledAction1PatchService) short-circuits here.
+                services.RemoveAll<IPatchService>();
+                services.AddAgentBasedPatchService();
             });
         }
 
