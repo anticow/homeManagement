@@ -12,6 +12,7 @@
 
         <ScrollViewer>
             <StackPanel Spacing="16">
+                <!-- Machine info card -->
                 <Border Background="#2D2D3D" CornerRadius="8" Padding="16">
                     <StackPanel Spacing="8">
                         <TextBlock Text="{Binding Machine.Hostname}" FontSize="18" FontWeight="SemiBold" />
@@ -20,6 +21,48 @@
                         <TextBlock Text="{Binding Machine.Protocol, StringFormat='Protocol: {0}'}" Foreground="#888" />
                     </StackPanel>
                 </Border>
+
+                <!-- Live Status (Prometheus) -->
+                <StackPanel Spacing="8">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="Live Status" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <Border CornerRadius="4" Padding="6,2" Background="#1B3A2D"
+                                IsVisible="{Binding EndpointOnline}">
+                            <TextBlock Text="ONLINE" Foreground="#4CAF50" FontSize="11" FontWeight="Bold" />
+                        </Border>
+                        <Border CornerRadius="4" Padding="6,2" Background="#3A1B1B"
+                                IsVisible="{Binding EndpointOnline, Converter={x:Static BoolConverters.Not}}">
+                            <TextBlock Text="OFFLINE" Foreground="#F44336" FontSize="11" FontWeight="Bold" />
+                        </Border>
+                    </StackPanel>
+
+                    <Border Background="#2D2D3D" CornerRadius="8" Padding="16"
+                            IsVisible="{Binding HasLiveMetrics}">
+                        <Grid ColumnDefinitions="*,*,*,*" RowDefinitions="Auto,Auto">
+                            <StackPanel Grid.Column="0" Spacing="4">
+                                <TextBlock Text="CPU" Foreground="#888" FontSize="11" />
+                                <TextBlock Text="{Binding CpuPercent, StringFormat='{}{0:F1}%'}"
+                                           FontSize="20" FontWeight="Bold" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="4">
+                                <TextBlock Text="Memory" Foreground="#888" FontSize="11" />
+                                <TextBlock Text="{Binding MemoryDisplay}" FontSize="14" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Spacing="4">
+                                <TextBlock Text="Disk" Foreground="#888" FontSize="11" />
+                                <TextBlock Text="{Binding DiskDisplay}" FontSize="14" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="3" Spacing="4">
+                                <TextBlock Text="Uptime" Foreground="#888" FontSize="11" />
+                                <TextBlock Text="{Binding UptimeDisplay}" FontSize="14" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <TextBlock Text="Live metrics unavailable — Prometheus integration may be disabled."
+                               Foreground="#666" FontSize="12"
+                               IsVisible="{Binding HasLiveMetrics, Converter={x:Static BoolConverters.Not}}" />
+                </StackPanel>
 
                 <TextBlock Text="Installed Patches" FontWeight="SemiBold" />
                 <ItemsControl ItemsSource="{Binding Patches}">

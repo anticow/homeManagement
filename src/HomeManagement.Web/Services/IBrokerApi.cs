@@ -21,6 +21,9 @@ public interface IBrokerApi
     [Delete("/api/machines/{id}")]
     Task DeleteMachineAsync(Guid id, CancellationToken ct = default);
 
+    [Get("/api/machines/{id}/state")]
+    Task<MachineStateSnapshot> GetMachineStateAsync(Guid id, CancellationToken ct = default);
+
     [Get("/api/machines/summary")]
     Task<MachineSummary> GetMachineSummaryAsync(CancellationToken ct = default);
 

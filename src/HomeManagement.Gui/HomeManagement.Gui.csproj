@@ -29,5 +29,6 @@
     <ProjectReference Include="..\HomeManagement.Inventory\HomeManagement.Inventory.csproj" />
     <ProjectReference Include="..\HomeManagement.Auditing\HomeManagement.Auditing.csproj" />
     <ProjectReference Include="..\HomeManagement.Orchestration\HomeManagement.Orchestration.csproj" />
+    <ProjectReference Include="..\HomeManagement.Integration.Prometheus\HomeManagement.Integration.Prometheus.csproj" />
   </ItemGroup>
 </Project>

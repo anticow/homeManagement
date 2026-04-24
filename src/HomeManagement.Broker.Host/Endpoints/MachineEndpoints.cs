@@ -53,6 +53,34 @@ public static class MachineEndpoints
             return Results.NoContent();
         });
 
+        group.MapGet("/{id:guid}/state", async (
+            Guid id,
+            IInventoryService inventory,
+            IEndpointStateProvider? stateProvider,
+            CancellationToken ct) =>
+        {
+            var machine = await inventory.GetAsync(id, ct);
+            if (machine is null) return Results.NotFound();
+
+            if (stateProvider is null)
+                return Results.Ok(new MachineStateSnapshot(false, null, null, null, null, null, null, DateTime.UtcNow));
+
+            var onlineTask = stateProvider.GetEndpointOnlineAsync(machine.Hostname.Value, ct);
+            var metricsTask = stateProvider.GetHardwareMetricsAsync(machine.Hostname.Value, machine.OsType, ct);
+            await Task.WhenAll(onlineTask, metricsTask);
+
+            var m = metricsTask.Result;
+            return Results.Ok(new MachineStateSnapshot(
+                onlineTask.Result,
+                m?.CpuUsagePercent,
+                m?.MemoryTotalBytes,
+                m?.MemoryUsedBytes,
+                m?.DiskTotalBytes,
+                m?.DiskFreeBytes,
+                m?.Uptime,
+                DateTime.UtcNow));
+        });
+
         group.MapGet("/summary", async (
             IInventoryService inventory,
             IEndpointStateProvider? stateProvider,

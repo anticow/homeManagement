@@ -37,6 +37,69 @@ else if (_machine is not null)
         </tbody>
     </table>
 
+    <!-- Live Prometheus metrics -->
+    <h2 style="margin-top:24px; display:flex; align-items:center; gap:10px;">
+        Live Status
+        @if (_state is not null)
+        {
+            var onlineColor = _state.Online ? "#388e3c" : "#c62828";
+            var onlineLabel = _state.Online ? "Online" : "Offline";
+            <span style="font-size:0.75rem; font-weight:bold; background:@onlineColor; color:white;
+                         border-radius:4px; padding:2px 8px;">@onlineLabel</span>
+        }
+    </h2>
+
+    @if (_stateLoading)
+    {
+        <p style="color:#888;">Loading live metrics…</p>
+    }
+    else if (_state is not null)
+    {
+        @if (_state.CpuUsagePercent.HasValue || _state.MemoryTotalBytes.HasValue)
+        {
+            <table>
+                <tbody>
+                    @if (_state.CpuUsagePercent.HasValue)
+                    {
+                        <tr>
+                            <td><strong>CPU Usage</strong></td>
+                            <td>@($"{_state.CpuUsagePercent:F1}")%</td>
+                        </tr>
+                    }
+                    @if (_state.MemoryTotalBytes.HasValue)
+                    {
+                        <tr>
+                            <td><strong>Memory</strong></td>
+                            <td>@FormatBytes(_state.MemoryUsedBytes) used of @FormatBytes(_state.MemoryTotalBytes)</td>
+                        </tr>
+                    }
+                    @if (_state.DiskTotalBytes.HasValue)
+                    {
+                        <tr>
+                            <td><strong>Disk</strong></td>
+                            <td>@FormatBytes(_state.DiskFreeBytes) free of @FormatBytes(_state.DiskTotalBytes)</td>
+                        </tr>
+                    }
+                    @if (_state.Uptime.HasValue)
+                    {
+                        <tr>
+                            <td><strong>Uptime</strong></td>
+                            <td>@FormatUptime(_state.Uptime.Value)</td>
+                        </tr>
+                    }
+                    <tr>
+                        <td><strong>Sampled</strong></td>
+                        <td style="color:#888;">@_state.FetchedUtc.ToString("g") UTC</td>
+                    </tr>
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p style="color:#888;">Live metrics unavailable — Prometheus integration may be disabled or this host has no exporter.</p>
+        }
+    }
+
     @if (_machine.Tags.Count > 0)
     {
         <h2>Tags</h2>
@@ -59,7 +122,9 @@ else if (_machine is not null)
     public Guid Id { get; set; }
 
     private bool _loading = true;
+    private bool _stateLoading = true;
     private Machine? _machine;
+    private MachineStateSnapshot? _state;
     private string? _errorMessage;
 
     protected override async Task OnInitializedAsync()
@@ -71,6 +136,7 @@ else if (_machine is not null)
         catch (UnauthorizedAccessException)
         {
             Navigation.NavigateTo("/login");
+            return;
         }
         catch (Exception ex)
         {
@@ -80,5 +146,34 @@ else if (_machine is not null)
         {
             _loading = false;
         }
+
+        // Load live state independently so machine info renders immediately
+        if (_machine is not null)
+        {
+            try
+            {
+                _state = await BrokerApi.GetMachineStateAsync(Id);
+            }
+            catch
+            {
+                // State load failure is non-fatal — show machine info without live metrics
+            }
+            finally
+            {
+                _stateLoading = false;
+            }
+        }
     }
+
+    private static string FormatBytes(long? bytes)
+    {
+        if (bytes is null) return "—";
+        double gb = bytes.Value / (1024.0 * 1024.0 * 1024.0);
+        return gb >= 1 ? $"{gb:F1} GB" : $"{bytes.Value / (1024.0 * 1024.0):F0} MB";
+    }
+
+    private static string FormatUptime(TimeSpan ts) =>
+        ts.TotalDays >= 1
+            ? $"{(int)ts.TotalDays}d {ts.Hours}h {ts.Minutes}m"
+            : $"{ts.Hours}h {ts.Minutes}m";
 }

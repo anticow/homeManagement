@@ -6,6 +6,7 @@ using HomeManagement.Abstractions.Interfaces;
 using HomeManagement.Core;
 using HomeManagement.Gui.Services;
 using HomeManagement.Gui.ViewModels;
+using HomeManagement.Integration.Prometheus;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -56,6 +57,10 @@ public class App : Application
                 {
                     services.AddHomeManagement(dataDir);
                 }
+
+                // Prometheus endpoint state — enabled via Prometheus:Enabled=true in appsettings.json.
+                // When disabled (default), a no-op provider is registered so ViewModels get null-safe metrics.
+                services.AddPrometheusIntegration(configuration);
 
                 // GUI services
                 services.AddSingleton<NavigationService>();
