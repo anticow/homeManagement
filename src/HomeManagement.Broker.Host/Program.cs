@@ -6,6 +6,8 @@ using HomeManagement.Broker.Host.Hubs;
 using HomeManagement.Core;
 using HomeManagement.Data.SqlServer;
 using HomeManagement.Automation;
+using HomeManagement.Integration.Action1;
+using HomeManagement.Integration.Prometheus;
 using HomeManagement.Vault;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using OpenTelemetry.Metrics;
@@ -51,6 +53,8 @@ var dataDirectory = builder.Configuration["DataDirectory"]
 builder.Services.AddHomeManagementSqlServer(connectionString);
 builder.Services.AddHomeManagement(dataDirectory);
 builder.Services.AddHomeManagementLogging(dataDirectory);
+builder.Services.AddAction1Integration(builder.Configuration);
+builder.Services.AddPrometheusIntegration(builder.Configuration);
 builder.Services.AddHomeManagementAuth(options =>
     builder.Configuration.GetSection(AuthOptions.SectionName).Bind(options));
 builder.Services
@@ -158,6 +162,7 @@ app.MapJobEndpoints();
 app.MapCredentialEndpoints();
 app.MapAuditEndpoints();
 app.MapAutomationEndpoints();
+app.MapAction1WebhookEndpoints();
 
 // ── SignalR Hub ──
 app.MapHub<EventHub>("/hubs/events").RequireAuthorization();
