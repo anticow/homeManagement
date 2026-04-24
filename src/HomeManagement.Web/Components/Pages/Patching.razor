@@ -1,12 +1,16 @@
 @page "/patching"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using HomeManagement.Abstractions.Models
-@inject HomeManagement.Web.Services.IBrokerApi BrokerApi
+@using HomeManagement.Web.Services
+@inject IBrokerApi BrokerApi
 @inject NavigationManager Navigation
 
-<h1>Patching</h1>
+<div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+    <h1 style="margin:0;">Patching</h1>
+    <span style="background:#1976d2; color:white; border-radius:4px; padding:2px 10px; font-size:0.75rem; font-weight:bold; letter-spacing:.05em;">Action1 RMM</span>
+</div>
 
-<p>Select a machine to view patch history or initiate a scan.</p>
+<p>Select a machine to scan for available patches or review deployment history.</p>
 
 @if (_loading)
 {
@@ -14,7 +18,7 @@
 }
 else if (_machines is not null)
 {
-    <div>
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
         <label for="machine-select">Machine:</label>
         <select id="machine-select" @onchange="OnMachineSelected">
             <option value="">-- Select a machine --</option>
@@ -23,14 +27,51 @@ else if (_machines is not null)
                 <option value="@m.Id">@m.Hostname</option>
             }
         </select>
+        @if (_selectedMachineId is not null)
+        {
+            <button @onclick="ScanForPatchesAsync" disabled="@_scanning">
+                @(_scanning ? "Scanning…" : "Scan for Patches")
+            </button>
+        }
     </div>
 
     @if (_selectedMachineId is not null)
     {
-        <h2>Patch History</h2>
+        @if (_detectedPatches is not null)
+        {
+            <h2>Detected Patches (@_detectedPatches.Count)</h2>
+            @if (_detectedPatches.Count > 0)
+            {
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Patch ID</th>
+                            <th>Title</th>
+                            <th>Severity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in _detectedPatches)
+                        {
+                            <tr>
+                                <td>@p.PatchId</td>
+                                <td>@p.Title</td>
+                                <td>@p.Severity</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <p>No patches detected — this machine is up to date.</p>
+            }
+        }
+
+        <h2>Deployment History</h2>
         @if (_historyLoading)
         {
-            <p>Loading patch history...</p>
+            <p>Loading deployment history...</p>
         }
         else if (_history is not null && _history.Count > 0)
         {
@@ -58,7 +99,7 @@ else if (_machines is not null)
         }
         else
         {
-            <p>No patch history found for this machine.</p>
+            <p>No deployment history found for this machine.</p>
         }
     }
 }
@@ -69,10 +110,12 @@ else if (_errorMessage is not null)
 
 @code {
     private bool _loading = true;
+    private bool _scanning;
     private bool _historyLoading;
     private PagedResult<Machine>? _machines;
     private Guid? _selectedMachineId;
     private IReadOnlyList<PatchHistoryEntry>? _history;
+    private IReadOnlyList<PatchInfo>? _detectedPatches;
     private string? _errorMessage;
 
     protected override async Task OnInitializedAsync()
@@ -97,6 +140,7 @@ else if (_errorMessage is not null)
 
     private async Task OnMachineSelected(ChangeEventArgs e)
     {
+        _detectedPatches = null;
         if (Guid.TryParse(e.Value?.ToString(), out var id))
         {
             _selectedMachineId = id;
@@ -107,12 +151,31 @@ else if (_errorMessage is not null)
             }
             catch (Exception ex)
             {
-                _errorMessage = $"Unable to load patch history: {ex.Message}";
+                _errorMessage = $"Unable to load deployment history: {ex.Message}";
             }
             finally
             {
                 _historyLoading = false;
             }
+        }
+    }
+
+    private async Task ScanForPatchesAsync()
+    {
+        if (_selectedMachineId is null) return;
+        _scanning = true;
+        _errorMessage = null;
+        try
+        {
+            _detectedPatches = await BrokerApi.ScanPatchesAsync(new PatchScanRequest(_selectedMachineId.Value));
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Scan failed: {ex.Message}";
+        }
+        finally
+        {
+            _scanning = false;
         }
     }
 }

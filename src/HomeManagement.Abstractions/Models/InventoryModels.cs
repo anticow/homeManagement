@@ -73,3 +73,6 @@ public record MachineQuery(
     bool IncludeDeleted = false,
     int Page = 1,
     int PageSize = 50);
+
+/// <summary>Aggregated endpoint state summary for the dashboard overview.</summary>
+public sealed record MachineSummary(int Total, int Online, int Offline);

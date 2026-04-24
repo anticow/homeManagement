@@ -161,3 +161,21 @@ metrics:
   serviceMonitor:
     enabled: false
     interval: 30s
+
+# -- Action1 RMM integration
+# ApiKey and WebhookSecret MUST be set at deploy time (--set or values override file).
+# They are injected as Kubernetes Secret refs — never store real values here.
+action1:
+  enabled: false
+  organizationId: ""       # Action1 org ID (visible in the Action1 console URL)
+  baseUrl: "https://api.action1.com/"
+  syncIntervalMinutes: 15
+  apiKey: ""               # Required when enabled — set via --set or values override file
+  webhookSecret: ""        # Required when enabled — set via --set or values override file
+
+# -- Prometheus endpoint state integration
+prometheus:
+  enabled: false
+  url: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
+  scrapeLabel: "homemanagement"
+  queryTimeoutSeconds: 10

@@ -19,7 +19,12 @@ public static class PrometheusIntegrationRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.Configure<PrometheusOptions>(configuration.GetSection(PrometheusOptions.Section));
+        services
+            .AddOptions<PrometheusOptions>()
+            .Bind(configuration.GetSection(PrometheusOptions.Section))
+            .Validate(o => !o.Enabled || Uri.TryCreate(o.Url, UriKind.Absolute, out _),
+                "Prometheus:Url must be a valid absolute URI when Prometheus:Enabled is true.")
+            .ValidateOnStart();
 
         var options = configuration.GetSection(PrometheusOptions.Section).Get<PrometheusOptions>()
                       ?? new PrometheusOptions();

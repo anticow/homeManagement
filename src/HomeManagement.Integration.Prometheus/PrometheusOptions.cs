@@ -24,5 +24,5 @@ public sealed class PrometheusOptions
     /// When false, a no-op provider is registered and Prometheus queries are skipped.
     /// Useful for environments where Prometheus is not yet deployed.
     /// </summary>
-    public bool Enabled { get; set; } = true;
+    public bool Enabled { get; set; }
 }

@@ -5,11 +5,21 @@
              x:DataType="vm:PatchingViewModel">
     <DockPanel Margin="24">
         <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,16">
-            <TextBlock Text="Patching" FontSize="24" FontWeight="Bold" />
+            <!-- Title row with source badge -->
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <TextBlock Text="Patching" FontSize="24" FontWeight="Bold" />
+                <Border Background="#1976d2" CornerRadius="4" Padding="6,2">
+                    <TextBlock Text="{Binding SourceLabel}" Foreground="White"
+                               FontSize="11" FontWeight="Bold" LetterSpacing="0.5" />
+                </Border>
+            </StackPanel>
+
             <TextBlock Text="{Binding ErrorMessage}" Foreground="Red"
                        IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
             <TextBlock Text="{Binding StatusMessage}" Foreground="#4CAF50"
                        IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            <!-- Machine selector + action buttons -->
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <TextBlock Text="Machine:" VerticalAlignment="Center" />
                 <ComboBox ItemsSource="{Binding Machines}"
@@ -21,15 +31,23 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <Button Content="Scan for Patches" Command="{Binding ScanCommand}" />
+                <Button Content="{Binding ScanButtonLabel}"
+                        Command="{Binding ScanCommand}"
+                        IsEnabled="{Binding IsScanning, Converter={x:Static BoolConverters.Not}}" />
                 <Button Content="Apply Patches" Command="{Binding ApplyCommand}" />
             </StackPanel>
         </StackPanel>
 
         <Grid RowDefinitions="*" Margin="0,8,0,0">
-
             <DockPanel Grid.Row="0">
-                <TextBlock DockPanel.Dock="Top" Text="Detected Patches" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <!-- Patch count in header -->
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
+                    <TextBlock Text="Detected Patches" FontWeight="SemiBold" />
+                    <Border Background="#e3f2fd" CornerRadius="10" Padding="6,1"
+                            IsVisible="{Binding PatchCount, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <TextBlock Text="{Binding PatchCount}" FontSize="11" Foreground="#1976d2" />
+                    </Border>
+                </StackPanel>
                 <ListBox ItemsSource="{Binding DetectedPatches}">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
