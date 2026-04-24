@@ -21,6 +21,8 @@ COPY src/HomeManagement.Core/HomeManagement.Core.csproj src/HomeManagement.Core/
 COPY src/HomeManagement.AI.Abstractions/HomeManagement.AI.Abstractions.csproj src/HomeManagement.AI.Abstractions/
 COPY src/HomeManagement.Automation/HomeManagement.Automation.csproj src/HomeManagement.Automation/
 COPY src/HomeManagement.AI.Ollama/HomeManagement.AI.Ollama.csproj src/HomeManagement.AI.Ollama/
+COPY src/HomeManagement.Integration.Action1/HomeManagement.Integration.Action1.csproj src/HomeManagement.Integration.Action1/
+COPY src/HomeManagement.Integration.Prometheus/HomeManagement.Integration.Prometheus.csproj src/HomeManagement.Integration.Prometheus/
 COPY src/HomeManagement.Broker.Host/HomeManagement.Broker.Host.csproj src/HomeManagement.Broker.Host/
 RUN dotnet restore src/HomeManagement.Broker.Host/HomeManagement.Broker.Host.csproj
 
