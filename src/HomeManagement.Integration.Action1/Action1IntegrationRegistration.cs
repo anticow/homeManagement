@@ -85,7 +85,10 @@ internal sealed class DisabledAction1PatchService : IPatchService
     public async IAsyncEnumerable<PatchInfo> DetectStreamAsync(
         MachineTarget target,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
-    { yield break; }
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
 
     public Task<PatchResult> ApplyAsync(
         MachineTarget target,
