@@ -25,6 +25,9 @@ public sealed class BrokerApiClient : IBrokerApi
         _authService = authService;
     }
 
+    public Task<HomeManagement.Abstractions.Models.MachineStateSnapshot> GetMachineStateAsync(Guid id, CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetMachineStateAsync(id, ct), ct);
+
     public Task<HomeManagement.Abstractions.Models.MachineSummary> GetMachineSummaryAsync(CancellationToken ct = default)
         => ExecuteAsync(api => api.GetMachineSummaryAsync(ct), ct);
 

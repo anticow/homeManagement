@@ -76,3 +76,17 @@ public record MachineQuery(
 
 /// <summary>Aggregated endpoint state summary for the dashboard overview.</summary>
 public sealed record MachineSummary(int Total, int Online, int Offline);
+
+/// <summary>
+/// Live endpoint state snapshot from the metrics collector (Prometheus).
+/// All metric fields are null when Prometheus is unavailable for this host.
+/// </summary>
+public sealed record MachineStateSnapshot(
+    bool Online,
+    double? CpuUsagePercent,
+    long? MemoryTotalBytes,
+    long? MemoryUsedBytes,
+    long? DiskTotalBytes,
+    long? DiskFreeBytes,
+    TimeSpan? Uptime,
+    DateTime FetchedUtc);
