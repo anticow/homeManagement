@@ -7,6 +7,7 @@ using HomeManagement.Agent.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Serilog;
 
@@ -16,13 +17,10 @@ internal static class Program
 {
     public static async Task Main(string[] args)
     {
+        // Minimal bootstrap logger (console only) — replaced once config is loaded
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Information()
             .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture)
-            .WriteTo.File("logs/agent-.log",
-                rollingInterval: RollingInterval.Day,
-                retainedFileCountLimit: 7,
-                formatProvider: CultureInfo.InvariantCulture)
             .CreateLogger();
 
         try
@@ -34,7 +32,41 @@ internal static class Program
                 })
                 .ConfigureServices((context, services) =>
                 {
-                    // Configuration — bound from hm-agent.json / env vars
+                    // ── Logging — configure Serilog from loaded config ──
+                    var agentSection = context.Configuration.GetSection(AgentConfiguration.SectionName);
+                    var seqUrl = agentSection["SeqUrl"] ?? string.Empty;
+                    var logLevel = Enum.TryParse<Serilog.Events.LogEventLevel>(
+                        agentSection["LogLevel"] ?? "Information", out var lvl)
+                        ? lvl : Serilog.Events.LogEventLevel.Information;
+                    var retentionDays = int.TryParse(agentSection["LogRetentionDays"], out var rd) ? rd : 7;
+
+                    var logPath = Path.Combine(AppContext.BaseDirectory, "logs", "agent-.log");
+
+                    var logConfig = new LoggerConfiguration()
+                        .MinimumLevel.Is(logLevel)
+                        .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
+                        .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
+                        .Enrich.WithProperty("Service", "hm-agent")
+                        .Enrich.WithMachineName()
+                        .Enrich.WithThreadId()
+                        .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture)
+                        .WriteTo.File(logPath,
+                            rollingInterval: RollingInterval.Day,
+                            retainedFileCountLimit: retentionDays,
+                            fileSizeLimitBytes: 50L * 1024 * 1024,
+                            formatProvider: CultureInfo.InvariantCulture);
+
+                    if (!string.IsNullOrWhiteSpace(seqUrl))
+                        logConfig = logConfig.WriteTo.Seq(seqUrl);
+
+                    Log.Logger = logConfig.CreateLogger();
+                    services.AddLogging(logging =>
+                    {
+                        logging.ClearProviders();
+                        logging.AddSerilog(dispose: true);
+                    });
+
+                    // ── Configuration — bound from hm-agent.json / env vars ──
                     var agentConfig = new AgentConfiguration();
                     context.Configuration.GetSection(AgentConfiguration.SectionName).Bind(agentConfig);
 

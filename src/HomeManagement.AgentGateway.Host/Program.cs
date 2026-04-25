@@ -49,6 +49,14 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
+// ── Correlation ID + HTTP request logging ──
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseSerilogRequestLogging(opts =>
+    opts.GetLevel = (ctx, _, _) =>
+        ctx.Request.Path.StartsWithSegments("/healthz") || ctx.Request.Path.StartsWithSegments("/readyz")
+            ? Serilog.Events.LogEventLevel.Verbose
+            : Serilog.Events.LogEventLevel.Information);
+
 // ── Health ──
 app.MapHealthChecks("/healthz");
 app.MapGet("/readyz", () => Results.Ok("ready"));

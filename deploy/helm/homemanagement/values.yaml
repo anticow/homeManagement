@@ -179,3 +179,14 @@ prometheus:
   url: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
   scrapeLabel: "homemanagement"
   queryTimeoutSeconds: 10
+
+# -- Serilog log levels (applied to all services via env vars; override per-environment via values)
+# Increase verbosity for debugging: set minimumLevel to "Debug" or "Verbose".
+# Reduce noise from framework components by tightening the overrides.
+serilog:
+  minimumLevel: "Information"
+  overrides:
+    microsoftAspNetCore: "Warning"
+    microsoftEntityFrameworkCore: "Warning"
+    systemNetHttp: "Warning"
+    grpc: "Warning"

@@ -37,6 +37,12 @@ spec:
               value: "http://hm-auth:{{ .Values.authService.port }}"
             - name: Seq__Url
               value: {{ .Values.seq.url | quote }}
+            - name: Serilog__MinimumLevel__Default
+              value: {{ .Values.serilog.minimumLevel | quote }}
+            - name: Serilog__MinimumLevel__Override__Microsoft.AspNetCore
+              value: {{ .Values.serilog.overrides.microsoftAspNetCore | quote }}
+            - name: Serilog__MinimumLevel__Override__System.Net.Http
+              value: {{ .Values.serilog.overrides.systemNetHttp | quote }}
           resources:
             {{- toYaml .Values.web.resources | nindent 12 }}
           livenessProbe:

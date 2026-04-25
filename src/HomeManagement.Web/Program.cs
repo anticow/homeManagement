@@ -97,6 +97,14 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
+// ── Correlation ID + HTTP request logging ──
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseSerilogRequestLogging(opts =>
+    opts.GetLevel = (ctx, _, _) =>
+        ctx.Request.Path.StartsWithSegments("/healthz")
+            ? Serilog.Events.LogEventLevel.Verbose
+            : Serilog.Events.LogEventLevel.Information);
+
 app.UseStaticFiles();
 app.UseAntiforgery();
 
