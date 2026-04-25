@@ -1,5 +1,6 @@
 using HomeManagement.Auth;
 using HomeManagement.Core;
+using HomeManagement.Gateway;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -47,16 +48,23 @@ builder.Services.AddReverseProxy()
 
 builder.Services.AddHealthChecks();
 
+// Named client used exclusively by PlatformHealthEndpoint — short timeout, no retry
+builder.Services.AddHttpClient("platform-health", c =>
+    c.Timeout = TimeSpan.FromSeconds(5));
+
 var app = builder.Build();
 
 app.MapHealthChecks("/healthz");
 app.MapPrometheusScrapingEndpoint();
 
+// Unauthenticated platform-wide health page (HTTP-only ingress, no credentials exposed)
+PlatformHealthEndpoint.Map(app);
+
 // ── Correlation ID + HTTP request logging ──
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseSerilogRequestLogging(opts =>
     opts.GetLevel = (ctx, _, _) =>
-        ctx.Request.Path.StartsWithSegments("/healthz")
+        ctx.Request.Path.StartsWithSegments("/healthz") || ctx.Request.Path.StartsWithSegments("/platform-health")
             ? Serilog.Events.LogEventLevel.Verbose
             : Serilog.Events.LogEventLevel.Information);
 

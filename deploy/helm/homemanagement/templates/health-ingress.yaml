@@ -1,0 +1,31 @@
+{{- if and .Values.ingress.enabled .Values.healthPage.enabled -}}
+{{- /*
+  HTTP-only ingress for the platform health page.
+  Intentionally has NO TLS and ssl-redirect: false — the health page is publicly accessible
+  over plain HTTP so it can be checked without certificates (uptime monitors, curl, etc.).
+  Only the /platform-health path is exposed; the rest of the gateway remains HTTPS-only.
+*/ -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hm-health-ingress
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "homemanagement.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.healthPage.host | quote }}
+      http:
+        paths:
+          - path: /platform-health
+            pathType: Prefix
+            backend:
+              service:
+                name: hm-gateway
+                port:
+                  number: {{ .Values.gateway.port }}
+{{- end }}

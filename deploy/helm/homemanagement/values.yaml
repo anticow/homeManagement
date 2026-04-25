@@ -180,6 +180,19 @@ prometheus:
   scrapeLabel: "homemanagement"
   queryTimeoutSeconds: 10
 
+# -- Platform health page (HTTP-only, no auth, no TLS)
+# Accessible at http://<host>/platform-health — safe to expose unauthenticated.
+# Only the /platform-health path is routed; the rest of the gateway stays HTTPS-only.
+healthPage:
+  enabled: true
+  host: health.cowgomu.net
+  platformHealth:
+    seqUrl: "http://seq.seq.svc.cluster.local:5341/"
+    prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/-/healthy"
+    grafanaUrl: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local/api/health"
+    argoCDUrl: "http://argocd-server.argocd.svc.cluster.local/healthz"
+    awxUrl: "http://awx-service.awx.svc.cluster.local/api/v2/ping/"
+
 # -- Serilog log levels (applied to all services via env vars; override per-environment via values)
 # Increase verbosity for debugging: set minimumLevel to "Debug" or "Verbose".
 # Reduce noise from framework components by tightening the overrides.
