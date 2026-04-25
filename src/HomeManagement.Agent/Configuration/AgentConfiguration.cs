@@ -28,9 +28,14 @@ public sealed class AgentConfiguration
     // ── Security ──
     public string[] DeniedCommandPatterns { get; set; } = [];
 
-    // ── Logging ──
+    // -- Logging ──
     public string LogLevel { get; set; } = "Information";
     public int LogRetentionDays { get; set; } = 7;
+    /// <summary>
+    /// Optional Seq server URL (e.g. <c>http://seq.seq.svc.cluster.local:5341</c>).
+    /// When empty or whitespace, logs are written to console and file only.
+    /// </summary>
+    public string SeqUrl { get; set; } = string.Empty;
 
     // ── Update ──
     public bool AutoUpdateEnabled { get; set; } = true;

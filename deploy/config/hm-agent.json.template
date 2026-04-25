@@ -9,6 +9,8 @@
     "ServerCaCertPath": "{{KEYVAULT_OPTIONAL:agent-server-cacert-path}}",
     "HeartbeatIntervalSeconds": 30,
     "MaxConcurrentCommands": 5,
-    "LogLevel": "Information"
+    "LogLevel": "Information",
+    "LogRetentionDays": 7,
+    "SeqUrl": "{{KEYVAULT_OPTIONAL:seq-url}}"
   }
 }

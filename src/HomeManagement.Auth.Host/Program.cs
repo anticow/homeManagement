@@ -1,3 +1,4 @@
+using HomeManagement.Abstractions.CrossCutting;
 using HomeManagement.Auth;
 using HomeManagement.Auth.Host.Endpoints;
 using HomeManagement.Core;
@@ -41,6 +42,7 @@ var connectionString = builder.Configuration.GetConnectionString("HomeManagement
     ?? throw new InvalidOperationException("Connection string 'HomeManagement' is required.");
 
 // ── Services ──
+builder.Services.AddSingleton<ICorrelationContext, CorrelationContext>();
 builder.Services.AddHomeManagementSqlServer(connectionString);
 builder.Services.AddHomeManagementAuth(options =>
     builder.Configuration.GetSection(AuthOptions.SectionName).Bind(options));
@@ -81,6 +83,14 @@ app.Use(async (ctx, next) =>
     ctx.Response.Headers.Append("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
     await next();
 });
+
+// ── Correlation ID + HTTP request logging ──
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseSerilogRequestLogging(opts =>
+    opts.GetLevel = (ctx, _, _) =>
+        ctx.Request.Path.StartsWithSegments("/healthz") || ctx.Request.Path.StartsWithSegments("/readyz")
+            ? Serilog.Events.LogEventLevel.Verbose
+            : Serilog.Events.LogEventLevel.Information);
 
 // ── Health ──
 app.MapHealthChecks("/healthz");
