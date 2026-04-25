@@ -238,3 +238,38 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           files: ./artifacts/*.tar.gz
+
+  deploy:
+    name: Deploy (bump image tag)
+    needs: create-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Skip for pre-releases (e.g. v1.2.0-rc.1) — only auto-deploy stable releases
+    if: ${{ !contains(github.ref_name, '-') }}
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v6
+        with:
+          ref: master
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Bump imageTag in values-production.yaml
+        run: |
+          sed -i 's/^  imageTag: .*/  imageTag: "${{ steps.version.outputs.version }}"/' deploy/argocd/values-production.yaml
+
+      - name: Commit and push updated tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/argocd/values-production.yaml
+          git diff --staged --quiet && echo "No tag change to commit" && exit 0
+          git commit -m "chore: deploy ${{ steps.version.outputs.version }} [skip ci]"
+          git push origin master
