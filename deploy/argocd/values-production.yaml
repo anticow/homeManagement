@@ -1,0 +1,51 @@
+# Production values for homeManagement — non-secret settings only.
+# This file is tracked in Git and updated by the release pipeline (ci: bump imageTag).
+# Secret values (connectionString, jwtSigningKey, apiKey, etc.) are injected by Ansible
+# into the ArgoCD Application's valuesObject and are NOT stored here.
+
+global:
+  imageRegistry: ghcr.io/anticow
+  imageTag: "1.1.3"
+  imagePullPolicy: Always
+  imagePullSecret:
+    enabled: false
+
+namespace: homemanagement
+
+seq:
+  url: "http://seq.seq.svc.cluster.local:5341"
+
+auth:
+  issuer: homemanagement
+  audience: homemanagement-api
+  bootstrapAdmin:
+    enabled: false
+
+agentGateway:
+  serviceType: ClusterIP
+
+action1:
+  enabled: false
+  organizationId: ""
+  baseUrl: "https://api.action1.com/"
+  syncIntervalMinutes: 15
+
+prometheus:
+  enabled: false
+  url: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
+  scrapeLabel: "homemanagement"
+  queryTimeoutSeconds: 10
+
+ingress:
+  enabled: true
+  className: nginx
+  host: homemanagement.cowgomu.net
+  brokerHost: broker.cowgomu.net
+  authHost: authapi.cowgomu.net
+  agentGatewayHost: agentgw.cowgomu.net
+  agentGatewayApiHost: agentgw-api.cowgomu.net
+  clusterIssuer: letsencrypt-dns-sp-v2
+  sslRedirect: true
+  tls:
+    enabled: true
+    secretName: hm-wildcard-tls
