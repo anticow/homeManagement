@@ -46,6 +46,26 @@ spec:
               value: "http://hm-auth:{{ .Values.authService.port }}"
             - name: Seq__Url
               value: {{ .Values.seq.url | quote }}
+            - name: PlatformHealth__BrokerUrl
+              value: "http://hm-broker:{{ .Values.broker.port }}/healthz"
+            - name: PlatformHealth__AuthUrl
+              value: "http://hm-auth:{{ .Values.authService.port }}/healthz"
+            - name: PlatformHealth__WebUrl
+              value: "http://hm-web:{{ .Values.web.port }}/healthz"
+            - name: PlatformHealth__AgentGatewayUrl
+              value: "http://hm-agent-gw:{{ .Values.agentGateway.apiPort }}/healthz"
+            {{- if .Values.healthPage.enabled }}
+            - name: PlatformHealth__SeqUrl
+              value: {{ .Values.healthPage.platformHealth.seqUrl | quote }}
+            - name: PlatformHealth__PrometheusUrl
+              value: {{ .Values.healthPage.platformHealth.prometheusUrl | quote }}
+            - name: PlatformHealth__GrafanaUrl
+              value: {{ .Values.healthPage.platformHealth.grafanaUrl | quote }}
+            - name: PlatformHealth__ArgoCDUrl
+              value: {{ .Values.healthPage.platformHealth.argoCDUrl | quote }}
+            - name: PlatformHealth__AwxUrl
+              value: {{ .Values.healthPage.platformHealth.awxUrl | quote }}
+            {{- end }}
             - name: Serilog__MinimumLevel__Default
               value: {{ .Values.serilog.minimumLevel | quote }}
             - name: Serilog__MinimumLevel__Override__Microsoft.AspNetCore

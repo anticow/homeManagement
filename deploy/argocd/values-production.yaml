@@ -49,3 +49,7 @@ ingress:
   tls:
     enabled: true
     secretName: hm-wildcard-tls
+
+healthPage:
+  enabled: true
+  host: health.cowgomu.net
