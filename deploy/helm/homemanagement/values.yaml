@@ -187,7 +187,7 @@ healthPage:
   enabled: true
   host: health.cowgomu.net
   platformHealth:
-    seqUrl: "http://seq.seq.svc.cluster.local:5341/"
+    seqUrl:          "http://seq.seq.svc.cluster.local/api"
     prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/-/healthy"
     grafanaUrl: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local/api/health"
     argoCDUrl: "http://argocd-server.argocd.svc.cluster.local/healthz"
