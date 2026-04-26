@@ -31,6 +31,8 @@ spec:
             - containerPort: {{ .Values.agentGateway.apiPort }}
               name: api
           env:
+            - name: APP_VERSION
+              value: {{ .Values.agentGateway.image.tag | default .Values.global.imageTag | quote }}
             - name: Kestrel__Endpoints__Grpc__Url
               value: "http://+:{{ .Values.agentGateway.port }}"
             - name: Kestrel__Endpoints__Grpc__Protocols

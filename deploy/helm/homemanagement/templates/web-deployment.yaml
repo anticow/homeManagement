@@ -29,6 +29,8 @@ spec:
             - containerPort: {{ .Values.web.port }}
               name: http
           env:
+            - name: APP_VERSION
+              value: {{ .Values.web.image.tag | default .Values.global.imageTag | quote }}
             - name: ASPNETCORE_URLS
               value: "http://+:{{ .Values.web.port }}"
             - name: BrokerApi__BaseUrl
