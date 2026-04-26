@@ -1,3 +1,4 @@
+using HomeManagement.Abstractions.CrossCutting;
 using HomeManagement.Auth;
 using HomeManagement.Core;
 using HomeManagement.Gateway;
@@ -46,6 +47,7 @@ builder.Services.AddAuthorization();
 builder.Services.AddReverseProxy()
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
 
+builder.Services.AddSingleton<ICorrelationContext, CorrelationContext>();
 builder.Services.AddHealthChecks();
 
 // Named client used exclusively by PlatformHealthEndpoint — short timeout, no retry
