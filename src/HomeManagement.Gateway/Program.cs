@@ -50,9 +50,17 @@ builder.Services.AddReverseProxy()
 builder.Services.AddSingleton<ICorrelationContext, CorrelationContext>();
 builder.Services.AddHealthChecks();
 
-// Named client used exclusively by PlatformHealthEndpoint — short timeout, no retry
+// Named client used exclusively by PlatformHealthEndpoint — short timeout, no retry.
+// Cert validation is bypassed because several platform services (ArgoCD) use
+// self-signed cluster-internal certificates that the pod's trust store doesn't include.
+// These are cluster-internal endpoints only — never user-facing traffic.
 builder.Services.AddHttpClient("platform-health", c =>
-    c.Timeout = TimeSpan.FromSeconds(5));
+    c.Timeout = TimeSpan.FromSeconds(5))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        ServerCertificateCustomValidationCallback =
+            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+    });
 
 var app = builder.Build();
 
