@@ -15,13 +15,15 @@ metadata:
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    # Redirect bare / to the health page so http://health.cowgomu.net/ works
+    nginx.ingress.kubernetes.io/app-root: /platform-health
 spec:
   ingressClassName: {{ .Values.ingress.className }}
   rules:
     - host: {{ .Values.healthPage.host | quote }}
       http:
         paths:
-          - path: /platform-health
+          - path: /
             pathType: Prefix
             backend:
               service:
