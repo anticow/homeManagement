@@ -216,8 +216,8 @@ internal sealed class Action1PatchService : IPatchService
             r.Status switch
             {
                 "Installed" => PatchInstallState.Installed,
-                "Skipped"   => PatchInstallState.Deferred,
-                _           => PatchInstallState.Failed
+                "Skipped" => PatchInstallState.Deferred,
+                _ => PatchInstallState.Failed
             },
             r.ErrorMessage)).ToList().AsReadOnly();
 
@@ -249,18 +249,18 @@ internal sealed class Action1PatchService : IPatchService
 
     private static PatchSeverity MapSeverity(string s) => s switch
     {
-        "Critical"  => PatchSeverity.Critical,
+        "Critical" => PatchSeverity.Critical,
         "Important" => PatchSeverity.Important,
-        "Moderate"  => PatchSeverity.Moderate,
-        "Low"       => PatchSeverity.Low,
-        _           => PatchSeverity.Unclassified
+        "Moderate" => PatchSeverity.Moderate,
+        "Low" => PatchSeverity.Low,
+        _ => PatchSeverity.Unclassified
     };
 
     private static PatchCategory MapCategory(string c) => c switch
     {
-        "Security"    => PatchCategory.Security,
-        "Driver"      => PatchCategory.Driver,
+        "Security" => PatchCategory.Security,
+        "Driver" => PatchCategory.Driver,
         "FeaturePack" => PatchCategory.Feature,
-        _             => PatchCategory.Other
+        _ => PatchCategory.Other
     };
 }

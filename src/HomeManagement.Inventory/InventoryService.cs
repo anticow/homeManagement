@@ -209,8 +209,11 @@ internal sealed class InventoryService : IInventoryService
         {
             return existing
                 .Select(d => d.MountPoint == root.MountPoint
-                    ? d with { TotalBytes = metrics.DiskTotalBytes.Value,
-                                FreeBytes = metrics.DiskFreeBytes ?? d.FreeBytes }
+                    ? d with
+                    {
+                        TotalBytes = metrics.DiskTotalBytes.Value,
+                        FreeBytes = metrics.DiskFreeBytes ?? d.FreeBytes
+                    }
                     : d)
                 .ToArray();
         }

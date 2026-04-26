@@ -82,7 +82,7 @@ public sealed record Action1WebhookDeploymentRef(
 public static class Action1EventTypes
 {
     public const string PatchDeploymentCompleted = "patch_deployment_completed";
-    public const string PatchDeploymentFailed    = "patch_deployment_failed";
-    public const string EndpointConnected        = "endpoint_connected";
-    public const string EndpointDisconnected     = "endpoint_disconnected";
+    public const string PatchDeploymentFailed = "patch_deployment_failed";
+    public const string EndpointConnected = "endpoint_connected";
+    public const string EndpointDisconnected = "endpoint_disconnected";
 }

@@ -148,21 +148,21 @@ public class PrometheusEndpointStateProvider : IEndpointStateProvider
 
         if (osType == OsType.Windows)
         {
-            cpuTask       = QueryScalarAsync(PromQL.WindowsCpuUsagePercent(hostname, _options.ScrapeLabel), ct);
-            memAvailTask  = QueryScalarAsync(PromQL.WindowsMemoryAvailableBytes(hostname, _options.ScrapeLabel), ct);
-            memTotalTask  = QueryScalarAsync(PromQL.WindowsMemoryPhysicalBytes(hostname, _options.ScrapeLabel), ct);
-            diskFreeTask  = QueryScalarAsync(PromQL.WindowsDiskFreeBytes(hostname, _options.ScrapeLabel), ct);
+            cpuTask = QueryScalarAsync(PromQL.WindowsCpuUsagePercent(hostname, _options.ScrapeLabel), ct);
+            memAvailTask = QueryScalarAsync(PromQL.WindowsMemoryAvailableBytes(hostname, _options.ScrapeLabel), ct);
+            memTotalTask = QueryScalarAsync(PromQL.WindowsMemoryPhysicalBytes(hostname, _options.ScrapeLabel), ct);
+            diskFreeTask = QueryScalarAsync(PromQL.WindowsDiskFreeBytes(hostname, _options.ScrapeLabel), ct);
             diskTotalTask = QueryScalarAsync(PromQL.WindowsDiskSizeBytes(hostname, _options.ScrapeLabel), ct);
-            uptimeTask    = QueryScalarAsync(PromQL.WindowsSystemUptimeSeconds(hostname, _options.ScrapeLabel), ct);
+            uptimeTask = QueryScalarAsync(PromQL.WindowsSystemUptimeSeconds(hostname, _options.ScrapeLabel), ct);
         }
         else
         {
-            cpuTask       = QueryScalarAsync(PromQL.LinuxCpuUsagePercent(hostname, _options.ScrapeLabel), ct);
-            memAvailTask  = QueryScalarAsync(PromQL.LinuxMemoryAvailableBytes(hostname, _options.ScrapeLabel), ct);
-            memTotalTask  = QueryScalarAsync(PromQL.LinuxMemoryTotalBytes(hostname, _options.ScrapeLabel), ct);
-            diskFreeTask  = QueryScalarAsync(PromQL.LinuxDiskFreeBytes(hostname, _options.ScrapeLabel), ct);
+            cpuTask = QueryScalarAsync(PromQL.LinuxCpuUsagePercent(hostname, _options.ScrapeLabel), ct);
+            memAvailTask = QueryScalarAsync(PromQL.LinuxMemoryAvailableBytes(hostname, _options.ScrapeLabel), ct);
+            memTotalTask = QueryScalarAsync(PromQL.LinuxMemoryTotalBytes(hostname, _options.ScrapeLabel), ct);
+            diskFreeTask = QueryScalarAsync(PromQL.LinuxDiskFreeBytes(hostname, _options.ScrapeLabel), ct);
             diskTotalTask = QueryScalarAsync(PromQL.LinuxDiskTotalBytes(hostname, _options.ScrapeLabel), ct);
-            uptimeTask    = QueryUptimeLinuxAsync(hostname, ct);
+            uptimeTask = QueryUptimeLinuxAsync(hostname, ct);
         }
 
         await Task.WhenAll(cpuTask, memAvailTask, memTotalTask, diskFreeTask, diskTotalTask, uptimeTask);
@@ -226,21 +226,21 @@ public class PrometheusEndpointStateProvider : IEndpointStateProvider
 
     private static ServiceState MapWindowsStateString(string state) => state switch
     {
-        "running"       => ServiceState.Running,
-        "stopped"       => ServiceState.Stopped,
+        "running" => ServiceState.Running,
+        "stopped" => ServiceState.Stopped,
         "start_pending" => ServiceState.Starting,
-        "stop_pending"  => ServiceState.Stopping,
-        "paused"        => ServiceState.Paused,
-        _               => ServiceState.Unknown
+        "stop_pending" => ServiceState.Stopping,
+        "paused" => ServiceState.Paused,
+        _ => ServiceState.Unknown
     };
 
     private static ServiceState MapLinuxStateString(string state) => state switch
     {
-        "active"       => ServiceState.Running,
-        "activating"   => ServiceState.Starting,
+        "active" => ServiceState.Running,
+        "activating" => ServiceState.Starting,
         "deactivating" => ServiceState.Stopping,
-        "inactive"     => ServiceState.Stopped,
-        "failed"       => ServiceState.Stopped,
-        _              => ServiceState.Unknown
+        "inactive" => ServiceState.Stopped,
+        "failed" => ServiceState.Stopped,
+        _ => ServiceState.Unknown
     };
 }

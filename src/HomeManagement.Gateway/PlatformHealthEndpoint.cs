@@ -65,7 +65,7 @@ internal static class PlatformHealthEndpoint
         var results = await Task.WhenAll(tasks);
 
         var overall = results.Any(r => r.Status == "Unhealthy") ? "Unhealthy"
-                    : results.Any(r => r.Status == "Degraded")  ? "Degraded"
+                    : results.Any(r => r.Status == "Degraded") ? "Degraded"
                     : "Healthy";
 
         var wantsHtml = ctx.Request.Headers.Accept.ToString()
@@ -80,9 +80,9 @@ internal static class PlatformHealthEndpoint
     {
         var bannerColor = overall switch
         {
-            "Healthy"   => "#22c55e",
-            "Degraded"  => "#f59e0b",
-            _           => "#ef4444",
+            "Healthy" => "#22c55e",
+            "Degraded" => "#f59e0b",
+            _ => "#ef4444",
         };
 
         var sb = new StringBuilder();
