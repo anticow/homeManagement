@@ -70,7 +70,7 @@ internal static class PlatformHealthEndpoint
         var results = await Task.WhenAll(tasks);
 
         var overall = results.Any(r => r.Status == "Unhealthy") ? "Unhealthy"
-                    : results.Any(r => r.Status == "Degraded")  ? "Degraded"
+                    : results.Any(r => r.Status == "Degraded") ? "Degraded"
                     : "Healthy";
 
         _cache = new CachedSnapshot(now, overall, results);
@@ -134,13 +134,13 @@ internal static class PlatformHealthEndpoint
         {
             return src switch
             {
-                VersionSource.None         => null,
+                VersionSource.None => null,
                 VersionSource.ParseHealthBody pb
                                            => ParseJsonField(healthBody, pb.Field),
-                VersionSource.HmEndpoint   => await FetchVersionUrlAsync(client, healthUrl, "/version",    "version", ct),
+                VersionSource.HmEndpoint => await FetchVersionUrlAsync(client, healthUrl, "/version", "version", ct),
                 VersionSource.SecondaryCall s
                                            => await FetchVersionUrlAsync(client, healthUrl, s.Path, s.Field, ct),
-                _                          => null,
+                _ => null,
             };
         }
         catch
@@ -261,8 +261,8 @@ internal static class PlatformHealthEndpoint
         foreach (var r in results)
         {
             var latency = r.LatencyMs > 0 ? $"{r.LatencyMs} ms" : "—";
-            var detail  = WebUtility.HtmlEncode(r.Detail ?? string.Empty);
-            var ver     = r.Version is not null ? WebUtility.HtmlEncode(r.Version) : "<span class=\"muted\">—</span>";
+            var detail = WebUtility.HtmlEncode(r.Detail ?? string.Empty);
+            var ver = r.Version is not null ? WebUtility.HtmlEncode(r.Version) : "<span class=\"muted\">—</span>";
             sb.Append(CultureInfo.InvariantCulture, $$"""
 
                       <tr>
