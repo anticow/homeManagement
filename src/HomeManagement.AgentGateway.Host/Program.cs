@@ -1,3 +1,4 @@
+using HomeManagement.Abstractions.CrossCutting;
 using HomeManagement.AgentGateway.Host.Endpoints;
 using HomeManagement.AgentGateway.Host.Services;
 using HomeManagement.Core;
@@ -36,6 +37,7 @@ builder.Services.AddSingleton<AgentApiKeyValidator>();
 builder.Services.AddSingleton<IAgentApiKeyValidator>(sp => sp.GetRequiredService<AgentApiKeyValidator>());
 builder.Services.AddGrpc();
 builder.Services.AddSingleton<StandaloneAgentGatewayService>();
+builder.Services.AddSingleton<ICorrelationContext, CorrelationContext>();
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();

@@ -1,3 +1,4 @@
+using HomeManagement.Abstractions.CrossCutting;
 using HomeManagement.Web.Services;
 using HomeManagement.Core;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -79,6 +80,7 @@ builder.Services.AddAuthorizationCore();
 builder.Services.AddScoped<EventHubClient>();
 
 builder.Services.AddHealthChecks();
+builder.Services.AddSingleton<ICorrelationContext, CorrelationContext>();
 
 var app = builder.Build();
 
