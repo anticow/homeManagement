@@ -155,6 +155,8 @@ app.UseSerilogRequestLogging(opts =>
 // ── Health ──
 app.MapHealthChecks("/healthz");
 app.MapGet("/readyz", () => Results.Ok("ready"));
+app.MapGet("/version", () => new { version = Environment.GetEnvironmentVariable("APP_VERSION") ?? "unknown" })
+    .AllowAnonymous().ExcludeFromDescription();
 app.MapPrometheusScrapingEndpoint();
 
 // ── Auth middleware ──

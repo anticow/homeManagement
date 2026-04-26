@@ -112,6 +112,8 @@ app.UseAntiforgery();
 
 // ── Health ──
 app.MapHealthChecks("/healthz");
+app.MapGet("/version", () => new { version = Environment.GetEnvironmentVariable("APP_VERSION") ?? "unknown" })
+    .AllowAnonymous().ExcludeFromDescription();
 app.MapPrometheusScrapingEndpoint();
 
 app.MapRazorComponents<HomeManagement.Web.Components.App>()

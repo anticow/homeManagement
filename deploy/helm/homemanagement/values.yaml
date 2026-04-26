@@ -190,7 +190,7 @@ healthPage:
     seqUrl:          "http://seq.seq.svc.cluster.local/api"
     prometheusUrl: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/-/healthy"
     grafanaUrl: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local/api/health"
-    argoCDUrl: "http://argocd-server.argocd.svc.cluster.local/healthz"
+    argoCDUrl: "https://argocd-server.argocd.svc.cluster.local/healthz"
     awxUrl: "http://awx-service.awx.svc.cluster.local/api/v2/ping/"
 
 # -- Serilog log levels (applied to all services via env vars; override per-environment via values)

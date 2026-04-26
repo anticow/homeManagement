@@ -29,6 +29,8 @@ spec:
             - containerPort: {{ .Values.gateway.port }}
               name: http
           env:
+            - name: APP_VERSION
+              value: {{ .Values.gateway.image.tag | default .Values.global.imageTag | quote }}
             - name: ASPNETCORE_URLS
               value: "http://+:{{ .Values.gateway.port }}"
             - name: Auth__JwtSigningKey
