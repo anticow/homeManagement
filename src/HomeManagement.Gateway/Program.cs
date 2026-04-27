@@ -65,6 +65,17 @@ builder.Services.AddHttpClient("platform-health", c =>
         AllowAutoRedirect = false,
     });
 
+// Named client used by PlatformHealthEndpoint to query the Kubernetes API for pod start times.
+// Cert validation is bypassed for the in-cluster API server's self-signed certificate.
+// Best-effort: failures produce no pod-age data, health checks are unaffected.
+builder.Services.AddHttpClient("k8s-api", c =>
+    c.Timeout = TimeSpan.FromSeconds(5))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        ServerCertificateCustomValidationCallback =
+            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
+    });
+
 var app = builder.Build();
 
 app.MapHealthChecks("/healthz");
