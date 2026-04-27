@@ -109,7 +109,11 @@ internal static class PlatformHealthEndpoint
 
             using var resp = await client.GetAsync(url, completion, ct);
             sw.Stop();
-            status = resp.IsSuccessStatusCode ? "Healthy" : "Unhealthy";
+            // 2xx = Healthy, 3xx = Healthy (service alive, redirecting — auto-redirect disabled),
+            // 4xx = Degraded (service up but reporting errors), 5xx = Unhealthy
+            status = resp.IsSuccessStatusCode || ((int)resp.StatusCode is >= 300 and < 400)
+                ? "Healthy"
+                : (int)resp.StatusCode >= 500 ? "Unhealthy" : "Degraded";
             detail = $"{(int)resp.StatusCode} {resp.ReasonPhrase}";
 
             if (svc.Version is VersionSource.ParseHealthBody)
