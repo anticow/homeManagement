@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 
@@ -29,14 +30,15 @@ internal static class PlatformHealthEndpoint
     }
 
     private sealed record ServiceDef(
-        string ConfigKey, string Name, string Category, VersionSource Version);
+        string ConfigKey, string Name, string Category, VersionSource Version,
+        string? PodLabel = null);
 
     private static readonly ServiceDef[] Services =
     [
-        new("PlatformHealth:BrokerUrl",       "Broker",        "HomeManagement", new VersionSource.HmEndpoint()),
-        new("PlatformHealth:AuthUrl",         "Auth",          "HomeManagement", new VersionSource.HmEndpoint()),
-        new("PlatformHealth:WebUrl",          "Web",           "HomeManagement", new VersionSource.HmEndpoint()),
-        new("PlatformHealth:AgentGatewayUrl", "Agent Gateway", "HomeManagement", new VersionSource.HmEndpoint()),
+        new("PlatformHealth:BrokerUrl",       "Broker",        "HomeManagement", new VersionSource.HmEndpoint(),  "hm-broker"),
+        new("PlatformHealth:AuthUrl",         "Auth",          "HomeManagement", new VersionSource.HmEndpoint(),  "hm-auth"),
+        new("PlatformHealth:WebUrl",          "Web",           "HomeManagement", new VersionSource.HmEndpoint(),  "hm-web"),
+        new("PlatformHealth:AgentGatewayUrl", "Agent Gateway", "HomeManagement", new VersionSource.HmEndpoint(),  "hm-agent-gw"),
         new("PlatformHealth:SeqUrl",          "Seq",           "Platform",       new VersionSource.None()),
         new("PlatformHealth:PrometheusUrl",   "Prometheus",    "Platform",       new VersionSource.SecondaryCall("/api/v1/status/buildinfo", "data.version")),
         new("PlatformHealth:GrafanaUrl",      "Grafana",       "Platform",       new VersionSource.ParseHealthBody("version")),
@@ -48,6 +50,82 @@ internal static class PlatformHealthEndpoint
     private static volatile CachedSnapshot? _cache;
     private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(15);
     private sealed record CachedSnapshot(DateTime FetchedAt, string Overall, CheckResult[] Results);
+
+    // ── Gateway pod's own start time (process start, never changes while running) ───────────────
+    private static readonly DateTime GatewayStartTime =
+        Process.GetCurrentProcess().StartTime.ToUniversalTime();
+
+    // ── Kubernetes in-cluster pod age lookup ──────────────────────────────────────────────────
+    // Best-effort: any failure silently returns empty. Requires RBAC Role + RoleBinding granting
+    // get/list on pods in the homemanagement namespace (see rbac.yaml Helm template).
+    private static readonly string K8sTokenPath =
+        "/var/run/secrets/kubernetes.io/serviceaccount/token";
+    private static readonly string K8sNsPath =
+        "/var/run/secrets/kubernetes.io/serviceaccount/namespace";
+
+    private static async Task<IReadOnlyDictionary<string, DateTime>> FetchPodStartTimesAsync(
+        HttpClient k8sClient, CancellationToken ct)
+    {
+        if (!File.Exists(K8sTokenPath)) return new Dictionary<string, DateTime>();
+        try
+        {
+            var token = await File.ReadAllTextAsync(K8sTokenPath, ct);
+            var ns = File.Exists(K8sNsPath)
+                ? (await File.ReadAllTextAsync(K8sNsPath, ct)).Trim()
+                : "homemanagement";
+
+            using var req = new HttpRequestMessage(HttpMethod.Get,
+                $"https://kubernetes.default.svc/api/v1/namespaces/{ns}/pods");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            using var resp = await k8sClient.SendAsync(req,
+                HttpCompletionOption.ResponseContentRead, ct);
+            if (!resp.IsSuccessStatusCode) return new Dictionary<string, DateTime>();
+
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            return ParsePodStartTimes(body);
+        }
+        catch { return new Dictionary<string, DateTime>(); }
+    }
+
+    private static Dictionary<string, DateTime> ParsePodStartTimes(string json)
+    {
+        var result = new Dictionary<string, DateTime>();
+        try
+        {
+            // Build reverse lookup: pod app label → service name
+            var labelToService = Services
+                .Where(s => s.PodLabel is not null)
+                .ToDictionary(s => s.PodLabel!, s => s.Name);
+
+            using var doc = JsonDocument.Parse(json);
+            foreach (var item in doc.RootElement.GetProperty("items").EnumerateArray())
+            {
+                if (!item.TryGetProperty("metadata", out var meta)) continue;
+                if (!meta.TryGetProperty("labels", out var labels)) continue;
+                if (!labels.TryGetProperty("app", out var appEl)) continue;
+                var appLabel = appEl.GetString();
+                if (appLabel is null || !labelToService.TryGetValue(appLabel, out var svcName)) continue;
+
+                if (!item.TryGetProperty("status", out var status)) continue;
+                if (!status.TryGetProperty("startTime", out var startTimeEl)) continue;
+                if (!DateTime.TryParse(startTimeEl.GetString(), null,
+                        DateTimeStyles.RoundtripKind, out var t)) continue;
+
+                // Keep the earliest start time when multiple replicas exist
+                if (!result.TryGetValue(svcName, out var existing) || t < existing)
+                    result[svcName] = t;
+            }
+        }
+        catch { /* best effort */ }
+        return result;
+    }
+
+    private static string FormatAge(TimeSpan age) => age.TotalDays >= 1
+        ? $"{(int)age.TotalDays}d {age.Hours}h"
+        : age.TotalHours >= 1
+            ? $"{(int)age.TotalHours}h {age.Minutes}m"
+            : $"{(int)age.TotalMinutes}m";
 
     // ── Endpoint registration ──────────────────────────────────────────────────────────────────
 
@@ -65,16 +143,29 @@ internal static class PlatformHealthEndpoint
         if (cached is not null && now - cached.FetchedAt < CacheDuration)
             return Respond(ctx, cached.Results, cached.Overall, cached.FetchedAt);
 
-        var client = factory.CreateClient("platform-health");
-        var tasks = Services.Select(svc => CheckServiceAsync(client, config, svc, ct));
-        var results = await Task.WhenAll(tasks);
+        var healthClient = factory.CreateClient("platform-health");
+        var k8sClient = factory.CreateClient("k8s-api");
 
-        var overall = results.Any(r => r.Status == "Unhealthy") ? "Unhealthy"
-                    : results.Any(r => r.Status == "Degraded") ? "Degraded"
+        // Fan out health checks and pod start-time lookup concurrently
+        var healthTasks = Services.Select(svc => CheckServiceAsync(healthClient, config, svc, ct)).ToArray();
+        var podTimesTask = FetchPodStartTimesAsync(k8sClient, ct);
+
+        await Task.WhenAll(healthTasks.Cast<Task>().Append(podTimesTask));
+
+        var results = await Task.WhenAll(healthTasks);
+        var podTimes = await podTimesTask;
+
+        // Enrich results with pod start times where available
+        var enriched = results
+            .Select(r => podTimes.TryGetValue(r.Name, out var t) ? r with { PodStartTime = t } : r)
+            .ToArray();
+
+        var overall = enriched.Any(r => r.Status == "Unhealthy") ? "Unhealthy"
+                    : enriched.Any(r => r.Status == "Degraded") ? "Degraded"
                     : "Healthy";
 
-        _cache = new CachedSnapshot(now, overall, results);
-        return Respond(ctx, results, overall, now);
+        _cache = new CachedSnapshot(now, overall, enriched);
+        return Respond(ctx, enriched, overall, now);
     }
 
     private static IResult Respond(HttpContext ctx, CheckResult[] results, string overall, DateTime checkedAt)
@@ -212,6 +303,9 @@ internal static class PlatformHealthEndpoint
             _ => "#ef4444",
         };
 
+        var gwAge = now - GatewayStartTime;
+        var gwAgeStr = FormatAge(gwAge);
+
         var sb = new StringBuilder();
         sb.Append(CultureInfo.InvariantCulture, $$"""
             <!DOCTYPE html>
@@ -251,12 +345,13 @@ internal static class PlatformHealthEndpoint
                 Platform <span class="ver">v{{WebUtility.HtmlEncode(gatewayVersion)}}</span>
                 &nbsp;·&nbsp; Checked {{now:yyyy-MM-dd HH:mm:ss}} UTC
                 &nbsp;·&nbsp; Auto-refreshes every 30 s
+                &nbsp;·&nbsp; Gateway up {{WebUtility.HtmlEncode(gwAgeStr)}} (since {{GatewayStartTime:yyyy-MM-dd HH:mm}} UTC)
               </p>
               <div class="banner"><span class="dot"></span>{{overall}}</div>
               <table>
                 <thead>
                   <tr>
-                    <th>Component</th><th>Category</th><th>Status</th><th>Version</th><th>Latency</th><th>Detail</th>
+                    <th>Component</th><th>Category</th><th>Status</th><th>Version</th><th>Latency</th><th>Pod Age</th><th>Detail</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -267,6 +362,9 @@ internal static class PlatformHealthEndpoint
             var latency = r.LatencyMs > 0 ? $"{r.LatencyMs} ms" : "—";
             var detail = WebUtility.HtmlEncode(r.Detail ?? string.Empty);
             var ver = r.Version is not null ? WebUtility.HtmlEncode(r.Version) : "<span class=\"muted\">—</span>";
+            var podAge = r.PodStartTime.HasValue
+                ? $"<span title=\"{WebUtility.HtmlEncode(r.PodStartTime.Value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + " UTC")}\">{WebUtility.HtmlEncode(FormatAge(now - r.PodStartTime.Value))}</span>"
+                : "<span class=\"muted\">—</span>";
             sb.Append(CultureInfo.InvariantCulture, $$"""
 
                       <tr>
@@ -275,6 +373,7 @@ internal static class PlatformHealthEndpoint
                         <td><span class="pill {{r.Status}}">{{r.Status}}</span></td>
                         <td class="ver-badge">{{ver}}</td>
                         <td class="muted">{{latency}}</td>
+                        <td class="muted">{{podAge}}</td>
                         <td class="muted">{{detail}}</td>
                       </tr>
                 """);
@@ -298,5 +397,6 @@ internal static class PlatformHealthEndpoint
         string Status,
         int LatencyMs,
         string? Detail,
-        string? Version);
+        string? Version,
+        DateTime? PodStartTime = null);
 }

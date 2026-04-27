@@ -1,0 +1,32 @@
+{{- /*
+  RBAC for the hm-gateway pod to read pod metadata from the Kubernetes API.
+  Required by PlatformHealthEndpoint to show pod start times (pod age) on the health page.
+  Grants get/list on pods in this namespace only — no cluster-wide permissions.
+*/ -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "homemanagement.fullname" . }}-pod-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "homemanagement.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "homemanagement.fullname" . }}-pod-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "homemanagement.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "homemanagement.fullname" . }}-pod-reader
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: {{ .Release.Namespace }}
