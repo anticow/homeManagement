@@ -51,15 +51,18 @@ builder.Services.AddSingleton<ICorrelationContext, CorrelationContext>();
 builder.Services.AddHealthChecks();
 
 // Named client used exclusively by PlatformHealthEndpoint — short timeout, no retry.
-// Cert validation is bypassed because several platform services (ArgoCD) use
-// self-signed cluster-internal certificates that the pod's trust store doesn't include.
-// These are cluster-internal endpoints only — never user-facing traffic.
+// Cert validation is bypassed: several platform services use self-signed cluster-internal
+// certs that the pod's trust store doesn't include (ArgoCD, Grafana, etc.).
+// Auto-redirect is disabled: following HTTP→HTTPS redirects re-triggers SSL errors for
+// services that redirect from their plain-HTTP port to their HTTPS endpoint.
+// The health check treats 3xx as "service is alive" (Healthy with redirect noted in Detail).
 builder.Services.AddHttpClient("platform-health", c =>
     c.Timeout = TimeSpan.FromSeconds(5))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
     {
         ServerCertificateCustomValidationCallback =
-            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
+        AllowAutoRedirect = false,
     });
 
 var app = builder.Build();
