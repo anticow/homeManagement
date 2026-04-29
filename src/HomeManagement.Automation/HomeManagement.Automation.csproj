@@ -17,6 +17,5 @@
   <ItemGroup>
     <ProjectReference Include="..\HomeManagement.Abstractions\HomeManagement.Abstractions.csproj" />
     <ProjectReference Include="..\HomeManagement.AI.Abstractions\HomeManagement.AI.Abstractions.csproj" />
-    <ProjectReference Include="..\HomeManagement.Data\HomeManagement.Data.csproj" />
   </ItemGroup>
 </Project>

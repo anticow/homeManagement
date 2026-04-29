@@ -4,7 +4,7 @@ using HomeManagement.Abstractions;
 using HomeManagement.AI.Abstractions.Contracts;
 using HomeManagement.Abstractions.Interfaces;
 using HomeManagement.Abstractions.Models;
-using HomeManagement.Data.Repositories;
+using HomeManagement.Abstractions.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -39,376 +39,103 @@ internal sealed class AutomationEngine : IAutomationEngine
         return Task.FromResult(_options.CurrentValue.Enabled);
     }
 
-    public async Task<AutomationRunId> StartHealthReportAsync(HealthReportRunRequest request, CancellationToken ct = default)
-    {
-        if (!await IsEnabledAsync(ct))
-        {
-            throw new InvalidOperationException("Automation is currently disabled.");
-        }
-
-        var runId = AutomationRunId.New();
-        var correlationId = Guid.NewGuid().ToString("N");
-        AutomationTelemetry.RecordRunStarted(HealthReportWorkflowName);
-
-        // Create the run in the database
-        using (var scope = _serviceProvider.CreateScope())
-        {
-            var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
-            var requestJson = JsonSerializer.Serialize(request);
-            await repository.CreateRunAsync(runId.Value, HealthReportWorkflowName, requestJson, correlationId, ct);
-            await RecordAuditEventAsync(
-                correlationId,
-                AuditAction.JobSubmitted,
-                AuditOutcome.Success,
-                $"Automation run queued for workflow '{HealthReportWorkflowName}'.",
-                runId,
-                HealthReportWorkflowName,
-                CancellationToken.None);
-        }
-
-        // Fire-and-forget execution on background task
-        _ = Task.Run(async () =>
-        {
-            var executionCt = CancellationToken.None;
-            var runStopwatch = Stopwatch.StartNew();
-
-            try
+    public Task<AutomationRunId> StartHealthReportAsync(HealthReportRunRequest request, CancellationToken ct = default) =>
+        StartWorkflowAsync(HealthReportWorkflowName, request,
+            async (scope, runId, req, correlationId, executionCt) =>
             {
-                // Resolve scoped services within an execution scope for this background run.
-                using var scope = _serviceProvider.CreateScope();
                 var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
                 var inventoryService = scope.ServiceProvider.GetRequiredService<IInventoryService>();
                 var serviceController = scope.ServiceProvider.GetRequiredService<IServiceController>();
                 var llmClient = scope.ServiceProvider.GetRequiredService<ILLMClient>();
-                await ExecuteHealthReportAsync(runId, request, correlationId, repository, inventoryService, serviceController, llmClient, executionCt);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Automation run {RunId} failed", runId.Value);
-                using var scope = _serviceProvider.CreateScope();
-                var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
-                await repository.UpdateRunFailedAsync(runId.Value, ex.Message, executionCt);
-                await RecordAuditEventAsync(
-                    correlationId,
-                    AuditAction.JobFailed,
-                    AuditOutcome.Failure,
-                    $"Automation run failed for workflow '{HealthReportWorkflowName}'.",
-                    runId,
-                    HealthReportWorkflowName,
-                    executionCt,
-                    ex.Message);
-                AutomationTelemetry.RecordRunCompleted(HealthReportWorkflowName, success: false, runStopwatch.Elapsed.TotalMilliseconds);
-            }
-        }, CancellationToken.None);
-
-        return runId;
-    }
+                await ExecuteHealthReportAsync(runId, req, correlationId, repository, inventoryService, serviceController, llmClient, executionCt);
+            }, ct);
 
     public async Task<AutomationRunId> StartEnsureServiceRunningAsync(EnsureServiceRunningRunRequest request, CancellationToken ct = default)
     {
-        if (!await IsEnabledAsync(ct))
-        {
-            throw new InvalidOperationException("Automation is currently disabled.");
-        }
-
         if (string.IsNullOrWhiteSpace(request.ServiceName))
-        {
             throw new ArgumentException("ServiceName must not be empty.", nameof(request));
-        }
 
-        var runId = AutomationRunId.New();
-        var correlationId = Guid.NewGuid().ToString("N");
-        AutomationTelemetry.RecordRunStarted(EnsureServiceRunningWorkflowName);
-
-        using (var scope = _serviceProvider.CreateScope())
-        {
-            var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
-            var requestJson = JsonSerializer.Serialize(request);
-            await repository.CreateRunAsync(runId.Value, EnsureServiceRunningWorkflowName, requestJson, correlationId, ct);
-            await RecordAuditEventAsync(
-                correlationId,
-                AuditAction.JobSubmitted,
-                AuditOutcome.Success,
-                $"Automation run queued for workflow '{EnsureServiceRunningWorkflowName}'.",
-                runId,
-                EnsureServiceRunningWorkflowName,
-                CancellationToken.None);
-        }
-
-        _ = Task.Run(async () =>
-        {
-            var executionCt = CancellationToken.None;
-            var runStopwatch = Stopwatch.StartNew();
-
-            try
+        return await StartWorkflowAsync(EnsureServiceRunningWorkflowName, request,
+            async (scope, runId, req, correlationId, executionCt) =>
             {
-                using var scope = _serviceProvider.CreateScope();
                 var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
                 var inventoryService = scope.ServiceProvider.GetRequiredService<IInventoryService>();
                 var serviceController = scope.ServiceProvider.GetRequiredService<IServiceController>();
-
-                await ExecuteEnsureServiceRunningAsync(
-                    runId,
-                    request,
-                    correlationId,
-                    repository,
-                    inventoryService,
-                    serviceController,
-                    executionCt);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Automation run {RunId} failed", runId.Value);
-                using var scope = _serviceProvider.CreateScope();
-                var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
-                await repository.UpdateRunFailedAsync(runId.Value, ex.Message, executionCt);
-                await RecordAuditEventAsync(
-                    correlationId,
-                    AuditAction.JobFailed,
-                    AuditOutcome.Failure,
-                    $"Automation run failed for workflow '{EnsureServiceRunningWorkflowName}'.",
-                    runId,
-                    EnsureServiceRunningWorkflowName,
-                    executionCt,
-                    ex.Message);
-                AutomationTelemetry.RecordRunCompleted(EnsureServiceRunningWorkflowName, success: false, runStopwatch.Elapsed.TotalMilliseconds);
-            }
-        }, CancellationToken.None);
-
-        return runId;
+                await ExecuteEnsureServiceRunningAsync(runId, req, correlationId, repository, inventoryService, serviceController, executionCt);
+            }, ct);
     }
 
-    public async Task<AutomationRunId> StartPatchAllAsync(PatchAllRunRequest request, CancellationToken ct = default)
-    {
-        if (!await IsEnabledAsync(ct))
-        {
-            throw new InvalidOperationException("Automation is currently disabled.");
-        }
-
-        var runId = AutomationRunId.New();
-        var correlationId = Guid.NewGuid().ToString("N");
-        AutomationTelemetry.RecordRunStarted(PatchAllWorkflowName);
-
-        using (var scope = _serviceProvider.CreateScope())
-        {
-            var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
-            var requestJson = JsonSerializer.Serialize(request);
-            await repository.CreateRunAsync(runId.Value, PatchAllWorkflowName, requestJson, correlationId, ct);
-            await RecordAuditEventAsync(
-                correlationId,
-                AuditAction.JobSubmitted,
-                AuditOutcome.Success,
-                $"Automation run queued for workflow '{PatchAllWorkflowName}'.",
-                runId,
-                PatchAllWorkflowName,
-                CancellationToken.None);
-        }
-
-        _ = Task.Run(async () =>
-        {
-            var executionCt = CancellationToken.None;
-            var runStopwatch = Stopwatch.StartNew();
-
-            try
+    public Task<AutomationRunId> StartPatchAllAsync(PatchAllRunRequest request, CancellationToken ct = default) =>
+        StartWorkflowAsync(PatchAllWorkflowName, request,
+            async (scope, runId, req, correlationId, executionCt) =>
             {
-                using var scope = _serviceProvider.CreateScope();
                 var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
                 var inventoryService = scope.ServiceProvider.GetRequiredService<IInventoryService>();
                 var patchService = scope.ServiceProvider.GetRequiredService<IPatchService>();
+                await ExecutePatchAllAsync(runId, req, correlationId, repository, inventoryService, patchService, executionCt);
+            }, ct);
 
-                await ExecutePatchAllAsync(
-                    runId,
-                    request,
-                    correlationId,
-                    repository,
-                    inventoryService,
-                    patchService,
-                    executionCt);
-            }
-            catch (Exception ex)
+    public Task<AutomationRunId> StartHaosHealthStatusAsync(HaosHealthStatusRunRequest request, CancellationToken ct = default) =>
+        StartWorkflowAsync(HaosHealthStatusWorkflowName, request,
+            async (scope, runId, req, correlationId, executionCt) =>
             {
-                _logger.LogError(ex, "Automation run {RunId} failed", runId.Value);
-                using var scope = _serviceProvider.CreateScope();
-                var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
-                await repository.UpdateRunFailedAsync(runId.Value, ex.Message, executionCt);
-                await RecordAuditEventAsync(
-                    correlationId,
-                    AuditAction.JobFailed,
-                    AuditOutcome.Failure,
-                    $"Automation run failed for workflow '{PatchAllWorkflowName}'.",
-                    runId,
-                    PatchAllWorkflowName,
-                    executionCt,
-                    ex.Message);
-                AutomationTelemetry.RecordRunCompleted(PatchAllWorkflowName, success: false, runStopwatch.Elapsed.TotalMilliseconds);
-            }
-        }, CancellationToken.None);
-
-        return runId;
-    }
-
-    public async Task<AutomationRunId> StartHaosHealthStatusAsync(HaosHealthStatusRunRequest request, CancellationToken ct = default)
-    {
-        if (!await IsEnabledAsync(ct))
-        {
-            throw new InvalidOperationException("Automation is currently disabled.");
-        }
-
-        var runId = AutomationRunId.New();
-        var correlationId = Guid.NewGuid().ToString("N");
-        AutomationTelemetry.RecordRunStarted(HaosHealthStatusWorkflowName);
-
-        using (var scope = _serviceProvider.CreateScope())
-        {
-            var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
-            var requestJson = JsonSerializer.Serialize(request);
-            await repository.CreateRunAsync(runId.Value, HaosHealthStatusWorkflowName, requestJson, correlationId, ct);
-            await RecordAuditEventAsync(
-                correlationId,
-                AuditAction.JobSubmitted,
-                AuditOutcome.Success,
-                $"Automation run queued for workflow '{HaosHealthStatusWorkflowName}'.",
-                runId,
-                HaosHealthStatusWorkflowName,
-                CancellationToken.None);
-        }
-
-        _ = Task.Run(async () =>
-        {
-            var executionCt = CancellationToken.None;
-            var runStopwatch = Stopwatch.StartNew();
-
-            try
-            {
-                using var scope = _serviceProvider.CreateScope();
                 var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
                 var haosAdapter = scope.ServiceProvider.GetRequiredService<IHaosAdapter>();
+                await ExecuteHaosHealthStatusAsync(runId, req, correlationId, repository, haosAdapter, executionCt);
+            }, ct);
 
-                await ExecuteHaosHealthStatusAsync(
-                    runId,
-                    request,
-                    correlationId,
-                    repository,
-                    haosAdapter,
-                    executionCt);
-            }
-            catch (Exception ex)
+    public Task<AutomationRunId> StartHaosEntitySnapshotAsync(HaosEntitySnapshotRunRequest request, CancellationToken ct = default) =>
+        StartWorkflowAsync(HaosEntitySnapshotWorkflowName, request,
+            async (scope, runId, req, correlationId, executionCt) =>
             {
-                _logger.LogError(ex, "Automation run {RunId} failed", runId.Value);
-                using var scope = _serviceProvider.CreateScope();
-                var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
-                await repository.UpdateRunFailedAsync(runId.Value, ex.Message, executionCt);
-                await RecordAuditEventAsync(
-                    correlationId,
-                    AuditAction.JobFailed,
-                    AuditOutcome.Failure,
-                    $"Automation run failed for workflow '{HaosHealthStatusWorkflowName}'.",
-                    runId,
-                    HaosHealthStatusWorkflowName,
-                    executionCt,
-                    ex.Message);
-                AutomationTelemetry.RecordRunCompleted(HaosHealthStatusWorkflowName, success: false, runStopwatch.Elapsed.TotalMilliseconds);
-            }
-        }, CancellationToken.None);
-
-        return runId;
-    }
-
-    public async Task<AutomationRunId> StartHaosEntitySnapshotAsync(HaosEntitySnapshotRunRequest request, CancellationToken ct = default)
-    {
-        if (!await IsEnabledAsync(ct))
-        {
-            throw new InvalidOperationException("Automation is currently disabled.");
-        }
-
-        var runId = AutomationRunId.New();
-        var correlationId = Guid.NewGuid().ToString("N");
-        AutomationTelemetry.RecordRunStarted(HaosEntitySnapshotWorkflowName);
-
-        using (var scope = _serviceProvider.CreateScope())
-        {
-            var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
-            var requestJson = JsonSerializer.Serialize(request);
-            await repository.CreateRunAsync(runId.Value, HaosEntitySnapshotWorkflowName, requestJson, correlationId, ct);
-            await RecordAuditEventAsync(
-                correlationId,
-                AuditAction.JobSubmitted,
-                AuditOutcome.Success,
-                $"Automation run queued for workflow '{HaosEntitySnapshotWorkflowName}'.",
-                runId,
-                HaosEntitySnapshotWorkflowName,
-                CancellationToken.None);
-        }
-
-        _ = Task.Run(async () =>
-        {
-            var executionCt = CancellationToken.None;
-            var runStopwatch = Stopwatch.StartNew();
-
-            try
-            {
-                using var scope = _serviceProvider.CreateScope();
                 var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
                 var haosAdapter = scope.ServiceProvider.GetRequiredService<IHaosAdapter>();
-
-                await ExecuteHaosEntitySnapshotAsync(
-                    runId,
-                    request,
-                    correlationId,
-                    repository,
-                    haosAdapter,
-                    executionCt);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Automation run {RunId} failed", runId.Value);
-                using var scope = _serviceProvider.CreateScope();
-                var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
-                await repository.UpdateRunFailedAsync(runId.Value, ex.Message, executionCt);
-                await RecordAuditEventAsync(
-                    correlationId,
-                    AuditAction.JobFailed,
-                    AuditOutcome.Failure,
-                    $"Automation run failed for workflow '{HaosEntitySnapshotWorkflowName}'.",
-                    runId,
-                    HaosEntitySnapshotWorkflowName,
-                    executionCt,
-                    ex.Message);
-                AutomationTelemetry.RecordRunCompleted(HaosEntitySnapshotWorkflowName, success: false, runStopwatch.Elapsed.TotalMilliseconds);
-            }
-        }, CancellationToken.None);
-
-        return runId;
-    }
+                await ExecuteHaosEntitySnapshotAsync(runId, req, correlationId, repository, haosAdapter, executionCt);
+            }, ct);
 
     public async Task<AutomationRunId> StartAnsibleHandoffAsync(AnsibleHandoffRunRequest request, CancellationToken ct = default)
     {
-        if (!await IsEnabledAsync(ct))
-        {
-            throw new InvalidOperationException("Automation is currently disabled.");
-        }
-
         if (string.IsNullOrWhiteSpace(request.Operation))
-        {
             throw new ArgumentException("Operation must not be empty.", nameof(request));
-        }
+
+        return await StartWorkflowAsync(AnsibleHandoffWorkflowName, request,
+            async (scope, runId, req, correlationId, executionCt) =>
+            {
+                var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
+                var ansibleHandoffService = scope.ServiceProvider.GetRequiredService<IAnsibleHandoffService>();
+                await ExecuteAnsibleHandoffAsync(runId, req, correlationId, repository, ansibleHandoffService, executionCt);
+            }, ct);
+    }
+
+    /// <summary>
+    /// Common scaffold for all workflow dispatches: guards enabled state, persists the run record,
+    /// fires the execute delegate in a background task, and handles failures uniformly.
+    /// </summary>
+    private async Task<AutomationRunId> StartWorkflowAsync<TRequest>(
+        string workflowName,
+        TRequest request,
+        Func<IServiceScope, AutomationRunId, TRequest, string, CancellationToken, Task> executeAsync,
+        CancellationToken ct)
+    {
+        if (!await IsEnabledAsync(ct))
+            throw new InvalidOperationException("Automation is currently disabled.");
 
         var runId = AutomationRunId.New();
         var correlationId = Guid.NewGuid().ToString("N");
-        AutomationTelemetry.RecordRunStarted(AnsibleHandoffWorkflowName);
+        AutomationTelemetry.RecordRunStarted(workflowName);
 
         using (var scope = _serviceProvider.CreateScope())
         {
             var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
             var requestJson = JsonSerializer.Serialize(request);
-            await repository.CreateRunAsync(runId.Value, AnsibleHandoffWorkflowName, requestJson, correlationId, ct);
+            await repository.CreateRunAsync(runId.Value, workflowName, requestJson, correlationId, ct);
             await RecordAuditEventAsync(
                 correlationId,
                 AuditAction.JobSubmitted,
                 AuditOutcome.Success,
-                $"Automation run queued for workflow '{AnsibleHandoffWorkflowName}'.",
+                $"Automation run queued for workflow '{workflowName}'.",
                 runId,
-                AnsibleHandoffWorkflowName,
+                workflowName,
                 CancellationToken.None);
         }
 
@@ -420,16 +147,7 @@ internal sealed class AutomationEngine : IAutomationEngine
             try
             {
                 using var scope = _serviceProvider.CreateScope();
-                var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
-                var ansibleHandoffService = scope.ServiceProvider.GetRequiredService<IAnsibleHandoffService>();
-
-                await ExecuteAnsibleHandoffAsync(
-                    runId,
-                    request,
-                    correlationId,
-                    repository,
-                    ansibleHandoffService,
-                    executionCt);
+                await executeAsync(scope, runId, request, correlationId, executionCt);
             }
             catch (Exception ex)
             {
@@ -441,56 +159,22 @@ internal sealed class AutomationEngine : IAutomationEngine
                     correlationId,
                     AuditAction.JobFailed,
                     AuditOutcome.Failure,
-                    $"Automation run failed for workflow '{AnsibleHandoffWorkflowName}'.",
+                    $"Automation run failed for workflow '{workflowName}'.",
                     runId,
-                    AnsibleHandoffWorkflowName,
+                    workflowName,
                     executionCt,
                     ex.Message);
-                AutomationTelemetry.RecordRunCompleted(AnsibleHandoffWorkflowName, success: false, runStopwatch.Elapsed.TotalMilliseconds);
+                AutomationTelemetry.RecordRunCompleted(workflowName, success: false, runStopwatch.Elapsed.TotalMilliseconds);
             }
         }, CancellationToken.None);
 
         return runId;
     }
-
     public async Task<AutomationRun?> GetRunAsync(AutomationRunId runId, CancellationToken ct = default)
     {
         using var scope = _serviceProvider.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
-        var entity = await repository.GetRunAsync(runId.Value, ct);
-
-        if (entity is null)
-            return null;
-
-        var steps = entity.Steps.Select(s => new AutomationStepResult(
-            s.StepName,
-            Enum.Parse<AutomationStepState>(s.State),
-            s.StartedUtc,
-            s.CompletedUtc,
-            s.ErrorMessage ?? "")).ToList();
-
-        var machineResults = entity.MachineResults.Select(m => new AutomationMachineResult(
-            m.MachineId,
-            m.MachineName,
-            m.Success,
-            CpuCores: 0,  // These were stored in ResultDataJson in the original
-            RamBytes: null,
-            Architecture: null,
-            RunningServices: 0,
-            m.ErrorMessage)).ToList();
-
-        return new AutomationRun(
-            Id: runId,
-            WorkflowName: entity.WorkflowType,
-            State: Enum.Parse<AutomationRunStateKind>(entity.State),
-            CreatedUtc: entity.StartedUtc,
-            StartedUtc: entity.StartedUtc,
-            CompletedUtc: entity.CompletedUtc,
-            Steps: steps,
-            MachineResults: machineResults,
-            OutputJson: entity.OutputJson,
-            OutputMarkdown: entity.OutputMarkdown,
-            ErrorMessage: entity.ErrorMessage);
+        return await repository.GetRunAsync(runId.Value, ct);
     }
 
     public async Task<IReadOnlyList<AutomationRunSummary>> ListRunsAsync(int page, int pageSize, CancellationToken ct = default)
@@ -500,22 +184,7 @@ internal sealed class AutomationEngine : IAutomationEngine
 
         using var scope = _serviceProvider.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<IAutomationRunRepository>();
-        var entities = await repository.ListRunsAsync(normalizedPage, normalizedPageSize, ct);
-
-        var summaries = entities.Select(e =>
-        {
-            return new AutomationRunSummary(
-                new AutomationRunId(e.Id),
-                e.WorkflowType,
-                Enum.Parse<AutomationRunStateKind>(e.State),
-                e.StartedUtc,
-                e.CompletedUtc,
-                e.TotalMachines,
-                e.CompletedMachines,
-                e.FailedMachines);
-        }).ToList();
-
-        return summaries;
+        return await repository.ListRunsAsync(normalizedPage, normalizedPageSize, ct);
     }
 
     private async Task ExecuteHealthReportAsync(
@@ -1496,19 +1165,17 @@ internal sealed class AutomationEngine : IAutomationEngine
         using var scope = _serviceProvider.CreateScope();
         var planRepository = scope.ServiceProvider.GetRequiredService<IPlanRepository>();
 
-        var entity = await planRepository.GetPlanAsync(planId.Value, ct)
+        var plan = await planRepository.GetPlanAsync(planId.Value, ct)
             ?? throw new InvalidOperationException($"Plan {planId.Value} not found.");
 
-        if (entity.Status != PlanStatus.PendingApproval.ToString())
+        if (plan.Status != PlanStatus.PendingApproval)
         {
             throw new InvalidOperationException(
-                $"Plan {planId.Value} cannot be approved from status '{entity.Status}'. " +
+                $"Plan {planId.Value} cannot be approved from status '{plan.Status}'. " +
                 "Only PendingApproval plans may be approved.");
         }
 
-        // CRITICAL: verify the hash the caller presents matches what was generated.
-        // Any mutation of the plan steps after generation will cause a mismatch here.
-        if (!string.Equals(entity.PlanHash, request.ExpectedHash, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(plan.PlanHash, request.ExpectedHash, StringComparison.OrdinalIgnoreCase))
         {
             await planRepository.UpdatePlanStatusAsync(
                 planId.Value,
@@ -1519,7 +1186,7 @@ internal sealed class AutomationEngine : IAutomationEngine
 
             throw new InvalidOperationException(
                 $"Plan {planId.Value} approval rejected: hash mismatch. " +
-                $"Expected '{request.ExpectedHash}', stored '{entity.PlanHash}'.");
+                $"Expected '{request.ExpectedHash}', stored '{plan.PlanHash}'.");
         }
 
         var approvedUtc = DateTime.UtcNow;
@@ -1532,51 +1199,16 @@ internal sealed class AutomationEngine : IAutomationEngine
 
         _logger.LogInformation("Plan {PlanId} approved at {ApprovedUtc}", planId.Value, approvedUtc);
 
-        // Dispatch approved plan asynchronously so API callers receive a fast response.
         _ = Task.Run(() => ExecuteApprovedPlanAsync(planId), CancellationToken.None);
 
-        return EntityToPlan(entity) with { Status = PlanStatus.Approved, ApprovedUtc = approvedUtc };
+        return plan with { Status = PlanStatus.Approved, ApprovedUtc = approvedUtc };
     }
 
     public async Task<WorkflowPlan?> GetPlanAsync(WorkflowPlanId planId, CancellationToken ct = default)
     {
         using var scope = _serviceProvider.CreateScope();
         var planRepository = scope.ServiceProvider.GetRequiredService<IPlanRepository>();
-        var entity = await planRepository.GetPlanAsync(planId.Value, ct);
-        return entity is null ? null : EntityToPlan(entity);
-    }
-
-    private static WorkflowPlan EntityToPlan(HomeManagement.Data.Entities.AutomationPlanEntity entity)
-    {
-        List<PlanStep> steps;
-        try
-        {
-            var dtos = System.Text.Json.JsonSerializer.Deserialize<
-                List<System.Text.Json.JsonElement>>(entity.StepsJson) ?? [];
-
-            steps = dtos.Select(e => new PlanStep(
-                Name: e.GetProperty("name").GetString() ?? string.Empty,
-                Kind: Enum.TryParse<PlanStepKind>(e.GetProperty("kind").GetString(), ignoreCase: true, out var k) ? k : PlanStepKind.Unknown,
-                Description: e.TryGetProperty("description", out var d) ? d.GetString() ?? string.Empty : string.Empty,
-                Parameters: e.TryGetProperty("parameters", out var p)
-                    ? p.EnumerateObject().ToDictionary(kv => kv.Name, kv => kv.Value.GetString() ?? string.Empty)
-                    : new Dictionary<string, string>())).ToList();
-        }
-        catch
-        {
-            steps = [];
-        }
-
-        return new WorkflowPlan(
-            Id: new WorkflowPlanId(entity.Id),
-            Objective: entity.Objective,
-            Steps: steps,
-            RiskLevel: Enum.TryParse<PlanRiskLevel>(entity.RiskLevel, out var risk) ? risk : PlanRiskLevel.Low,
-            PlanHash: entity.PlanHash,
-            Status: Enum.TryParse<PlanStatus>(entity.Status, out var status) ? status : PlanStatus.PendingApproval,
-            CreatedUtc: entity.CreatedUtc,
-            ApprovedUtc: entity.ApprovedUtc,
-            RejectionReason: entity.RejectionReason);
+        return await planRepository.GetPlanAsync(planId.Value, ct);
     }
 
     private async Task ExecuteApprovedPlanAsync(WorkflowPlanId planId)
@@ -1586,8 +1218,8 @@ internal sealed class AutomationEngine : IAutomationEngine
 
         try
         {
-            var planEntity = await planRepository.GetPlanAsync(planId.Value, CancellationToken.None);
-            if (planEntity is null)
+            var dbPlan = await planRepository.GetPlanAsync(planId.Value, CancellationToken.None);
+            if (dbPlan is null)
             {
                 _logger.LogWarning("Approved plan {PlanId} was not found at dispatch time.", planId.Value);
                 return;
@@ -1596,11 +1228,11 @@ internal sealed class AutomationEngine : IAutomationEngine
             await planRepository.UpdatePlanStatusAsync(
                 planId.Value,
                 PlanStatus.Executing.ToString(),
-                approvedUtc: planEntity.ApprovedUtc,
+                approvedUtc: dbPlan.ApprovedUtc,
                 rejectionReason: null,
                 CancellationToken.None);
 
-            var plan = EntityToPlan(planEntity) with { Status = PlanStatus.Executing };
+            var plan = dbPlan with { Status = PlanStatus.Executing };
 
             var runId = await DispatchPlanToRunAsync(plan, CancellationToken.None);
             var run = await WaitForRunTerminalAsync(runId, TimeSpan.FromMinutes(3), CancellationToken.None);
@@ -1612,7 +1244,7 @@ internal sealed class AutomationEngine : IAutomationEngine
             await planRepository.UpdatePlanStatusAsync(
                 planId.Value,
                 terminalStatus.ToString(),
-                approvedUtc: planEntity.ApprovedUtc,
+                approvedUtc: dbPlan.ApprovedUtc,
                 rejectionReason: run.ErrorMessage,
                 CancellationToken.None);
         }

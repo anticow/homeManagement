@@ -2,8 +2,6 @@ using HomeManagement.Abstractions.CrossCutting;
 using HomeManagement.Web.Services;
 using HomeManagement.Core;
 using Microsoft.AspNetCore.Components.Authorization;
-using OpenTelemetry.Metrics;
-using OpenTelemetry.Resources;
 using Refit;
 using Serilog;
 using System.Globalization;
@@ -15,25 +13,8 @@ Log.Logger = new LoggerConfiguration()
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ── Serilog ──
-builder.Host.UseSerilog((context, services, config) => config
-    .ReadFrom.Configuration(context.Configuration)
-    .ReadFrom.Services(services)
-    .Enrich.WithProperty("Service", "hm-web")
-    .Enrich.WithMachineName()
-    .Enrich.WithThreadId()
-    .Enrich.With<SensitivePropertyEnricher>()
-    .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture)
-    .WriteTo.Seq(context.Configuration["Seq:Url"] ?? "http://localhost:5341"));
-
-// ── OpenTelemetry ──
-builder.Services.AddOpenTelemetry()
-    .ConfigureResource(r => r.AddService("hm-web"))
-    .WithMetrics(m => m
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddRuntimeInstrumentation()
-        .AddPrometheusExporter());
+builder.AddHomeManagementSerilog("hm-web");
+builder.AddHomeManagementObservability("hm-web");
 
 // ── Services ──
 builder.Services.AddRazorComponents()
@@ -90,14 +71,7 @@ if (!app.Environment.IsDevelopment())
 }
 
 // ── Security headers ──
-app.Use(async (ctx, next) =>
-{
-    ctx.Response.Headers.Append("X-Content-Type-Options", "nosniff");
-    ctx.Response.Headers.Append("X-Frame-Options", "DENY");
-    ctx.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
-    ctx.Response.Headers.Append("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-    await next();
-});
+app.UseHomeManagementSecurityHeaders();
 
 // ── Correlation ID + HTTP request logging ──
 app.UseMiddleware<CorrelationIdMiddleware>();

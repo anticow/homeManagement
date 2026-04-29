@@ -10,9 +10,11 @@ public static class TokenEndpoints
     public static void MapTokenEndpoints(this WebApplication app)
     {
         app.MapPost("/api/auth/refresh", HandleRefresh)
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .RequireRateLimiting("login");
         app.MapPost("/api/auth/revoke", HandleRevoke)
-            .AllowAnonymous();
+            .AllowAnonymous()
+            .RequireRateLimiting("login");
     }
 
     private static async Task<IResult> HandleRefresh(

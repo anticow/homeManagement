@@ -26,14 +26,26 @@ public sealed class AuthOptions
     /// <summary>Optional bootstrap admin seeding for first-run environments.</summary>
     public BootstrapAdminOptions BootstrapAdmin { get; set; } = new();
 
+    /// <summary>Minimum password length enforced by <see cref="DefaultPasswordPolicy"/>. Default: 12.</summary>
+    public int PasswordMinLength { get; set; } = 12;
+
     /// <summary>Active Directory / LDAP configuration (null = disabled).</summary>
     public ActiveDirectoryOptions? ActiveDirectory { get; set; }
 }
 
 public sealed class BootstrapAdminOptions
 {
+    /// <summary>
+    /// Set to true only for initial deployment. Disable after the first admin is created
+    /// to remove the seeding password from memory and environment variables.
+    /// </summary>
     public bool Enabled { get; set; }
     public string Username { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Minimum 12 characters; must contain upper, lower, and digit.
+    /// Remove this value from configuration once the bootstrap admin is created.
+    /// </summary>
     public string Password { get; set; } = string.Empty;
     public string DisplayName { get; set; } = "Bootstrap Admin";
     public string Email { get; set; } = "admin@localhost";

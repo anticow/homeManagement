@@ -1,6 +1,6 @@
 using HomeManagement.Abstractions.CrossCutting;
 using HomeManagement.Abstractions.Interfaces;
-using HomeManagement.Data.Repositories;
+using HomeManagement.Abstractions.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace HomeManagement.Automation;
@@ -15,10 +15,6 @@ public sealed class AutomationModuleRegistration : IModuleRegistration
 
         // Process runner abstraction (singleton — stateless)
         services.AddSingleton<IProcessRunner, DefaultProcessRunner>();
-
-        // Data repositories (scoped — one per DI scope / request)
-        services.AddScoped<IAutomationRunRepository, AutomationRunRepository>();
-        services.AddScoped<IPlanRepository, PlanRepository>();
 
         // Planning infrastructure (scoped — ILLMClient may be scoped)
         services.AddScoped<IWorkflowPlanner, WorkflowPlanner>();

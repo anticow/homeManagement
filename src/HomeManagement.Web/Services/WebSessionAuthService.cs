@@ -1,4 +1,4 @@
-using HomeManagement.Auth;
+using HomeManagement.Abstractions.Models;
 using Refit;
 
 namespace HomeManagement.Web.Services;

@@ -3,8 +3,6 @@ using HomeManagement.Auth;
 using HomeManagement.Core;
 using HomeManagement.Gateway;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using OpenTelemetry.Metrics;
-using OpenTelemetry.Resources;
 using Serilog;
 using System.Globalization;
 
@@ -14,29 +12,11 @@ Log.Logger = new LoggerConfiguration()
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ── Serilog ──
-builder.Host.UseSerilog((context, services, config) => config
-    .ReadFrom.Configuration(context.Configuration)
-    .ReadFrom.Services(services)
-    .Enrich.WithProperty("Service", "hm-gateway")
-    .Enrich.WithMachineName()
-    .Enrich.WithThreadId()
-    .Enrich.With<SensitivePropertyEnricher>()
-    .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture)
-    .WriteTo.Seq(context.Configuration["Seq:Url"] ?? "http://localhost:5341"));
-
-// ── OpenTelemetry ──
-builder.Services.AddOpenTelemetry()
-    .ConfigureResource(r => r.AddService("hm-gateway"))
-    .WithMetrics(m => m
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddRuntimeInstrumentation()
-        .AddPrometheusExporter());
+builder.AddHomeManagementSerilog("hm-gateway");
+builder.AddHomeManagementObservability("hm-gateway");
 
 // ── Auth ──
-builder.Services.AddHomeManagementAuth(options =>
-    builder.Configuration.GetSection(AuthOptions.SectionName).Bind(options));
+builder.Services.AddHomeManagementAuth(builder.Configuration);
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer();
@@ -48,6 +28,9 @@ builder.Services.AddReverseProxy()
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
 
 builder.Services.AddSingleton<ICorrelationContext, CorrelationContext>();
+builder.Services.AddOptions<PlatformHealthOptions>()
+    .BindConfiguration(PlatformHealthOptions.SectionName);
+
 builder.Services.AddHealthChecks();
 
 // Named client used exclusively by PlatformHealthEndpoint — short timeout, no retry.

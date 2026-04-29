@@ -3,8 +3,8 @@ using System.Text;
 using System.Text.Json;
 using Grpc.Core;
 using HomeManagement.Agent.Protocol;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace HomeManagement.AgentGateway.Host.Services;
 
@@ -14,9 +14,9 @@ public sealed class AgentApiKeyValidator : IAgentApiKeyValidator
     private readonly IReadOnlyDictionary<string, string> _configuredKeys;
     private readonly ILogger<AgentApiKeyValidator> _logger;
 
-    public AgentApiKeyValidator(IConfiguration configuration, ILogger<AgentApiKeyValidator> logger)
+    public AgentApiKeyValidator(IOptions<AgentGatewayHostOptions> options, ILogger<AgentApiKeyValidator> logger)
     {
-        _configuredKeys = LoadConfiguredKeys(configuration);
+        _configuredKeys = BuildKeys(options.Value);
         _logger = logger;
 
         if (_configuredKeys.Count == 0)
@@ -64,23 +64,22 @@ public sealed class AgentApiKeyValidator : IAgentApiKeyValidator
         }
     }
 
-    internal static IReadOnlyDictionary<string, string> LoadConfiguredKeys(IConfiguration configuration)
+    internal static IReadOnlyDictionary<string, string> BuildKeys(AgentGatewayHostOptions options)
     {
         var keys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var child in configuration.GetSection("AgentGateway:AgentApiKeys").GetChildren())
+        foreach (var (agentId, apiKey) in options.AgentApiKeys)
         {
-            if (!string.IsNullOrWhiteSpace(child.Key) && !string.IsNullOrWhiteSpace(child.Value))
+            if (!string.IsNullOrWhiteSpace(agentId) && !string.IsNullOrWhiteSpace(apiKey))
             {
-                ValidateConfiguredKey(child.Key, child.Value);
-                keys[child.Key] = child.Value;
+                ValidateConfiguredKey(agentId, apiKey);
+                keys[agentId] = apiKey;
             }
         }
 
-        var keysJson = configuration["AgentGateway:AgentApiKeysJson"];
-        if (!string.IsNullOrWhiteSpace(keysJson))
+        if (!string.IsNullOrWhiteSpace(options.AgentApiKeysJson))
         {
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(keysJson)
+            var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(options.AgentApiKeysJson)
                 ?? throw new InvalidOperationException("AgentGateway:AgentApiKeysJson must deserialize to an object.");
 
             foreach (var (agentId, apiKey) in parsed)

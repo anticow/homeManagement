@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using HomeManagement.Abstractions.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -10,7 +11,7 @@ namespace HomeManagement.Auth;
 /// <summary>
 /// Issues and validates JWT access tokens and refresh tokens.
 /// </summary>
-public sealed class JwtTokenService
+public sealed class JwtTokenService : IJwtTokenService
 {
     private readonly AuthOptions _options;
     private readonly SigningCredentials _signingCredentials;
@@ -76,8 +77,7 @@ public sealed class JwtTokenService
             expires: now.Add(_options.AccessTokenLifetime),
             signingCredentials: _signingCredentials);
 
-        _logger.LogInformation("Issued access token for user {Username} (roles: {Roles})",
-            user.Username, string.Join(", ", user.Roles));
+        _logger.LogDebug("Issued access token for user {UserId}", user.UserId);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
@@ -101,7 +101,7 @@ public sealed class JwtTokenService
     /// <summary>
     /// Generate a cryptographically random refresh token.
     /// </summary>
-    public static string GenerateRefreshToken()
+    public string GenerateRefreshToken()
     {
         return Convert.ToBase64String(
             System.Security.Cryptography.RandomNumberGenerator.GetBytes(64));

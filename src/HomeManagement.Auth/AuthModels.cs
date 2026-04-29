@@ -1,28 +1,6 @@
+using HomeManagement.Abstractions.Models;
+
 namespace HomeManagement.Auth;
-
-/// <summary>
-/// Represents a system user with roles and claims.
-/// </summary>
-public sealed record AuthUser(
-    Guid UserId,
-    string Username,
-    string DisplayName,
-    string Email,
-    AuthProviderType Provider,
-    IReadOnlyList<string> Roles,
-    DateTime CreatedUtc,
-    DateTime? LastLoginUtc);
-
-/// <summary>
-/// Authentication result returned by providers.
-/// </summary>
-public sealed record AuthResult(
-    bool Success,
-    AuthUser? User = null,
-    string? Error = null,
-    string? AccessToken = null,
-    string? RefreshToken = null,
-    DateTime? ExpiresUtc = null);
 
 /// <summary>
 /// Refresh token stored in the database.
@@ -34,34 +12,6 @@ public sealed record RefreshTokenEntry(
     DateTime IssuedUtc,
     DateTime ExpiresUtc,
     bool IsRevoked);
-
-/// <summary>
-/// Login request from any provider.
-/// </summary>
-public sealed record LoginRequest(
-    string Username,
-    string Password,
-    AuthProviderType Provider = AuthProviderType.Local);
-
-/// <summary>
-/// The type of authentication provider.
-/// </summary>
-public enum AuthProviderType
-{
-    Local,
-    ActiveDirectory,
-    Saml,
-    OAuth
-}
-
-/// <summary>
-/// RBAC role definition.
-/// </summary>
-public sealed record RoleDefinition(
-    Guid RoleId,
-    string Name,
-    string Description,
-    IReadOnlyList<string> Permissions);
 
 /// <summary>
 /// Standard RBAC permission constants.

@@ -1,3 +1,4 @@
+using HomeManagement.Abstractions.Models;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -198,3 +199,4 @@ internal sealed class WorkflowPlanner : IWorkflowPlanner
         public Dictionary<string, JsonElement>? Parameters { get; set; }
     }
 }
+

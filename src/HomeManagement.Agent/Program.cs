@@ -68,7 +68,7 @@ internal static class Program
 
                     // ── Configuration — bound from hm-agent.json / env vars ──
                     var agentConfig = new AgentConfiguration();
-                    context.Configuration.GetSection(AgentConfiguration.SectionName).Bind(agentConfig);
+                    agentSection.Bind(agentConfig);
 
                     // Default AgentId to machine name if not configured
                     if (string.IsNullOrEmpty(agentConfig.AgentId))

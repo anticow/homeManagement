@@ -1,3 +1,4 @@
+using HomeManagement.Abstractions.Models;
 using System.Text;
 
 namespace HomeManagement.Automation;
@@ -233,3 +234,4 @@ internal sealed class GuardedAnsibleHandoffService : IAnsibleHandoffService
             ErrorMessage: message);
     }
 }
+

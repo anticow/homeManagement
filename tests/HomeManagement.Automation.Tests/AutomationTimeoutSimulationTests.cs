@@ -2,6 +2,8 @@ using FluentAssertions;
 using HomeManagement.Abstractions;
 using HomeManagement.Abstractions.Interfaces;
 using HomeManagement.Abstractions.Models;
+using HomeManagement.Abstractions.Repositories;
+using HomeManagement.Data.Repositories;
 using HomeManagement.Automation;
 using HomeManagement.Data;
 using Microsoft.EntityFrameworkCore;
@@ -34,6 +36,8 @@ public sealed class AutomationTimeoutSimulationTests : IAsyncLifetime, IDisposab
 
         // Register module (which attempts to register DefaultProcessRunner, but our mock takes precedence)
         new AutomationModuleRegistration().Register(collection);
+        collection.AddScoped<IAutomationRunRepository, AutomationRunRepository>();
+        collection.AddScoped<IPlanRepository, PlanRepository>();
 
         // Ensure mock runner is used by removing and re-adding if necessary
         var processRunnerDescriptor = collection.FirstOrDefault(d => d.ServiceType == typeof(IProcessRunner));

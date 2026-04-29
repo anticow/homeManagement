@@ -1,12 +1,12 @@
 using HomeManagement.Abstractions.CrossCutting;
+using HomeManagement.Abstractions.Repositories;
 using HomeManagement.Auth;
 using HomeManagement.Auth.Host.Endpoints;
 using HomeManagement.Core;
+using HomeManagement.Data;
 using HomeManagement.Data.SqlServer;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
-using OpenTelemetry.Metrics;
-using OpenTelemetry.Resources;
 using Serilog;
 using System.Globalization;
 using System.Threading.RateLimiting;
@@ -17,25 +17,8 @@ Log.Logger = new LoggerConfiguration()
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ── Serilog ──
-builder.Host.UseSerilog((context, services, config) => config
-    .ReadFrom.Configuration(context.Configuration)
-    .ReadFrom.Services(services)
-    .Enrich.WithProperty("Service", "hm-auth")
-    .Enrich.WithMachineName()
-    .Enrich.WithThreadId()
-    .Enrich.With<SensitivePropertyEnricher>()
-    .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture)
-    .WriteTo.Seq(context.Configuration["Seq:Url"] ?? "http://localhost:5341"));
-
-// ── OpenTelemetry ──
-builder.Services.AddOpenTelemetry()
-    .ConfigureResource(r => r.AddService("hm-auth"))
-    .WithMetrics(m => m
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddRuntimeInstrumentation()
-        .AddPrometheusExporter());
+builder.AddHomeManagementSerilog("hm-auth");
+builder.AddHomeManagementObservability("hm-auth");
 
 // ── Configuration ──
 var connectionString = builder.Configuration.GetConnectionString("HomeManagement")
@@ -44,8 +27,8 @@ var connectionString = builder.Configuration.GetConnectionString("HomeManagement
 // ── Services ──
 builder.Services.AddSingleton<ICorrelationContext, CorrelationContext>();
 builder.Services.AddHomeManagementSqlServer(connectionString);
-builder.Services.AddHomeManagementAuth(options =>
-    builder.Configuration.GetSection(AuthOptions.SectionName).Bind(options));
+builder.Services.AddHomeManagementAuthRepositories();
+builder.Services.AddHomeManagementAuth(builder.Configuration);
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer();
@@ -68,21 +51,15 @@ builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
-app.Services.GetRequiredService<JwtTokenService>();
+app.Services.GetRequiredService<IJwtTokenService>();
 await using (var scope = app.Services.CreateAsyncScope())
 {
+    await scope.ServiceProvider.GetRequiredService<IAuthDatabaseInitializer>().MigrateAsync();
     await scope.ServiceProvider.GetRequiredService<AuthService>().EnsureInitializedAsync();
 }
 
 // ── Security headers ──
-app.Use(async (ctx, next) =>
-{
-    ctx.Response.Headers.Append("X-Content-Type-Options", "nosniff");
-    ctx.Response.Headers.Append("X-Frame-Options", "DENY");
-    ctx.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
-    ctx.Response.Headers.Append("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-    await next();
-});
+app.UseHomeManagementSecurityHeaders();
 
 // ── Correlation ID + HTTP request logging ──
 app.UseMiddleware<CorrelationIdMiddleware>();
@@ -93,11 +70,7 @@ app.UseSerilogRequestLogging(opts =>
             : Serilog.Events.LogEventLevel.Information);
 
 // ── Health ──
-app.MapHealthChecks("/healthz");
-app.MapGet("/readyz", () => Results.Ok("ready"));
-app.MapGet("/version", () => new { version = Environment.GetEnvironmentVariable("APP_VERSION") ?? "unknown" })
-    .AllowAnonymous().ExcludeFromDescription();
-app.MapPrometheusScrapingEndpoint();
+app.UseHomeManagementHealthEndpoints();
 
 app.UseAuthentication();
 app.UseAuthorization();

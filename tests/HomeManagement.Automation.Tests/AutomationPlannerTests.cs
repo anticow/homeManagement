@@ -1,5 +1,8 @@
 using FluentAssertions;
+using HomeManagement.Abstractions.Models;
 using HomeManagement.AI.Abstractions.Contracts;
+using HomeManagement.Abstractions.Repositories;
+using HomeManagement.Data.Repositories;
 using HomeManagement.Automation;
 using HomeManagement.Data;
 using Microsoft.EntityFrameworkCore;
@@ -27,6 +30,8 @@ public sealed class AutomationPlannerTests : IAsyncLifetime, IDisposable
             .Configure(options => options.Enabled = true);
 
         new AutomationModuleRegistration().Register(collection);
+        collection.AddScoped<IAutomationRunRepository, AutomationRunRepository>();
+        collection.AddScoped<IPlanRepository, PlanRepository>();
 
         collection.AddSingleton<ILLMClient>(_llmClient);
 

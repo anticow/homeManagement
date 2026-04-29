@@ -1,3 +1,4 @@
+using HomeManagement.Abstractions.Models;
 using HomeManagement.Automation;
 using HomeManagement.Data;
 using Microsoft.EntityFrameworkCore;

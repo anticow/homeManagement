@@ -32,8 +32,7 @@ public static class Action1IntegrationRegistration
             .ValidateOnStart();
 
         // Read options eagerly to decide which implementation to register.
-        var options = configuration.GetSection(Action1Options.Section).Get<Action1Options>()
-                      ?? new Action1Options();
+        var options = ReadOptions<Action1Options>(configuration, Action1Options.Section);
 
         if (!options.Enabled)
         {
@@ -70,6 +69,10 @@ public static class Action1IntegrationRegistration
 
         return services;
     }
+
+    private static TOptions ReadOptions<TOptions>(IConfiguration configuration, string section)
+        where TOptions : new()
+        => configuration.GetSection(section).Get<TOptions>() ?? new TOptions();
 }
 
 /// <summary>

@@ -5,8 +5,8 @@ using System.Reactive.Subjects;
 using HomeManagement.Abstractions;
 using HomeManagement.Abstractions.Interfaces;
 using HomeManagement.Abstractions.Models;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace HomeManagement.Transport;
 
@@ -27,9 +27,9 @@ public sealed class RemoteAgentGatewayClient : IAgentGateway, IDisposable
     private int _started;
     private bool _disposed;
 
-    public RemoteAgentGatewayClient(IConfiguration? configuration, ILogger<RemoteAgentGatewayClient> logger)
+    public RemoteAgentGatewayClient(IOptions<AgentGatewayClientOptions> options, ILogger<RemoteAgentGatewayClient> logger)
     {
-        _options = AgentGatewayClientOptions.FromConfiguration(configuration);
+        _options = options.Value;
         _logger = logger;
         _httpClient = new HttpClient
         {

@@ -70,3 +70,133 @@ public interface IServiceSnapshotRepository
     Task AddAsync(ServiceSnapshot snapshot, CancellationToken ct = default);
     Task SaveChangesAsync(CancellationToken ct = default);
 }
+
+public interface IAutomationRunRepository
+{
+    Task CreateRunAsync(
+        Guid runId,
+        string workflowType,
+        string? requestJson,
+        string? correlationId,
+        CancellationToken ct = default);
+
+    Task<AutomationRun?> GetRunAsync(Guid runId, CancellationToken ct = default);
+
+    Task<IReadOnlyList<AutomationRunSummary>> ListRunsAsync(
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    Task UpdateRunStateAsync(
+        Guid runId,
+        string state,
+        CancellationToken ct = default);
+
+    Task UpdateRunCompletedAsync(
+        Guid runId,
+        string state,
+        int completedMachines,
+        int failedMachines,
+        string? outputJson,
+        string? outputMarkdown,
+        CancellationToken ct = default);
+
+    Task UpdateRunFailedAsync(
+        Guid runId,
+        string errorMessage,
+        CancellationToken ct = default);
+
+    Task AddStepAsync(
+        Guid runId,
+        Guid stepId,
+        string stepName,
+        CancellationToken ct = default);
+
+    Task UpdateStepStateAsync(
+        Guid stepId,
+        string state,
+        CancellationToken ct = default);
+
+    Task UpdateStepCompletedAsync(
+        Guid stepId,
+        CancellationToken ct = default);
+
+    Task UpdateStepFailedAsync(
+        Guid stepId,
+        string errorMessage,
+        CancellationToken ct = default);
+
+    Task AddMachineResultAsync(
+        Guid runId,
+        Guid machineId,
+        string machineName,
+        bool success,
+        string? errorMessage,
+        string? resultDataJson,
+        CancellationToken ct = default);
+
+    Task UpdateTotalMachinesAsync(
+        Guid runId,
+        int totalMachines,
+        CancellationToken ct = default);
+}
+
+public interface IPlanRepository
+{
+    Task CreatePlanAsync(
+        Guid planId,
+        string objective,
+        string stepsJson,
+        string riskLevel,
+        string planHash,
+        string status,
+        string? correlationId,
+        CancellationToken ct = default);
+
+    Task<WorkflowPlan?> GetPlanAsync(Guid planId, CancellationToken ct = default);
+
+    Task UpdatePlanStatusAsync(
+        Guid planId,
+        string status,
+        DateTime? approvedUtc = null,
+        string? rejectionReason = null,
+        CancellationToken ct = default);
+}
+
+public interface IAuthUserRepository
+{
+    /// <summary>Find a local user by username, including password hash (for login only).</summary>
+    Task<AuthLocalUser?> FindLocalUserForLoginAsync(string username, CancellationToken ct = default);
+    Task<AuthUser?> GetByIdAsync(Guid userId, CancellationToken ct = default);
+    Task<IReadOnlyList<AuthUser>> GetAllAsync(CancellationToken ct = default);
+    Task<bool> ExistsByUsernameAsync(string username, CancellationToken ct = default);
+    Task<bool> ExistsByEmailAsync(string email, CancellationToken ct = default);
+    Task CreateLocalUserAsync(NewLocalUserRecord user, CancellationToken ct = default);
+    Task SetLastLoginAsync(Guid userId, DateTime loginUtc, CancellationToken ct = default);
+    Task AssignRolesAsync(Guid userId, IReadOnlyList<Guid> roleIds, CancellationToken ct = default);
+    Task<bool> UserHasRoleAsync(Guid userId, string roleName, CancellationToken ct = default);
+    Task<bool> HasAnyAdminAsync(CancellationToken ct = default);
+}
+
+public interface IAuthRoleRepository
+{
+    Task<IReadOnlyList<RoleDefinition>> GetAllAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<string>> GetAllNamesAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<RoleRef>> GetByNamesAsync(IReadOnlyList<string> names, CancellationToken ct = default);
+    Task SeedDefaultRolesAsync(IReadOnlyList<RoleDefinition> defaults, CancellationToken ct = default);
+}
+
+public interface IAuthRefreshTokenRepository
+{
+    Task<RefreshTokenState?> GetTokenStateAsync(string tokenHash, CancellationToken ct = default);
+    /// <summary>Atomically revoke the token if it is still valid. Returns true if revoked, false if already revoked/expired/not found.</summary>
+    Task<bool> TryRevokeTokenAsync(string tokenHash, DateTime revokedUtc, CancellationToken ct = default);
+    /// <summary>Find token by hash and revoke it if not already revoked. Returns true if found.</summary>
+    Task<bool> FindAndRevokeAsync(string tokenHash, CancellationToken ct = default);
+    Task AddAsync(Guid userId, string tokenHash, DateTime issuedUtc, DateTime expiresUtc, CancellationToken ct = default);
+}
+
+public interface IAuthDatabaseInitializer
+{
+    Task MigrateAsync(CancellationToken ct = default);
+}

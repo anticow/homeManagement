@@ -1,3 +1,4 @@
+using HomeManagement.Abstractions.Models;
 namespace HomeManagement.Automation;
 
 public interface IAutomationEngine
@@ -33,4 +34,5 @@ public interface IAutomationEngine
 
     Task<WorkflowPlan?> GetPlanAsync(WorkflowPlanId planId, CancellationToken ct = default);
 }
+
 

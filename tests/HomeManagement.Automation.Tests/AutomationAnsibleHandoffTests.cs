@@ -2,6 +2,8 @@ using FluentAssertions;
 using HomeManagement.Abstractions;
 using HomeManagement.Abstractions.Interfaces;
 using HomeManagement.Abstractions.Models;
+using HomeManagement.Abstractions.Repositories;
+using HomeManagement.Data.Repositories;
 using HomeManagement.Automation;
 using HomeManagement.Data;
 using Microsoft.EntityFrameworkCore;
@@ -26,6 +28,8 @@ public sealed class AutomationAnsibleHandoffTests : IAsyncLifetime, IDisposable
             .Configure(options => options.Enabled = true);
 
         new AutomationModuleRegistration().Register(collection);
+        collection.AddScoped<IAutomationRunRepository, AutomationRunRepository>();
+        collection.AddScoped<IPlanRepository, PlanRepository>();
         collection.AddScoped<IAuditLogger, FakeAuditLogger>();
 
         _services = collection.BuildServiceProvider();

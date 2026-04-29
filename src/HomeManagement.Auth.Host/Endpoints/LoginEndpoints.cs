@@ -1,3 +1,4 @@
+using HomeManagement.Abstractions.Models;
 using HomeManagement.Auth;
 
 namespace HomeManagement.Auth.Host.Endpoints;

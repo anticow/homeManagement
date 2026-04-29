@@ -16,6 +16,9 @@ namespace HomeManagement.Core;
 /// </summary>
 public static class ServiceRegistration
 {
+    /// <summary>Configuration key for the data directory path.</summary>
+    public const string DataDirectoryConfigKey = "DataDirectory";
+
     /// <summary>
     /// Register all HomeManagement infrastructure and discover module registrations.
     /// </summary>
@@ -43,6 +46,8 @@ public static class ServiceRegistration
         services.AddScoped<IJobRepository, JobRepository>();
         services.AddScoped<IServiceSnapshotRepository, ServiceSnapshotRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
+        services.AddScoped<IAutomationRunRepository, AutomationRunRepository>();
+        services.AddScoped<IPlanRepository, PlanRepository>();
 
         // ── Module discovery ──
         // Each module assembly contains an IModuleRegistration implementation that self-registers.

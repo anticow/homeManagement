@@ -1,5 +1,8 @@
 using FluentAssertions;
+using HomeManagement.Abstractions.Models;
+using HomeManagement.Abstractions.Repositories;
 using HomeManagement.Data;
+using HomeManagement.Data.Auth;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -29,7 +32,8 @@ public sealed class AuthServiceTests : IDisposable
     [Fact]
     public async Task EnsureInitializedAsync_SeedsRolesAndBootstrapAdmin()
     {
-        var service = CreateService(new AuthOptions
+        await _db.Database.EnsureCreatedAsync();
+        var service = CreateService(_db, new AuthOptions
         {
             JwtSigningKey = TestSigningKey,
             Issuer = "test",
@@ -104,6 +108,7 @@ public sealed class AuthServiceTests : IDisposable
         {
             await using (var seedContext = CreateFileDbContext(dbPath))
             {
+                await seedContext.Database.MigrateAsync();
                 var seedService = CreateService(seedContext, new AuthOptions
                 {
                     JwtSigningKey = TestSigningKey,
@@ -147,8 +152,6 @@ public sealed class AuthServiceTests : IDisposable
         }
         finally
         {
-            // EF Core SQLite connection pooling holds file handles on Windows after DisposeAsync.
-            // Clear all pools to release the lock before deleting the temp file.
             SqliteConnection.ClearAllPools();
             if (File.Exists(dbPath))
             {
@@ -190,6 +193,7 @@ public sealed class AuthServiceTests : IDisposable
 
     private AuthService CreateInitializedService()
     {
+        _db.Database.EnsureCreated();
         var service = CreateService(_db, new AuthOptions
         {
             JwtSigningKey = TestSigningKey,
@@ -218,7 +222,109 @@ public sealed class AuthServiceTests : IDisposable
     private static AuthService CreateService(HomeManagementDbContext db, AuthOptions options)
     {
         var jwt = new JwtTokenService(Options.Create(options), NullLogger<JwtTokenService>.Instance);
-        return new AuthService(db, jwt, Options.Create(options), NullLogger<AuthService>.Instance);
+        var users = new AuthUserRepository(db);
+        var roles = new AuthRoleRepository(db);
+        var tokens = new AuthRefreshTokenRepository(db);
+        var passwordPolicy = new DefaultPasswordPolicy(Options.Create(options));
+        return new AuthService(users, roles, tokens, jwt, passwordPolicy, Options.Create(options), NullLogger<AuthService>.Instance);
+    }
+
+    [Fact]
+    public async Task LoginAsync_WrongPassword_ReturnsFailure()
+    {
+        var service = CreateInitializedService();
+        await service.CreateLocalUserAsync(new CreateUserCommand(
+            "operator", "OperatorPassword123!", "Operator", "op@test.local", ["Operator"]));
+
+        var result = await service.LoginAsync(new LoginRequest("operator", "WrongPassword999!"));
+
+        result.Success.Should().BeFalse();
+        result.AccessToken.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task LoginAsync_UnknownUser_ReturnsFailure()
+    {
+        var service = CreateInitializedService();
+
+        var result = await service.LoginAsync(new LoginRequest("ghost", "GhostPassword123!"));
+
+        result.Success.Should().BeFalse();
+        result.AccessToken.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RevokeAsync_PreventsSubsequentRefresh()
+    {
+        var service = CreateInitializedService();
+        await service.CreateLocalUserAsync(new CreateUserCommand(
+            "operator", "OperatorPassword123!", "Operator", "op@test.local", ["Operator"]));
+
+        var login = await service.LoginAsync(new LoginRequest("operator", "OperatorPassword123!"));
+        login.Success.Should().BeTrue();
+
+        var revoked = await service.RevokeAsync(login.RefreshToken!);
+        revoked.Should().BeTrue();
+
+        var refresh = await service.RefreshAsync(login.RefreshToken!);
+        refresh.Success.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CreateLocalUserAsync_DuplicateUsername_Throws()
+    {
+        var service = CreateInitializedService();
+        await service.CreateLocalUserAsync(new CreateUserCommand(
+            "user1", "Password123!A", "User 1", "user1@test.local", ["Viewer"]));
+
+        var act = () => service.CreateLocalUserAsync(new CreateUserCommand(
+            "user1", "Password123!B", "User 1 Dupe", "user1dupe@test.local", ["Viewer"]));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*already exists*");
+    }
+
+    [Fact]
+    public async Task CreateLocalUserAsync_DuplicateEmail_Throws()
+    {
+        var service = CreateInitializedService();
+        await service.CreateLocalUserAsync(new CreateUserCommand(
+            "user1", "Password123!A", "User 1", "shared@test.local", ["Viewer"]));
+
+        var act = () => service.CreateLocalUserAsync(new CreateUserCommand(
+            "user2", "Password123!B", "User 2", "shared@test.local", ["Viewer"]));
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*already in use*");
+    }
+
+    [Fact]
+    public async Task EnsureInitializedAsync_IsIdempotent()
+    {
+        await _db.Database.EnsureCreatedAsync();
+        var service = CreateService(_db, new AuthOptions
+        {
+            JwtSigningKey = TestSigningKey,
+            Issuer = "test",
+            Audience = "test",
+            BootstrapAdmin = new BootstrapAdminOptions
+            {
+                Enabled = true,
+                Username = "admin",
+                Password = "AdminPassword123!",
+                DisplayName = "Admin",
+                Email = "admin@test.local"
+            }
+        });
+
+        await service.EnsureInitializedAsync();
+        await service.EnsureInitializedAsync();
+
+        var roles = await service.GetRolesAsync();
+        roles.Should().HaveCount(4, "roles are seeded once, not duplicated");
+
+        var users = await service.GetUsersAsync();
+        users.Should().ContainSingle(u => u.Username == "admin");
     }
 
     public void Dispose()
