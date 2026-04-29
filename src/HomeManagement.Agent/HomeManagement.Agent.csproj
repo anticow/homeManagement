@@ -13,6 +13,9 @@
     <PackageReference Include="Grpc.Net.Client" />
     <PackageReference Include="Google.Protobuf" />
     <PackageReference Include="Grpc.Tools" PrivateAssets="All" />
+  <PackageReference Include="Microsoft.Extensions.Configuration" />
+  <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+  <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="Serilog" />

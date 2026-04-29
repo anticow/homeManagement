@@ -9,6 +9,7 @@
   <ItemGroup>
     <!-- ASP.NET Core framework — needed for CorrelationIdMiddleware (HttpContext, RequestDelegate).
          Safe to add here: HomeManagement.Agent does NOT reference this project. -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Configuration" />
