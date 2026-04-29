@@ -52,11 +52,11 @@
     <PackageVersion Include="Serilog.Enrichers.Environment" Version="3.0.1" />
 
     <!-- GUI -->
-    <PackageVersion Include="Avalonia" Version="11.2.3" />
-    <PackageVersion Include="Avalonia.Desktop" Version="11.2.3" />
-    <PackageVersion Include="Avalonia.Themes.Fluent" Version="11.2.3" />
-    <PackageVersion Include="Avalonia.Fonts.Inter" Version="11.2.3" />
-    <PackageVersion Include="Avalonia.ReactiveUI" Version="11.2.3" />
+    <PackageVersion Include="Avalonia" Version="12.0.1" />
+    <PackageVersion Include="Avalonia.Desktop" Version="12.0.1" />
+    <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.0.1" />
+    <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.0.1" />
+    <PackageVersion Include="Avalonia.ReactiveUI" Version="11.3.8" />
     <!-- Pin transitive dep pulled by Avalonia.X11 to patched version (CVE-2026-39959 / GHSA-xrw6-gwf8-vvr9) -->
     <PackageVersion Include="Tmds.DBus.Protocol" Version="0.21.3" />
 
