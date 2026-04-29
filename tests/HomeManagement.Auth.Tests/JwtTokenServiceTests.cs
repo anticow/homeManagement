@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using FluentAssertions;
+using HomeManagement.Abstractions.Models;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -217,7 +218,8 @@ public sealed class JwtTokenServiceTests
     [Fact]
     public void GenerateRefreshToken_ReturnsBase64String()
     {
-        var token = JwtTokenService.GenerateRefreshToken();
+        var svc = CreateService();
+        var token = svc.GenerateRefreshToken();
 
         token.Should().NotBeNullOrEmpty();
         // Should be valid Base64
@@ -228,8 +230,9 @@ public sealed class JwtTokenServiceTests
     [Fact]
     public void GenerateRefreshToken_EachCallReturnsUniqueToken()
     {
-        var token1 = JwtTokenService.GenerateRefreshToken();
-        var token2 = JwtTokenService.GenerateRefreshToken();
+        var svc = CreateService();
+        var token1 = svc.GenerateRefreshToken();
+        var token2 = svc.GenerateRefreshToken();
 
         token1.Should().NotBe(token2);
     }

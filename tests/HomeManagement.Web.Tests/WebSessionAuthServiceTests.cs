@@ -1,4 +1,5 @@
 using FluentAssertions;
+using HomeManagement.Abstractions.Models;
 using HomeManagement.Auth;
 using HomeManagement.Web.Services;
 using NSubstitute;

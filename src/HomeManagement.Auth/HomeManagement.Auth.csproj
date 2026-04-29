@@ -6,7 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="Microsoft.IdentityModel.Tokens" />
     <PackageReference Include="System.DirectoryServices.Protocols" />
@@ -16,6 +15,5 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\HomeManagement.Abstractions\HomeManagement.Abstractions.csproj" />
-    <ProjectReference Include="..\HomeManagement.Data\HomeManagement.Data.csproj" />
   </ItemGroup>
 </Project>

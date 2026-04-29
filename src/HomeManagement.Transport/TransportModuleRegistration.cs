@@ -11,8 +11,9 @@ public sealed class TransportModuleRegistration : IModuleRegistration
 
     public void Register(IServiceCollection services)
     {
-        // Provide default ResilienceOptions — consumers can override via IOptions<ResilienceOptions> binding
         services.AddOptions<ResilienceOptions>();
+        services.AddOptions<AgentGatewayClientOptions>()
+            .BindConfiguration(AgentGatewayClientOptions.SectionName);
         services.AddSingleton<IResiliencePipeline, DefaultResiliencePipeline>();
         services.AddSingleton<IRemotePathResolver, RemotePathResolver>();
         services.AddSingleton<SshTransportProvider>();

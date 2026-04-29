@@ -1,6 +1,6 @@
 @page "/admin/users"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
-@using HomeManagement.Auth
+@using HomeManagement.Abstractions.Models
 @inject HomeManagement.Web.Services.IAdminApi AdminApi
 @inject NavigationManager Navigation
 

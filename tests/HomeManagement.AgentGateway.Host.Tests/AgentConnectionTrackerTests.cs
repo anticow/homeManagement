@@ -2,8 +2,8 @@ using FluentAssertions;
 using Grpc.Core;
 using HomeManagement.Agent.Protocol;
 using HomeManagement.AgentGateway.Host.Services;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace HomeManagement.AgentGateway.Host.Tests;
 
@@ -177,14 +177,12 @@ public sealed class AgentConnectionTrackerTests
     [Fact]
     public async Task Connect_WithInvalidPerAgentKey_ThrowsUnauthenticatedBeforeRegistration()
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["AgentGateway:AgentApiKeys:agent-01"] = "expected-key"
-            })
-            .Build();
+        var options = Options.Create(new AgentGatewayHostOptions
+        {
+            AgentApiKeys = new Dictionary<string, string> { ["agent-01"] = "expected-key" }
+        });
 
-        var validator = new AgentApiKeyValidator(configuration, NullLogger<AgentApiKeyValidator>.Instance);
+        var validator = new AgentApiKeyValidator(options, NullLogger<AgentApiKeyValidator>.Instance);
         using var gateway = new StandaloneAgentGatewayService(NullLogger<StandaloneAgentGatewayService>.Instance);
         var service = new AgentGatewayGrpcService(
             validator,

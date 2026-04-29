@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using HomeManagement.Auth;
+using HomeManagement.Abstractions.Models;
 
 namespace HomeManagement.Web.Services;
 

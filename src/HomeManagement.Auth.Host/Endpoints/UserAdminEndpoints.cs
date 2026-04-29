@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using HomeManagement.Auth;
 
 namespace HomeManagement.Auth.Host.Endpoints;
@@ -44,5 +45,11 @@ public static class UserAdminEndpoints
     }
 }
 
-public sealed record CreateUserRequest(string Username, string Password, string DisplayName, string Email, List<string> Roles);
+public sealed record CreateUserRequest(
+    [Required] string Username,
+    /// <summary>Minimum 12 characters; must contain upper, lower, and digit.</summary>
+    [Required, MinLength(12)] string Password,
+    string DisplayName,
+    string Email,
+    List<string> Roles);
 public sealed record AssignRolesRequest(List<string> Roles);

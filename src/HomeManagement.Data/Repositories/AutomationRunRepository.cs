@@ -1,3 +1,5 @@
+using HomeManagement.Abstractions.Models;
+using HomeManagement.Abstractions.Repositories;
 using HomeManagement.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,7 +14,7 @@ public class AutomationRunRepository : IAutomationRunRepository
         _db = db;
     }
 
-    public async Task<AutomationRunEntity> CreateRunAsync(
+    public async Task CreateRunAsync(
         Guid runId,
         string workflowType,
         string? requestJson,
@@ -34,19 +36,20 @@ public class AutomationRunRepository : IAutomationRunRepository
 
         _db.AutomationRuns.Add(run);
         await _db.SaveChangesAsync(ct);
-        return run;
     }
 
-    public async Task<AutomationRunEntity?> GetRunAsync(Guid runId, CancellationToken ct = default)
+    public async Task<AutomationRun?> GetRunAsync(Guid runId, CancellationToken ct = default)
     {
-        return await _db.AutomationRuns
+        var entity = await _db.AutomationRuns
             .AsNoTracking()
             .Include(r => r.Steps)
             .Include(r => r.MachineResults)
             .FirstOrDefaultAsync(r => r.Id == runId, ct);
+
+        return entity is null ? null : MapToDomain(entity);
     }
 
-    public async Task<IReadOnlyList<AutomationRunEntity>> ListRunsAsync(
+    public async Task<IReadOnlyList<AutomationRunSummary>> ListRunsAsync(
         int page,
         int pageSize,
         CancellationToken ct = default)
@@ -58,7 +61,15 @@ public class AutomationRunRepository : IAutomationRunRepository
             .Take(pageSize)
             .ToListAsync(ct);
 
-        return runs;
+        return runs.Select(e => new AutomationRunSummary(
+            new AutomationRunId(e.Id),
+            e.WorkflowType,
+            Enum.Parse<AutomationRunStateKind>(e.State),
+            e.StartedUtc,
+            e.CompletedUtc,
+            e.TotalMachines,
+            e.CompletedMachines,
+            e.FailedMachines)).ToList();
     }
 
     public async Task UpdateRunStateAsync(
@@ -193,5 +204,41 @@ public class AutomationRunRepository : IAutomationRunRepository
         await _db.AutomationRuns
             .Where(r => r.Id == runId)
             .ExecuteUpdateAsync(u => u.SetProperty(r => r.TotalMachines, totalMachines), ct);
+    }
+
+    private static AutomationRun MapToDomain(AutomationRunEntity entity)
+    {
+        var steps = entity.Steps.Select(s => new AutomationStepResult(
+            s.StepName,
+            Enum.Parse<AutomationStepState>(s.State),
+            s.StartedUtc,
+            s.CompletedUtc,
+            s.ErrorMessage ?? string.Empty)).ToList();
+
+        var machineResults = entity.MachineResults.Select(m => new AutomationMachineResult(
+            m.MachineId,
+            m.MachineName,
+            m.Success,
+            CpuCores: 0,
+            RamBytes: null,
+            Architecture: null,
+            RunningServices: 0,
+            m.ErrorMessage)).ToList();
+
+        return new AutomationRun(
+            Id: new AutomationRunId(entity.Id),
+            WorkflowName: entity.WorkflowType,
+            State: Enum.Parse<AutomationRunStateKind>(entity.State),
+            CreatedUtc: entity.StartedUtc,
+            StartedUtc: entity.StartedUtc,
+            CompletedUtc: entity.CompletedUtc,
+            TotalMachines: entity.TotalMachines,
+            CompletedMachines: entity.CompletedMachines,
+            FailedMachines: entity.FailedMachines,
+            Steps: steps,
+            MachineResults: machineResults,
+            OutputJson: entity.OutputJson,
+            OutputMarkdown: entity.OutputMarkdown,
+            ErrorMessage: entity.ErrorMessage);
     }
 }

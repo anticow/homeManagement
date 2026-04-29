@@ -1,4 +1,5 @@
 using FluentAssertions;
+using HomeManagement.Abstractions.Models;
 using HomeManagement.Data;
 using HomeManagement.Data.Repositories;
 using Microsoft.Data.Sqlite;
@@ -52,10 +53,9 @@ public sealed class AutomationRunRepositoryTests : IAsyncLifetime, IDisposable
         var run = await _repository.GetRunAsync(runId);
 
         run.Should().NotBeNull();
-        run!.Id.Should().Be(runId);
-        run.WorkflowType.Should().Be("fleet.health_report");
-        run.State.Should().Be("Queued");
-        run.CorrelationId.Should().Be("corr-1");
+        run!.Id.Value.Should().Be(runId);
+        run.WorkflowName.Should().Be("fleet.health_report");
+        run.State.Should().Be(AutomationRunStateKind.Queued);
     }
 
     [Fact]
@@ -80,8 +80,8 @@ public sealed class AutomationRunRepositoryTests : IAsyncLifetime, IDisposable
         run.Should().NotBeNull();
         run!.Steps.Should().HaveCount(1);
         run.MachineResults.Should().HaveCount(1);
-        run.Steps.First().StepName.Should().Be("resolve_targets");
-        run.MachineResults.First().MachineName.Should().Be("node-1");
+        run.Steps[0].Name.Should().Be("resolve_targets");
+        run.MachineResults[0].MachineName.Should().Be("node-1");
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public sealed class AutomationRunRepositoryTests : IAsyncLifetime, IDisposable
         var run = await _repository.GetRunAsync(runId);
 
         run.Should().NotBeNull();
-        run!.State.Should().Be("Completed");
+        run!.State.Should().Be(AutomationRunStateKind.Completed);
         run.CompletedMachines.Should().Be(3);
         run.FailedMachines.Should().Be(1);
         run.OutputJson.Should().Contain("ok");

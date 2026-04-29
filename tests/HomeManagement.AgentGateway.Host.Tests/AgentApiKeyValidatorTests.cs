@@ -2,8 +2,8 @@ using FluentAssertions;
 using Grpc.Core;
 using HomeManagement.Agent.Protocol;
 using HomeManagement.AgentGateway.Host.Services;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace HomeManagement.AgentGateway.Host.Tests;
 
@@ -74,16 +74,14 @@ public sealed class AgentApiKeyValidatorTests
     }
 
     [Fact]
-    public void LoadConfiguredKeys_WithPlaceholderValue_Throws()
+    public void BuildKeys_WithPlaceholderValue_Throws()
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["AgentGateway:AgentApiKeys:agent-01"] = "CHANGE-ME-placeholder"
-            })
-            .Build();
+        var options = new AgentGatewayHostOptions
+        {
+            AgentApiKeys = new Dictionary<string, string> { ["agent-01"] = "CHANGE-ME-placeholder" }
+        };
 
-        var act = () => AgentApiKeyValidator.LoadConfiguredKeys(configuration);
+        var act = () => AgentApiKeyValidator.BuildKeys(options);
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*agent-01*");
@@ -91,11 +89,18 @@ public sealed class AgentApiKeyValidatorTests
 
     private static AgentApiKeyValidator CreateValidator(IDictionary<string, string?> values)
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(values)
-            .Build();
-
-        return new AgentApiKeyValidator(configuration, NullLogger<AgentApiKeyValidator>.Instance);
+        // Map flat config keys "AgentGateway:AgentApiKeys:agent-id" into typed options
+        var options = new AgentGatewayHostOptions();
+        foreach (var (key, value) in values)
+        {
+            const string prefix = "AgentGateway:AgentApiKeys:";
+            const string jsonKey = "AgentGateway:AgentApiKeysJson";
+            if (key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && value is not null)
+                options.AgentApiKeys[key[prefix.Length..]] = value;
+            else if (key.Equals(jsonKey, StringComparison.OrdinalIgnoreCase) && value is not null)
+                options.AgentApiKeysJson = value;
+        }
+        return new AgentApiKeyValidator(Options.Create(options), NullLogger<AgentApiKeyValidator>.Instance);
     }
 }
 

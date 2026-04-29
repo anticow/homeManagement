@@ -1,3 +1,4 @@
+using HomeManagement.Abstractions.Models;
 using Microsoft.Extensions.Options;
 
 namespace HomeManagement.Automation;
@@ -71,3 +72,4 @@ internal sealed class DisabledAutomationEngine : IAutomationEngine
         return Task.FromResult<WorkflowPlan?>(null);
     }
 }
+

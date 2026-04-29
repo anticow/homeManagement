@@ -1,17 +1,17 @@
+using HomeManagement.Abstractions.CrossCutting;
 using HomeManagement.Auth;
 using HomeManagement.AI.Abstractions.Configuration;
 using HomeManagement.Auditing;
 using HomeManagement.Broker.Host.Endpoints;
 using HomeManagement.Broker.Host.Hubs;
 using HomeManagement.Core;
+using HomeManagement.Data;
 using HomeManagement.Data.SqlServer;
 using HomeManagement.Automation;
 using HomeManagement.Integration.Action1;
 using HomeManagement.Integration.Prometheus;
 using HomeManagement.Vault;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using OpenTelemetry.Metrics;
-using OpenTelemetry.Resources;
 using Serilog;
 using System.Globalization;
 
@@ -21,42 +21,25 @@ Log.Logger = new LoggerConfiguration()
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ── Serilog ──
-builder.Host.UseSerilog((context, services, config) => config
-    .ReadFrom.Configuration(context.Configuration)
-    .ReadFrom.Services(services)
-    .Enrich.WithProperty("Service", "hm-broker")
-    .Enrich.WithMachineName()
-    .Enrich.WithThreadId()
-    .Enrich.With<SensitivePropertyEnricher>()
-    .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture)
-    .WriteTo.Seq(context.Configuration["Seq:Url"] ?? "http://localhost:5341"));
-
-// ── OpenTelemetry ──
-builder.Services.AddOpenTelemetry()
-    .ConfigureResource(r => r.AddService("hm-broker"))
-    .WithMetrics(m => m
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddRuntimeInstrumentation()
-        .AddMeter("HomeManagement.Automation")
-        .AddPrometheusExporter());
+builder.AddHomeManagementSerilog("hm-broker");
+builder.AddHomeManagementObservability("hm-broker",
+    configureMetrics: m => m.AddMeter("HomeManagement.Automation"));
 
 // ── Configuration ──
 var connectionString = builder.Configuration.GetConnectionString("HomeManagement")
     ?? throw new InvalidOperationException("Connection string 'HomeManagement' is required.");
 
-var dataDirectory = builder.Configuration["DataDirectory"]
+var dataDirectory = builder.Configuration[ServiceRegistration.DataDirectoryConfigKey]
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HomeManagement");
 
 // ── Services ──
 builder.Services.AddHomeManagementSqlServer(connectionString);
+builder.Services.AddHomeManagementAuthRepositories();
 builder.Services.AddHomeManagement(dataDirectory);
 builder.Services.AddHomeManagementLogging(dataDirectory);
 builder.Services.AddAction1Integration(builder.Configuration);
 builder.Services.AddPrometheusIntegration(builder.Configuration);
-builder.Services.AddHomeManagementAuth(options =>
-    builder.Configuration.GetSection(AuthOptions.SectionName).Bind(options));
+builder.Services.AddHomeManagementAuth(builder.Configuration);
 builder.Services
     .AddOptions<AiOptions>()
     .Bind(builder.Configuration.GetSection(AiOptions.SectionName))
@@ -132,17 +115,10 @@ var app = builder.Build();
 
 // ── Configure JWT validation from JwtTokenService ──
 // The JwtBearer middleware picks up parameters via PostConfigure
-app.Services.GetRequiredService<JwtTokenService>();
+app.Services.GetRequiredService<IJwtTokenService>();
 
 // ── Security headers ──
-app.Use(async (ctx, next) =>
-{
-    ctx.Response.Headers.Append("X-Content-Type-Options", "nosniff");
-    ctx.Response.Headers.Append("X-Frame-Options", "DENY");
-    ctx.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
-    ctx.Response.Headers.Append("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-    await next();
-});
+app.UseHomeManagementSecurityHeaders();
 
 // ── Correlation ID + HTTP request logging ──
 app.UseMiddleware<CorrelationIdMiddleware>();
@@ -153,11 +129,7 @@ app.UseSerilogRequestLogging(opts =>
             : Serilog.Events.LogEventLevel.Information);
 
 // ── Health ──
-app.MapHealthChecks("/healthz");
-app.MapGet("/readyz", () => Results.Ok("ready"));
-app.MapGet("/version", () => new { version = Environment.GetEnvironmentVariable("APP_VERSION") ?? "unknown" })
-    .AllowAnonymous().ExcludeFromDescription();
-app.MapPrometheusScrapingEndpoint();
+app.UseHomeManagementHealthEndpoints();
 
 // ── Auth middleware ──
 app.UseAuthentication();

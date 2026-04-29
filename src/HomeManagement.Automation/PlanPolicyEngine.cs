@@ -1,3 +1,4 @@
+using HomeManagement.Abstractions.Models;
 namespace HomeManagement.Automation;
 
 /// <summary>
@@ -59,3 +60,4 @@ public sealed class PlanPolicyEngine
             Violations: violations);
     }
 }
+

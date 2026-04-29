@@ -1,3 +1,4 @@
+using HomeManagement.Abstractions.Models;
 namespace HomeManagement.Automation;
 
 /// <summary>
@@ -9,3 +10,4 @@ public interface IWorkflowPlanner
 {
     Task<WorkflowPlan> CreatePlanAsync(CreatePlanRequest request, CancellationToken ct = default);
 }
+

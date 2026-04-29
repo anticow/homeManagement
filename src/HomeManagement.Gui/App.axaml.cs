@@ -42,7 +42,12 @@ public class App : Application
                     .AddEnvironmentVariables()
                     .Build();
 
-                var platformOptions = DesktopPlatformOptions.FromConfiguration(configuration);
+                var platformOptions = new DesktopPlatformOptions
+                {
+                    BrokerBaseUrl = configuration["BrokerApi:BaseUrl"] ?? string.Empty,
+                    AuthBaseUrl = configuration["AuthApi:BaseUrl"] ?? string.Empty,
+                    Username = configuration["DesktopAuth:Username"]
+                };
 
                 var services = new ServiceCollection();
                 services.AddSingleton<IConfiguration>(configuration);

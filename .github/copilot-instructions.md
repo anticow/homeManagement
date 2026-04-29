@@ -115,6 +115,17 @@ Abstractions ← Core ← Domain Modules ← Platform Services ← GUI/Web
 - **Logging:** Serilog structured properties only — no string interpolation in log calls. `LoggingBootstrap.AddHomeManagementLogging()` must be called before the DI container is built.
 - **Testing stack:** xUnit + NSubstitute + FluentAssertions. Integration tests tagged `Category=Integration`; platform tests tagged `Category=Platform`.
 
+## DRY Principles
+
+- **One interface, one place** — all contracts live in `HomeManagement.Abstractions`. Never redefine a DTO or interface in a domain module when an existing one in Abstractions fits.
+- **Module registration is self-contained** — add a new module by implementing `IModuleRegistration` in its assembly. Do not add wiring in `ServiceRegistration` or host `Program.cs` files; auto-discovery handles it.
+- **Shared cross-cutting behavior belongs in Core** — retry policies, validation helpers, logging bootstrap, and correlation middleware live in `HomeManagement.Core`. Don't copy these patterns into individual modules.
+- **Options pattern for config** — all configuration values are bound via `IOptions<T>` to a typed options class. Never access `IConfiguration` directly in a service; never hardcode environment-specific values.
+- **Extension methods over repeated setup code** — if the same DI registration or middleware setup appears in more than one host project, extract it to an extension method in the appropriate library project.
+- **No duplicated EF mappings** — entity configurations use `IEntityTypeConfiguration<T>` classes, one per entity, in `HomeManagement.Data`. Don't re-map the same entity in a derived context.
+- **Repository pattern is the DB boundary** — domain modules call repository interfaces from Abstractions; they never reference `HomeManagementDbContext` directly. Keep query logic in the repository implementation, not scattered across services.
+- **Test helpers are shared** — common test fixtures, builder helpers, and fake implementations live in a shared test support project. Don't duplicate fake/stub implementations across test projects.
+
 ## CI Gates (all must pass)
 
 1. `dotnet build` — zero warnings

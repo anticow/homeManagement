@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+using HomeManagement.Abstractions.Models;
 
 namespace HomeManagement.Auth;
 
@@ -7,64 +7,58 @@ namespace HomeManagement.Auth;
 /// </summary>
 public sealed class RbacService
 {
-    private readonly ILogger<RbacService> _logger;
 
     // Default role definitions — can be overridden with database-backed roles.
+    private static readonly HashSet<string> ViewerPermissions =
+    [
+        Permissions.MachinesRead,
+        Permissions.PatchesRead,
+        Permissions.ServicesRead,
+        Permissions.JobsRead,
+        Permissions.AuditRead
+    ];
+
+    private static readonly HashSet<string> OperatorPermissions =
+    [
+        Permissions.MachinesRead,
+        Permissions.MachinesWrite,
+        Permissions.PatchesRead,
+        Permissions.PatchesApply,
+        Permissions.ServicesRead,
+        Permissions.ServicesControl,
+        Permissions.JobsRead,
+        Permissions.JobsSubmit,
+        Permissions.JobsCancel,
+        Permissions.CredentialsRead,
+        Permissions.CredentialsWrite,
+        Permissions.AuditRead,
+        Permissions.AuditExport
+    ];
+
+    // Admin = all Operator permissions + user/settings administration.
+    private static readonly HashSet<string> AdminPermissions =
+    [
+        ..OperatorPermissions,
+        Permissions.AdminUsers,
+        Permissions.AdminSettings
+    ];
+
+    // Auditor = all Viewer permissions + audit export.
+    private static readonly HashSet<string> AuditorPermissions =
+    [
+        ..ViewerPermissions,
+        Permissions.AuditExport
+    ];
+
     private static readonly Dictionary<string, HashSet<string>> DefaultRoles = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["Viewer"] = [
-            Permissions.MachinesRead,
-            Permissions.PatchesRead,
-            Permissions.ServicesRead,
-            Permissions.JobsRead,
-            Permissions.AuditRead
-        ],
-        ["Operator"] = [
-            Permissions.MachinesRead,
-            Permissions.MachinesWrite,
-            Permissions.PatchesRead,
-            Permissions.PatchesApply,
-            Permissions.ServicesRead,
-            Permissions.ServicesControl,
-            Permissions.JobsRead,
-            Permissions.JobsSubmit,
-            Permissions.JobsCancel,
-            Permissions.CredentialsRead,
-            Permissions.CredentialsWrite,
-            Permissions.AuditRead,
-            Permissions.AuditExport
-        ],
-        ["Admin"] = [
-            Permissions.MachinesRead,
-            Permissions.MachinesWrite,
-            Permissions.PatchesRead,
-            Permissions.PatchesApply,
-            Permissions.ServicesRead,
-            Permissions.ServicesControl,
-            Permissions.JobsRead,
-            Permissions.JobsSubmit,
-            Permissions.JobsCancel,
-            Permissions.CredentialsRead,
-            Permissions.CredentialsWrite,
-            Permissions.AuditRead,
-            Permissions.AuditExport,
-            Permissions.AdminUsers,
-            Permissions.AdminSettings
-        ],
-        ["Auditor"] = [
-            Permissions.MachinesRead,
-            Permissions.PatchesRead,
-            Permissions.ServicesRead,
-            Permissions.JobsRead,
-            Permissions.AuditRead,
-            Permissions.AuditExport
-        ]
+        ["Viewer"] = ViewerPermissions,
+        ["Operator"] = OperatorPermissions,
+        ["Admin"] = AdminPermissions,
+        ["Auditor"] = AuditorPermissions
     };
 
-    public RbacService(ILogger<RbacService> logger)
-    {
-        _logger = logger;
-    }
+    public RbacService() { }
 
     /// <summary>
     /// Check if the given roles collectively grant the required permission.

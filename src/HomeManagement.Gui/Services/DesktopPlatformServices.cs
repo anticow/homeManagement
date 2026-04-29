@@ -14,7 +14,6 @@ using HomeManagement.Abstractions.CrossCutting;
 using HomeManagement.Abstractions.Interfaces;
 using HomeManagement.Abstractions.Models;
 using HomeManagement.Abstractions.Validation;
-using HomeManagement.Auth;
 using HomeManagement.Transport;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
@@ -31,16 +30,6 @@ public sealed class DesktopPlatformOptions
     public bool IsEnabled =>
         !string.IsNullOrWhiteSpace(BrokerBaseUrl)
         && !string.IsNullOrWhiteSpace(AuthBaseUrl);
-
-    public static DesktopPlatformOptions FromConfiguration(IConfiguration configuration)
-    {
-        return new DesktopPlatformOptions
-        {
-            BrokerBaseUrl = configuration["BrokerApi:BaseUrl"] ?? string.Empty,
-            AuthBaseUrl = configuration["AuthApi:BaseUrl"] ?? string.Empty,
-            Username = configuration["DesktopAuth:Username"]
-        };
-    }
 }
 
 public sealed class DesktopSessionState

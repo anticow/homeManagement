@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 
 namespace HomeManagement.Gateway;
 
@@ -30,20 +31,20 @@ internal static class PlatformHealthEndpoint
     }
 
     private sealed record ServiceDef(
-        string ConfigKey, string Name, string Category, VersionSource Version,
+        Func<PlatformHealthOptions, string?> GetUrl, string Name, string Category, VersionSource Version,
         string? PodLabel = null);
 
     private static readonly ServiceDef[] Services =
     [
-        new("PlatformHealth:BrokerUrl",       "Broker",        "HomeManagement", new VersionSource.HmEndpoint(),  "hm-broker"),
-        new("PlatformHealth:AuthUrl",         "Auth",          "HomeManagement", new VersionSource.HmEndpoint(),  "hm-auth"),
-        new("PlatformHealth:WebUrl",          "Web",           "HomeManagement", new VersionSource.HmEndpoint(),  "hm-web"),
-        new("PlatformHealth:AgentGatewayUrl", "Agent Gateway", "HomeManagement", new VersionSource.HmEndpoint(),  "hm-agent-gw"),
-        new("PlatformHealth:SeqUrl",          "Seq",           "Platform",       new VersionSource.None()),
-        new("PlatformHealth:PrometheusUrl",   "Prometheus",    "Platform",       new VersionSource.SecondaryCall("/api/v1/status/buildinfo", "data.version")),
-        new("PlatformHealth:GrafanaUrl",      "Grafana",       "Platform",       new VersionSource.ParseHealthBody("version")),
-        new("PlatformHealth:ArgoCDUrl",       "ArgoCD",        "Platform",       new VersionSource.SecondaryCall("/api/version", "Version")),
-        new("PlatformHealth:AwxUrl",          "AWX",           "Platform",       new VersionSource.ParseHealthBody("version")),
+        new(o => o.BrokerUrl,       "Broker",        "HomeManagement", new VersionSource.HmEndpoint(),  "hm-broker"),
+        new(o => o.AuthUrl,         "Auth",          "HomeManagement", new VersionSource.HmEndpoint(),  "hm-auth"),
+        new(o => o.WebUrl,          "Web",           "HomeManagement", new VersionSource.HmEndpoint(),  "hm-web"),
+        new(o => o.AgentGatewayUrl, "Agent Gateway", "HomeManagement", new VersionSource.HmEndpoint(),  "hm-agent-gw"),
+        new(o => o.SeqUrl,          "Seq",           "Platform",       new VersionSource.None()),
+        new(o => o.PrometheusUrl,   "Prometheus",    "Platform",       new VersionSource.SecondaryCall("/api/v1/status/buildinfo", "data.version")),
+        new(o => o.GrafanaUrl,      "Grafana",       "Platform",       new VersionSource.ParseHealthBody("version")),
+        new(o => o.ArgoCDUrl,       "ArgoCD",        "Platform",       new VersionSource.SecondaryCall("/api/version", "Version")),
+        new(o => o.AwxUrl,          "AWX",           "Platform",       new VersionSource.ParseHealthBody("version")),
     ];
 
     // ── 15-second result cache ─────────────────────────────────────────────────────────────────
@@ -85,7 +86,7 @@ internal static class PlatformHealthEndpoint
             var body = await resp.Content.ReadAsStringAsync(ct);
             return ParsePodStartTimes(body);
         }
-        catch { return new Dictionary<string, DateTime>(); }
+        catch (Exception) { return new Dictionary<string, DateTime>(); } // K8s API unavailable or not in-cluster
     }
 
     private static Dictionary<string, DateTime> ParsePodStartTimes(string json)
@@ -117,7 +118,7 @@ internal static class PlatformHealthEndpoint
                     result[svcName] = t;
             }
         }
-        catch { /* best effort */ }
+        catch (JsonException) { /* best effort — malformed pod list JSON does not affect health results */ }
         return result;
     }
 
@@ -135,7 +136,7 @@ internal static class PlatformHealthEndpoint
     private static async Task<IResult> Handle(
         HttpContext ctx,
         IHttpClientFactory factory,
-        IConfiguration config,
+        IOptions<PlatformHealthOptions> optionsAccessor,
         CancellationToken ct)
     {
         var now = DateTime.UtcNow;
@@ -145,9 +146,10 @@ internal static class PlatformHealthEndpoint
 
         var healthClient = factory.CreateClient("platform-health");
         var k8sClient = factory.CreateClient("k8s-api");
+        var options = optionsAccessor.Value;
 
         // Fan out health checks and pod start-time lookup concurrently
-        var healthTasks = Services.Select(svc => CheckServiceAsync(healthClient, config, svc, ct)).ToArray();
+        var healthTasks = Services.Select(svc => CheckServiceAsync(healthClient, options, svc, ct)).ToArray();
         var podTimesTask = FetchPodStartTimesAsync(k8sClient, ct);
 
         await Task.WhenAll(healthTasks.Cast<Task>().Append(podTimesTask));
@@ -181,9 +183,9 @@ internal static class PlatformHealthEndpoint
     // ── Health + version probing ───────────────────────────────────────────────────────────────
 
     private static async Task<CheckResult> CheckServiceAsync(
-        HttpClient client, IConfiguration config, ServiceDef svc, CancellationToken ct)
+        HttpClient client, PlatformHealthOptions options, ServiceDef svc, CancellationToken ct)
     {
-        var url = config[svc.ConfigKey];
+        var url = svc.GetUrl(options);
         if (string.IsNullOrWhiteSpace(url))
             return new CheckResult(svc.Name, svc.Category, "Skipped", 0, "Not configured", null);
 
@@ -238,10 +240,7 @@ internal static class PlatformHealthEndpoint
                 _ => null,
             };
         }
-        catch
-        {
-            return null;
-        }
+        catch (Exception) { return null; } // version is best-effort; failure never affects health status
     }
 
     private static async Task<string?> FetchVersionUrlAsync(
@@ -268,7 +267,7 @@ internal static class PlatformHealthEndpoint
             var b = new UriBuilder(url) { Path = newPath, Query = string.Empty };
             return b.Uri.ToString();
         }
-        catch { return null; }
+        catch (UriFormatException) { return null; } // malformed URL — no version to report
     }
 
     /// <summary>
@@ -289,7 +288,7 @@ internal static class PlatformHealthEndpoint
             }
             return el.ValueKind == JsonValueKind.String ? el.GetString() : el.GetRawText();
         }
-        catch { return null; }
+        catch (JsonException) { return null; } // malformed JSON field lookup — no version to report
     }
 
     // ── HTML renderer ─────────────────────────────────────────────────────────────────────────

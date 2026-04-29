@@ -1,3 +1,6 @@
+using System.Text.Json;
+using HomeManagement.Abstractions.Models;
+using HomeManagement.Abstractions.Repositories;
 using HomeManagement.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,7 +15,7 @@ public sealed class PlanRepository : IPlanRepository
         _db = db;
     }
 
-    public async Task<AutomationPlanEntity> CreatePlanAsync(
+    public async Task CreatePlanAsync(
         Guid planId,
         string objective,
         string stepsJson,
@@ -36,14 +39,15 @@ public sealed class PlanRepository : IPlanRepository
 
         _db.AutomationPlans.Add(entity);
         await _db.SaveChangesAsync(ct);
-        return entity;
     }
 
-    public async Task<AutomationPlanEntity?> GetPlanAsync(Guid planId, CancellationToken ct = default)
+    public async Task<WorkflowPlan?> GetPlanAsync(Guid planId, CancellationToken ct = default)
     {
-        return await _db.AutomationPlans
+        var entity = await _db.AutomationPlans
             .AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == planId, ct);
+
+        return entity is null ? null : MapToDomain(entity);
     }
 
     public async Task UpdatePlanStatusAsync(
@@ -60,5 +64,37 @@ public sealed class PlanRepository : IPlanRepository
                 .SetProperty(p => p.ApprovedUtc, approvedUtc)
                 .SetProperty(p => p.RejectionReason, rejectionReason),
                 ct);
+    }
+
+    private static WorkflowPlan MapToDomain(AutomationPlanEntity entity)
+    {
+        List<PlanStep> steps;
+        try
+        {
+            var dtos = JsonSerializer.Deserialize<List<JsonElement>>(entity.StepsJson) ?? [];
+
+            steps = dtos.Select(e => new PlanStep(
+                Name: e.GetProperty("name").GetString() ?? string.Empty,
+                Kind: Enum.TryParse<PlanStepKind>(e.GetProperty("kind").GetString(), ignoreCase: true, out var k) ? k : PlanStepKind.Unknown,
+                Description: e.TryGetProperty("description", out var d) ? d.GetString() ?? string.Empty : string.Empty,
+                Parameters: e.TryGetProperty("parameters", out var p)
+                    ? p.EnumerateObject().ToDictionary(kv => kv.Name, kv => kv.Value.GetString() ?? string.Empty)
+                    : new Dictionary<string, string>())).ToList();
+        }
+        catch
+        {
+            steps = [];
+        }
+
+        return new WorkflowPlan(
+            Id: new WorkflowPlanId(entity.Id),
+            Objective: entity.Objective,
+            Steps: steps,
+            RiskLevel: Enum.TryParse<PlanRiskLevel>(entity.RiskLevel, out var risk) ? risk : PlanRiskLevel.Low,
+            PlanHash: entity.PlanHash,
+            Status: Enum.TryParse<PlanStatus>(entity.Status, out var status) ? status : PlanStatus.PendingApproval,
+            CreatedUtc: entity.CreatedUtc,
+            ApprovedUtc: entity.ApprovedUtc,
+            RejectionReason: entity.RejectionReason);
     }
 }
