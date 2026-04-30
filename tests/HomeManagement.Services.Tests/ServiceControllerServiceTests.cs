@@ -13,6 +13,7 @@ namespace HomeManagement.Services.Tests;
 public class ServiceControllerServiceTests
 {
     private readonly IRemoteExecutor _executor = Substitute.For<IRemoteExecutor>();
+    private readonly IUnitOfWork _uow = Substitute.For<IUnitOfWork>();
     private readonly IServiceSnapshotRepository _snapshotRepo = Substitute.For<IServiceSnapshotRepository>();
     private readonly ICorrelationContext _correlation = Substitute.For<ICorrelationContext>();
     private readonly LinuxServiceStrategy _linuxStrategy = new();
@@ -25,8 +26,9 @@ public class ServiceControllerServiceTests
     public ServiceControllerServiceTests()
     {
         _correlation.CorrelationId.Returns("test-correlation");
+        _uow.ServiceSnapshots.Returns(_snapshotRepo);
         _sut = new ServiceControllerService(
-            _executor, _snapshotRepo, _correlation,
+            _executor, _uow, _correlation,
             NullLogger<ServiceControllerService>.Instance, _linuxStrategy, _windowsStrategy);
     }
 
@@ -64,7 +66,7 @@ public class ServiceControllerServiceTests
         await _sut.GetStatusAsync(target, TestService);
 
         await _snapshotRepo.Received(1).AddAsync(Arg.Any<ServiceSnapshot>(), Arg.Any<CancellationToken>());
-        await _snapshotRepo.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+        await _uow.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     // ── ListServicesAsync ──

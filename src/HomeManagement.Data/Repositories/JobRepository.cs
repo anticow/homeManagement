@@ -99,11 +99,6 @@ public sealed class JobRepository : IJobRepository
         await _db.JobMachineResults.AddAsync(entity, ct);
     }
 
-    public async Task SaveChangesAsync(CancellationToken ct = default)
-    {
-        await _db.SaveChangesAsync(ct);
-    }
-
     private static JobStatus ToDomain(JobEntity e) => new(
         new JobId(e.Id),
         e.Name,

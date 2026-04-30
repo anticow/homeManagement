@@ -22,7 +22,7 @@ internal sealed class AuditLoggerService : IAuditLogger
 {
     private const int ChainVersion = 1;
 
-    private readonly IAuditEventRepository _repository;
+    private readonly IUnitOfWork _uow;
     private readonly ISensitiveDataFilter _filter;
     private readonly ICorrelationContext _correlation;
     private readonly ILogger<AuditLoggerService> _logger;
@@ -30,13 +30,13 @@ internal sealed class AuditLoggerService : IAuditLogger
     private readonly object _chainLock = new();
 
     public AuditLoggerService(
-        IAuditEventRepository repository,
+        IUnitOfWork uow,
         ISensitiveDataFilter filter,
         ICorrelationContext correlation,
         ILogger<AuditLoggerService> logger,
         IOptions<AuditOptions> options)
     {
-        _repository = repository;
+        _uow = uow;
         _filter = filter;
         _correlation = correlation;
         _logger = logger;
@@ -60,12 +60,12 @@ internal sealed class AuditLoggerService : IAuditLogger
         string eventHash;
         lock (_chainLock)
         {
-            previousHash = _repository.GetLastEventHashAsync(ct).GetAwaiter().GetResult();
+            previousHash = _uow.AuditEvents.GetLastEventHashAsync(ct).GetAwaiter().GetResult();
             eventHash = ComputeEventHash(redacted, previousHash, _hmacKey);
         }
 
-        await _repository.AddAsync(redacted, previousHash, eventHash, ChainVersion, ct);
-        await _repository.SaveChangesAsync(ct);
+        await _uow.AuditEvents.AddAsync(redacted, previousHash, eventHash, ChainVersion, ct);
+        await _uow.SaveChangesAsync(ct);
 
         _logger.LogInformation("[{CorrelationId}] Audit: {Action} by {Actor} — {Outcome}",
             redacted.CorrelationId, redacted.Action, redacted.ActorIdentity, redacted.Outcome);
@@ -73,17 +73,17 @@ internal sealed class AuditLoggerService : IAuditLogger
 
     public async Task<PagedResult<AuditEvent>> QueryAsync(AuditQuery query, CancellationToken ct = default)
     {
-        return await _repository.QueryAsync(query, ct);
+        return await _uow.AuditEvents.QueryAsync(query, ct);
     }
 
     public async Task<long> CountAsync(AuditQuery query, CancellationToken ct = default)
     {
-        return await _repository.CountAsync(query, ct);
+        return await _uow.AuditEvents.CountAsync(query, ct);
     }
 
     public async Task ExportAsync(AuditQuery query, Stream destination, ExportFormat format, CancellationToken ct = default)
     {
-        var result = await _repository.QueryAsync(query with { PageSize = 50000 }, ct);
+        var result = await _uow.AuditEvents.QueryAsync(query with { PageSize = 50000 }, ct);
 
         if (format == ExportFormat.Json)
         {

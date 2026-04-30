@@ -131,11 +131,6 @@ public sealed class AuditEventRepository : IAuditEventRepository
         return (true, verified, null);
     }
 
-    public async Task SaveChangesAsync(CancellationToken ct = default)
-    {
-        await _db.SaveChangesAsync(ct);
-    }
-
     private static AuditEvent ToDomain(AuditEventEntity e)
     {
         var properties = !string.IsNullOrEmpty(e.PropertiesJson)

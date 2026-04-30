@@ -21,7 +21,7 @@ namespace HomeManagement.Patching;
 internal sealed class PatchService : IPatchService
 {
     private readonly IRemoteExecutor _executor;
-    private readonly IPatchHistoryRepository _historyRepo;
+    private readonly IUnitOfWork _uow;
     private readonly ICorrelationContext _correlation;
     private readonly ILogger<PatchService> _logger;
     private readonly LinuxPatchStrategy _linuxStrategy;
@@ -29,14 +29,14 @@ internal sealed class PatchService : IPatchService
 
     public PatchService(
         IRemoteExecutor executor,
-        IPatchHistoryRepository historyRepo,
+        IUnitOfWork uow,
         ICorrelationContext correlation,
         ILogger<PatchService> logger,
         LinuxPatchStrategy linuxStrategy,
         WindowsPatchStrategy windowsStrategy)
     {
         _executor = executor;
-        _historyRepo = historyRepo;
+        _uow = uow;
         _correlation = correlation;
         _logger = logger;
         _linuxStrategy = linuxStrategy;
@@ -106,9 +106,9 @@ internal sealed class PatchService : IPatchService
                 TimestampUtc: DateTime.UtcNow,
                 ErrorMessage: result.ExitCode != 0 ? result.Stderr : null);
 
-            await _historyRepo.AddAsync(entry, ct);
+            await _uow.PatchHistory.AddAsync(entry, ct);
         }
-        await _historyRepo.SaveChangesAsync(ct);
+        await _uow.SaveChangesAsync(ct);
 
         _logger.LogInformation("[{CorrelationId}] Patch apply complete on {Host}: {Success} succeeded, {Failed} failed",
             _correlation.CorrelationId, target.Hostname, patchResult.Successful, patchResult.Failed);
@@ -131,7 +131,7 @@ internal sealed class PatchService : IPatchService
 
     public async Task<IReadOnlyList<PatchHistoryEntry>> GetHistoryAsync(Guid machineId, CancellationToken ct = default)
     {
-        return await _historyRepo.GetByMachineAsync(machineId, ct);
+        return await _uow.PatchHistory.GetByMachineAsync(machineId, ct);
     }
 
     public async Task<IReadOnlyList<InstalledPatch>> GetInstalledAsync(MachineTarget target, CancellationToken ct = default)

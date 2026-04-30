@@ -21,20 +21,20 @@ namespace HomeManagement.Inventory;
 /// </summary>
 internal sealed class InventoryService : IInventoryService
 {
-    private readonly IMachineRepository _machineRepo;
+    private readonly IUnitOfWork _uow;
     private readonly IRemoteExecutor _executor;
     private readonly ICorrelationContext _correlation;
     private readonly ILogger<InventoryService> _logger;
     private readonly IEndpointStateProvider? _stateProvider;
 
     public InventoryService(
-        IMachineRepository machineRepo,
+        IUnitOfWork uow,
         IRemoteExecutor executor,
         ICorrelationContext correlation,
         ILogger<InventoryService> logger,
         IEndpointStateProvider? stateProvider = null)
     {
-        _machineRepo = machineRepo;
+        _uow = uow;
         _executor = executor;
         _correlation = correlation;
         _logger = logger;
@@ -62,8 +62,8 @@ internal sealed class InventoryService : IInventoryService
             UpdatedUtc: now,
             LastContactUtc: now);
 
-        await _machineRepo.AddAsync(machine, ct);
-        await _machineRepo.SaveChangesAsync(ct);
+        await _uow.Machines.AddAsync(machine, ct);
+        await _uow.SaveChangesAsync(ct);
 
         _logger.LogInformation("[{CorrelationId}] Machine added: {Host} ({Os}, {Protocol})",
             _correlation.CorrelationId, request.Hostname, request.OsType, request.Protocol);
@@ -73,7 +73,7 @@ internal sealed class InventoryService : IInventoryService
 
     public async Task<Machine> UpdateAsync(Guid id, MachineUpdateRequest request, CancellationToken ct = default)
     {
-        var existing = await _machineRepo.GetByIdAsync(id, ct)
+        var existing = await _uow.Machines.GetByIdAsync(id, ct)
             ?? throw new KeyNotFoundException($"Machine {id} not found.");
 
         var updated = existing with
@@ -89,8 +89,8 @@ internal sealed class InventoryService : IInventoryService
             UpdatedUtc = DateTime.UtcNow
         };
 
-        await _machineRepo.UpdateAsync(updated, ct);
-        await _machineRepo.SaveChangesAsync(ct);
+        await _uow.Machines.UpdateAsync(updated, ct);
+        await _uow.SaveChangesAsync(ct);
 
         _logger.LogInformation("[{CorrelationId}] Machine updated: {MachineId}", _correlation.CorrelationId, id);
         return updated;
@@ -98,31 +98,31 @@ internal sealed class InventoryService : IInventoryService
 
     public async Task RemoveAsync(Guid id, CancellationToken ct = default)
     {
-        await _machineRepo.SoftDeleteAsync(id, ct);
-        await _machineRepo.SaveChangesAsync(ct);
+        await _uow.Machines.SoftDeleteAsync(id, ct);
+        await _uow.SaveChangesAsync(ct);
         _logger.LogInformation("[{CorrelationId}] Machine soft-deleted: {MachineId}", _correlation.CorrelationId, id);
     }
 
     public async Task BatchRemoveAsync(IReadOnlyList<Guid> ids, CancellationToken ct = default)
     {
-        await _machineRepo.SoftDeleteRangeAsync(ids, ct);
-        await _machineRepo.SaveChangesAsync(ct);
+        await _uow.Machines.SoftDeleteRangeAsync(ids, ct);
+        await _uow.SaveChangesAsync(ct);
         _logger.LogInformation("[{CorrelationId}] Batch soft-deleted {Count} machines", _correlation.CorrelationId, ids.Count);
     }
 
     public async Task<Machine?> GetAsync(Guid id, CancellationToken ct = default)
     {
-        return await _machineRepo.GetByIdAsync(id, ct);
+        return await _uow.Machines.GetByIdAsync(id, ct);
     }
 
     public async Task<PagedResult<Machine>> QueryAsync(MachineQuery query, CancellationToken ct = default)
     {
-        return await _machineRepo.QueryAsync(query, ct);
+        return await _uow.Machines.QueryAsync(query, ct);
     }
 
     public async Task<Machine> RefreshMetadataAsync(Guid id, CancellationToken ct = default)
     {
-        var machine = await _machineRepo.GetByIdAsync(id, ct)
+        var machine = await _uow.Machines.GetByIdAsync(id, ct)
             ?? throw new KeyNotFoundException($"Machine {id} not found.");
 
         _logger.LogInformation("[{CorrelationId}] Refreshing metadata for {Host}",
@@ -191,8 +191,8 @@ internal sealed class InventoryService : IInventoryService
             UpdatedUtc = DateTime.UtcNow,
         };
 
-        await _machineRepo.UpdateAsync(updated, ct);
-        await _machineRepo.SaveChangesAsync(ct);
+        await _uow.Machines.UpdateAsync(updated, ct);
+        await _uow.SaveChangesAsync(ct);
 
         _logger.LogInformation("[{CorrelationId}] Metadata refreshed for {Host}: CPU={Cores}, RAM={Ram}",
             _correlation.CorrelationId, machine.Hostname, hardware?.CpuCores, hardware?.RamBytes);
@@ -307,7 +307,7 @@ internal sealed class InventoryService : IInventoryService
 
     public async Task ExportAsync(MachineQuery query, Stream destination, ExportFormat format, CancellationToken ct = default)
     {
-        var result = await _machineRepo.QueryAsync(query with { PageSize = 10000 }, ct);
+        var result = await _uow.Machines.QueryAsync(query with { PageSize = 10000 }, ct);
 
         if (format == ExportFormat.Json)
         {

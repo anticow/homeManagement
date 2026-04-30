@@ -45,12 +45,12 @@ internal sealed class JobSchedulerService : IJobScheduler, IDisposable
     public async Task<JobId> SubmitAsync(JobDefinition job, CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
-        var jobRepo = scope.ServiceProvider.GetRequiredService<IJobRepository>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
         // ── Idempotency guard ──
         if (job.IdempotencyKey.HasValue)
         {
-            var existing = await jobRepo.GetByIdempotencyKeyAsync(job.IdempotencyKey.Value, ct);
+            var existing = await uow.Jobs.GetByIdempotencyKeyAsync(job.IdempotencyKey.Value, ct);
             if (existing is not null)
             {
                 _logger.LogInformation("[{CorrelationId}] Duplicate submission detected (idempotency key {Key}), returning existing job {JobId}",
@@ -84,8 +84,8 @@ internal sealed class JobSchedulerService : IJobScheduler, IDisposable
             MachineResults: [],
             DefinitionJson: definitionJson);
 
-        await jobRepo.AddAsync(status, ct);
-        await jobRepo.SaveChangesAsync(ct);
+        await uow.Jobs.AddAsync(status, ct);
+        await uow.SaveChangesAsync(ct);
 
         _logger.LogInformation("[{CorrelationId}] Job submitted: {JobId} ({Name}, {Type}, {Targets} targets)",
             _correlation.CorrelationId, jobId, job.Name, job.Type, job.TargetMachineIds.Count);
@@ -143,14 +143,14 @@ internal sealed class JobSchedulerService : IJobScheduler, IDisposable
         await scheduler.DeleteJob(new JobKey(jobId.Value.ToString(), "adhoc"), ct);
 
         using var scope = _scopeFactory.CreateScope();
-        var jobRepo = scope.ServiceProvider.GetRequiredService<IJobRepository>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-        var status = await jobRepo.GetByIdAsync(jobId.Value, ct);
+        var status = await uow.Jobs.GetByIdAsync(jobId.Value, ct);
         if (status is not null && status.State is JobState.Queued or JobState.Running)
         {
             var updated = status with { State = JobState.Cancelled, CompletedUtc = DateTime.UtcNow };
-            await jobRepo.UpdateAsync(updated, ct);
-            await jobRepo.SaveChangesAsync(ct);
+            await uow.Jobs.UpdateAsync(updated, ct);
+            await uow.SaveChangesAsync(ct);
         }
 
         _logger.LogInformation("[{CorrelationId}] Job cancelled: {JobId}", _correlation.CorrelationId, jobId);
@@ -166,18 +166,18 @@ internal sealed class JobSchedulerService : IJobScheduler, IDisposable
     public async Task<JobStatus> GetStatusAsync(JobId jobId, CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
-        var jobRepo = scope.ServiceProvider.GetRequiredService<IJobRepository>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-        return await jobRepo.GetByIdAsync(jobId.Value, ct)
+        return await uow.Jobs.GetByIdAsync(jobId.Value, ct)
             ?? throw new KeyNotFoundException($"Job {jobId} not found.");
     }
 
     public async Task<PagedResult<JobSummary>> ListJobsAsync(JobQuery query, CancellationToken ct = default)
     {
         using var scope = _scopeFactory.CreateScope();
-        var jobRepo = scope.ServiceProvider.GetRequiredService<IJobRepository>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-        return await jobRepo.QueryAsync(query, ct);
+        return await uow.Jobs.QueryAsync(query, ct);
     }
 
     public async Task<IReadOnlyList<ScheduledJobSummary>> ListSchedulesAsync(CancellationToken ct = default)
@@ -246,10 +246,10 @@ internal sealed class JobExecutionQuartzJob : IJob
         _logger.LogInformation("Executing job {JobId}", jobId);
 
         using var scope = _scopeFactory.CreateScope();
-        var jobRepo = scope.ServiceProvider.GetRequiredService<IJobRepository>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var inventory = scope.ServiceProvider.GetRequiredService<IInventoryService>();
 
-        var status = await jobRepo.GetByIdAsync(jobGuid, context.CancellationToken);
+        var status = await uow.Jobs.GetByIdAsync(jobGuid, context.CancellationToken);
         if (status is null)
         {
             _logger.LogWarning("Job {JobId} not found in repository", jobId);
@@ -258,8 +258,8 @@ internal sealed class JobExecutionQuartzJob : IJob
 
         // Mark as running
         var running = status with { State = JobState.Running, StartedUtc = DateTime.UtcNow };
-        await jobRepo.UpdateAsync(running, context.CancellationToken);
-        await jobRepo.SaveChangesAsync(context.CancellationToken);
+        await uow.Jobs.UpdateAsync(running, context.CancellationToken);
+        await uow.SaveChangesAsync(context.CancellationToken);
 
         // Resolve the definition to get target machine IDs
         var definition = status.DefinitionJson is not null
@@ -270,8 +270,8 @@ internal sealed class JobExecutionQuartzJob : IJob
         {
             _logger.LogWarning("Job {JobId} has no target machines", jobId);
             var empty = running with { State = JobState.Completed, CompletedUtc = DateTime.UtcNow };
-            await jobRepo.UpdateAsync(empty, context.CancellationToken);
-            await jobRepo.SaveChangesAsync(context.CancellationToken);
+            await uow.Jobs.UpdateAsync(empty, context.CancellationToken);
+            await uow.SaveChangesAsync(context.CancellationToken);
             return;
         }
 

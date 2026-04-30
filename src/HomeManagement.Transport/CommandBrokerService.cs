@@ -160,7 +160,7 @@ public sealed class CommandBrokerService : ICommandBroker, IHostedService, IAsyn
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            var jobRepo = scope.ServiceProvider.GetRequiredService<IJobRepository>();
+            var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
             var machineResult = new JobMachineResult(
                 machineId, machineName,
@@ -168,10 +168,10 @@ public sealed class CommandBrokerService : ICommandBroker, IHostedService, IAsyn
                 ErrorMessage: result.ExitCode != 0 ? result.Stderr : null,
                 Duration: result.Duration);
 
-            await jobRepo.AddMachineResultAsync(jobId, machineResult, ct);
+            await uow.Jobs.AddMachineResultAsync(jobId, machineResult, ct);
 
             // Update job aggregate counters
-            var job = await jobRepo.GetByIdAsync(jobId, ct);
+            var job = await uow.Jobs.GetByIdAsync(jobId, ct);
             if (job is not null)
             {
                 var newCompleted = job.CompletedTargets + 1;
@@ -188,10 +188,10 @@ public sealed class CommandBrokerService : ICommandBroker, IHostedService, IAsyn
                     CompletedUtc = isFinished ? DateTime.UtcNow : null
                 };
 
-                await jobRepo.UpdateAsync(updated, ct);
+                await uow.Jobs.UpdateAsync(updated, ct);
             }
 
-            await jobRepo.SaveChangesAsync(ct);
+            await uow.SaveChangesAsync(ct);
         }
 #pragma warning disable CA1031 // Result persistence must not crash the processing loop
         catch (Exception ex)
