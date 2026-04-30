@@ -13,6 +13,7 @@ namespace HomeManagement.Patching.Tests;
 public sealed class PatchServiceTests
 {
     private readonly IRemoteExecutor _executor = Substitute.For<IRemoteExecutor>();
+    private readonly IUnitOfWork _uow = Substitute.For<IUnitOfWork>();
     private readonly IPatchHistoryRepository _historyRepo = Substitute.For<IPatchHistoryRepository>();
     private readonly ICorrelationContext _correlation = Substitute.For<ICorrelationContext>();
     private readonly PatchService _sut;
@@ -20,8 +21,9 @@ public sealed class PatchServiceTests
     public PatchServiceTests()
     {
         _correlation.CorrelationId.Returns("test-corr");
+        _uow.PatchHistory.Returns(_historyRepo);
         _sut = new PatchService(
-            _executor, _historyRepo, _correlation, NullLogger<PatchService>.Instance,
+            _executor, _uow, _correlation, NullLogger<PatchService>.Instance,
             new LinuxPatchStrategy(), new WindowsPatchStrategy());
     }
 
@@ -68,7 +70,7 @@ public sealed class PatchServiceTests
 
         result.Successful.Should().Be(1);
         await _historyRepo.Received(2).AddAsync(Arg.Any<PatchHistoryEntry>(), Arg.Any<CancellationToken>());
-        await _historyRepo.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+        await _uow.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]

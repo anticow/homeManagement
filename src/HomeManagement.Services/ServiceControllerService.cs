@@ -22,7 +22,7 @@ namespace HomeManagement.Services;
 internal sealed class ServiceControllerService : IServiceController
 {
     private readonly IRemoteExecutor _executor;
-    private readonly IServiceSnapshotRepository _snapshotRepo;
+    private readonly IUnitOfWork _uow;
     private readonly ICorrelationContext _correlation;
     private readonly ILogger<ServiceControllerService> _logger;
     private readonly LinuxServiceStrategy _linuxStrategy;
@@ -31,7 +31,7 @@ internal sealed class ServiceControllerService : IServiceController
 
     public ServiceControllerService(
         IRemoteExecutor executor,
-        IServiceSnapshotRepository snapshotRepo,
+        IUnitOfWork uow,
         ICorrelationContext correlation,
         ILogger<ServiceControllerService> logger,
         LinuxServiceStrategy linuxStrategy,
@@ -39,7 +39,7 @@ internal sealed class ServiceControllerService : IServiceController
         IEndpointStateProvider? stateProvider = null)
     {
         _executor = executor;
-        _snapshotRepo = snapshotRepo;
+        _uow = uow;
         _correlation = correlation;
         _logger = logger;
         _linuxStrategy = linuxStrategy;
@@ -222,8 +222,8 @@ internal sealed class ServiceControllerService : IServiceController
             ProcessId: info.ProcessId,
             CapturedUtc: DateTime.UtcNow);
 
-        await _snapshotRepo.AddAsync(snapshot, ct);
-        await _snapshotRepo.SaveChangesAsync(ct);
+        await _uow.ServiceSnapshots.AddAsync(snapshot, ct);
+        await _uow.SaveChangesAsync(ct);
     }
 
     private IServiceStrategy GetStrategy(OsType os) => os switch

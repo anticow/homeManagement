@@ -25,7 +25,7 @@ public sealed class JobRepositoryIntegrationTests : IDisposable
         var status = CreateJobStatus();
 
         await _sut.AddAsync(status);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         var retrieved = await _sut.GetByIdAsync(status.Id.Value);
         retrieved.Should().NotBeNull();
@@ -40,7 +40,7 @@ public sealed class JobRepositoryIntegrationTests : IDisposable
         var status = CreateJobStatus(idempotencyKey: key);
 
         await _sut.AddAsync(status);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         var found = await _sut.GetByIdempotencyKeyAsync(key);
         found.Should().NotBeNull();
@@ -59,11 +59,11 @@ public sealed class JobRepositoryIntegrationTests : IDisposable
     {
         var status = CreateJobStatus();
         await _sut.AddAsync(status);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         var result = new JobMachineResult(Guid.NewGuid(), "test-host", true, null, TimeSpan.FromSeconds(5));
         await _sut.AddMachineResultAsync(status.Id.Value, result);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         var retrieved = await _sut.GetByIdAsync(status.Id.Value);
         retrieved!.MachineResults.Should().HaveCount(1);
@@ -77,7 +77,7 @@ public sealed class JobRepositoryIntegrationTests : IDisposable
         var completed = CreateJobStatus(state: JobState.Completed);
         await _sut.AddAsync(queued);
         await _sut.AddAsync(completed);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         var query = new JobQuery(State: JobState.Queued, Page: 1, PageSize: 100);
         var result = await _sut.QueryAsync(query);
@@ -93,7 +93,7 @@ public sealed class JobRepositoryIntegrationTests : IDisposable
         var serviceCtl = CreateJobStatus(type: JobType.ServiceControl);
         await _sut.AddAsync(patchScan);
         await _sut.AddAsync(serviceCtl);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         var query = new JobQuery(Type: JobType.PatchScan, Page: 1, PageSize: 100);
         var result = await _sut.QueryAsync(query);
@@ -107,11 +107,11 @@ public sealed class JobRepositoryIntegrationTests : IDisposable
     {
         var status = CreateJobStatus();
         await _sut.AddAsync(status);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         var updated = status with { State = JobState.Running, StartedUtc = DateTime.UtcNow };
         await _sut.UpdateAsync(updated);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         var retrieved = await _sut.GetByIdAsync(status.Id.Value);
         retrieved!.State.Should().Be(JobState.Running);

@@ -104,11 +104,6 @@ public sealed class MachineRepository : IMachineRepository
         }
     }
 
-    public async Task SaveChangesAsync(CancellationToken ct = default)
-    {
-        await _db.SaveChangesAsync(ct);
-    }
-
     private static Machine ToDomain(MachineEntity e)
     {
         var ipAddresses = string.IsNullOrEmpty(e.IpAddressesJson) ? []

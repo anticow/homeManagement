@@ -25,7 +25,7 @@ public sealed class MachineRepositoryIntegrationTests : IDisposable
         var machine = CreateMachine();
 
         await _sut.AddAsync(machine);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         var retrieved = await _sut.GetByIdAsync(machine.Id);
         retrieved.Should().NotBeNull();
@@ -38,10 +38,10 @@ public sealed class MachineRepositoryIntegrationTests : IDisposable
     {
         var machine = CreateMachine();
         await _sut.AddAsync(machine);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         await _sut.SoftDeleteAsync(machine.Id);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         var afterDelete = await _sut.GetByIdAsync(machine.Id);
         afterDelete.Should().BeNull("soft-deleted machines are excluded by global query filter");
@@ -54,10 +54,10 @@ public sealed class MachineRepositoryIntegrationTests : IDisposable
         var m2 = CreateMachine();
         await _sut.AddAsync(m1);
         await _sut.AddAsync(m2);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         await _sut.SoftDeleteRangeAsync([m1.Id, m2.Id]);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         (await _sut.GetByIdAsync(m1.Id)).Should().BeNull();
         (await _sut.GetByIdAsync(m2.Id)).Should().BeNull();
@@ -68,7 +68,7 @@ public sealed class MachineRepositoryIntegrationTests : IDisposable
     {
         var machines = new[] { CreateMachine(), CreateMachine(), CreateMachine() };
         await _sut.AddRangeAsync(machines);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         foreach (var m in machines)
         {
@@ -84,7 +84,7 @@ public sealed class MachineRepositoryIntegrationTests : IDisposable
         var windows = CreateMachine(OsType.Windows);
         await _sut.AddAsync(linux);
         await _sut.AddAsync(windows);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         var query = new MachineQuery(OsType: OsType.Linux, Page: 1, PageSize: 100);
         var result = await _sut.QueryAsync(query);
@@ -98,9 +98,9 @@ public sealed class MachineRepositoryIntegrationTests : IDisposable
     {
         var machine = CreateMachine();
         await _sut.AddAsync(machine);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
         await _sut.SoftDeleteAsync(machine.Id);
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         var query = new MachineQuery(IncludeDeleted: true, Page: 1, PageSize: 100);
         var result = await _sut.QueryAsync(query);
@@ -113,7 +113,7 @@ public sealed class MachineRepositoryIntegrationTests : IDisposable
     {
         for (int i = 0; i < 5; i++)
             await _sut.AddAsync(CreateMachine());
-        await _sut.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
         var page1 = await _sut.QueryAsync(new MachineQuery(Page: 1, PageSize: 2));
         var page2 = await _sut.QueryAsync(new MachineQuery(Page: 2, PageSize: 2));

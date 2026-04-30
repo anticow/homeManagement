@@ -17,6 +17,7 @@ public sealed class JobSchedulerServiceTests : IDisposable
     private readonly IServiceScopeFactory _scopeFactory = Substitute.For<IServiceScopeFactory>();
     private readonly IServiceScope _scope = Substitute.For<IServiceScope>();
     private readonly IServiceProvider _serviceProvider = Substitute.For<IServiceProvider>();
+    private readonly IUnitOfWork _uow = Substitute.For<IUnitOfWork>();
     private readonly IJobRepository _jobRepo = Substitute.For<IJobRepository>();
     private readonly ICorrelationContext _correlation = Substitute.For<ICorrelationContext>();
     private readonly JobSchedulerService _sut;
@@ -26,7 +27,8 @@ public sealed class JobSchedulerServiceTests : IDisposable
         _correlation.CorrelationId.Returns("test-corr");
         _schedulerFactory = new StdSchedulerFactory();
         _scope.ServiceProvider.Returns(_serviceProvider);
-        _serviceProvider.GetService(typeof(IJobRepository)).Returns(_jobRepo);
+        _uow.Jobs.Returns(_jobRepo);
+        _serviceProvider.GetService(typeof(IUnitOfWork)).Returns(_uow);
         _scopeFactory.CreateScope().Returns(_scope);
 
         _sut = new JobSchedulerService(
@@ -43,7 +45,7 @@ public sealed class JobSchedulerServiceTests : IDisposable
 
         jobId.Value.Should().NotBeEmpty();
         await _jobRepo.Received(1).AddAsync(Arg.Any<JobStatus>(), Arg.Any<CancellationToken>());
-        await _jobRepo.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+        await _uow.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -129,7 +131,7 @@ public sealed class JobSchedulerServiceTests : IDisposable
         await _jobRepo.Received(1).UpdateAsync(
             Arg.Is<JobStatus>(s => s.State == JobState.Cancelled),
             Arg.Any<CancellationToken>());
-        await _jobRepo.Received().SaveChangesAsync(Arg.Any<CancellationToken>());
+        await _uow.Received().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]

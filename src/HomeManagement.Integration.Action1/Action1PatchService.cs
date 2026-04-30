@@ -25,7 +25,7 @@ namespace HomeManagement.Integration.Action1;
 internal sealed class Action1PatchService : IPatchService
 {
     private readonly Action1Client _client;
-    private readonly IPatchHistoryRepository _historyRepo;
+    private readonly IUnitOfWork _uow;
     private readonly IInventoryService _inventory;
     private readonly ILogger<Action1PatchService> _logger;
 
@@ -34,12 +34,12 @@ internal sealed class Action1PatchService : IPatchService
 
     public Action1PatchService(
         Action1Client client,
-        IPatchHistoryRepository historyRepo,
+        IUnitOfWork uow,
         IInventoryService inventory,
         ILogger<Action1PatchService> logger)
     {
         _client = client;
-        _historyRepo = historyRepo;
+        _uow = uow;
         _inventory = inventory;
         _logger = logger;
     }
@@ -153,7 +153,7 @@ internal sealed class Action1PatchService : IPatchService
 
     public Task<IReadOnlyList<PatchHistoryEntry>> GetHistoryAsync(
         Guid machineId, CancellationToken ct = default) =>
-        _historyRepo.GetByMachineAsync(machineId, ct);
+        _uow.PatchHistory.GetByMachineAsync(machineId, ct);
 
     public async Task<IReadOnlyList<InstalledPatch>> GetInstalledAsync(
         MachineTarget target, CancellationToken ct = default)
@@ -229,7 +229,7 @@ internal sealed class Action1PatchService : IPatchService
         foreach (var r in results)
         {
             var state = r.Status == "Installed" ? PatchInstallState.Installed : PatchInstallState.Failed;
-            await _historyRepo.AddAsync(new PatchHistoryEntry(
+            await _uow.PatchHistory.AddAsync(new PatchHistoryEntry(
                 Id: Guid.NewGuid(),
                 MachineId: machineId,
                 PatchId: r.PatchId,
@@ -238,7 +238,7 @@ internal sealed class Action1PatchService : IPatchService
                 TimestampUtc: DateTime.UtcNow,
                 ErrorMessage: r.ErrorMessage), ct);
         }
-        await _historyRepo.SaveChangesAsync(ct);
+        await _uow.SaveChangesAsync(ct);
     }
 
     private static PatchResult EmptyFailedResult(Guid machineId, IReadOnlyList<PatchInfo> patches) =>

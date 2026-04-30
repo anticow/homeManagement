@@ -48,11 +48,6 @@ public sealed class ServiceSnapshotRepository : IServiceSnapshotRepository
         await _db.ServiceSnapshots.AddAsync(entity, ct);
     }
 
-    public async Task SaveChangesAsync(CancellationToken ct = default)
-    {
-        await _db.SaveChangesAsync(ct);
-    }
-
     private static ServiceSnapshot ToDomain(ServiceSnapshotEntity e) => new(
         e.Id, e.MachineId, e.ServiceName, e.DisplayName,
         e.State, e.StartupType, e.ProcessId, e.CapturedUtc);

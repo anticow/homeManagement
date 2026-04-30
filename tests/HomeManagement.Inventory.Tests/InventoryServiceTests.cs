@@ -12,6 +12,7 @@ namespace HomeManagement.Inventory.Tests;
 
 public sealed class InventoryServiceTests
 {
+    private readonly IUnitOfWork _uow = Substitute.For<IUnitOfWork>();
     private readonly IMachineRepository _machineRepo = Substitute.For<IMachineRepository>();
     private readonly IRemoteExecutor _executor = Substitute.For<IRemoteExecutor>();
     private readonly ICorrelationContext _correlation = Substitute.For<ICorrelationContext>();
@@ -20,7 +21,8 @@ public sealed class InventoryServiceTests
     public InventoryServiceTests()
     {
         _correlation.CorrelationId.Returns("test-correlation");
-        _sut = new InventoryService(_machineRepo, _executor, _correlation, NullLogger<InventoryService>.Instance);
+        _uow.Machines.Returns(_machineRepo);
+        _sut = new InventoryService(_uow, _executor, _correlation, NullLogger<InventoryService>.Instance);
     }
 
     [Fact]
@@ -36,7 +38,7 @@ public sealed class InventoryServiceTests
         result.Hostname.Value.Should().Be("test-host");
         result.OsType.Should().Be(OsType.Linux);
         await _machineRepo.Received(1).AddAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
-        await _machineRepo.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+        await _uow.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -60,7 +62,7 @@ public sealed class InventoryServiceTests
 
         result.State.Should().Be(MachineState.Maintenance);
         await _machineRepo.Received(1).UpdateAsync(Arg.Any<Machine>(), Arg.Any<CancellationToken>());
-        await _machineRepo.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+        await _uow.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -71,7 +73,7 @@ public sealed class InventoryServiceTests
         await _sut.RemoveAsync(id);
 
         await _machineRepo.Received(1).SoftDeleteAsync(id, Arg.Any<CancellationToken>());
-        await _machineRepo.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+        await _uow.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -82,7 +84,7 @@ public sealed class InventoryServiceTests
         await _sut.BatchRemoveAsync(ids);
 
         await _machineRepo.Received(1).SoftDeleteRangeAsync(ids, Arg.Any<CancellationToken>());
-        await _machineRepo.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+        await _uow.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]

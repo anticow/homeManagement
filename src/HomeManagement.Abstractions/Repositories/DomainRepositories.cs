@@ -4,8 +4,8 @@ namespace HomeManagement.Abstractions.Repositories;
 
 /// <summary>
 /// Unit of Work — coordinates SaveChanges across all repositories sharing the same DbContext.
-/// Consumers should call <see cref="SaveChangesAsync"/> once after a batch of repository operations
-/// rather than calling SaveChangesAsync on individual repositories.
+/// Callers must use <see cref="IUnitOfWork.SaveChangesAsync"/> rather than calling SaveChanges
+/// on individual repositories.
 /// </summary>
 public interface IUnitOfWork : IDisposable
 {
@@ -26,14 +26,12 @@ public interface IMachineRepository
     Task UpdateAsync(Machine machine, CancellationToken ct = default);
     Task SoftDeleteAsync(Guid id, CancellationToken ct = default);
     Task SoftDeleteRangeAsync(IReadOnlyList<Guid> ids, CancellationToken ct = default);
-    Task SaveChangesAsync(CancellationToken ct = default);
 }
 
 public interface IPatchHistoryRepository
 {
     Task<IReadOnlyList<PatchHistoryEntry>> GetByMachineAsync(Guid machineId, CancellationToken ct = default);
     Task AddAsync(PatchHistoryEntry entry, CancellationToken ct = default);
-    Task SaveChangesAsync(CancellationToken ct = default);
 }
 
 public interface IAuditEventRepository
@@ -49,7 +47,6 @@ public interface IAuditEventRepository
     /// Returns (Valid=true, count, null) on success; (Valid=false, count up to failure, failedEventId) on first tamper detected.
     /// </summary>
     Task<(bool Valid, long Verified, string? FailedAtEventId)> VerifyChainAsync(byte[] hmacKey, CancellationToken ct = default);
-    Task SaveChangesAsync(CancellationToken ct = default);
 }
 
 public interface IJobRepository
@@ -60,7 +57,6 @@ public interface IJobRepository
     Task AddAsync(JobStatus job, CancellationToken ct = default);
     Task UpdateAsync(JobStatus job, CancellationToken ct = default);
     Task AddMachineResultAsync(Guid jobId, JobMachineResult result, CancellationToken ct = default);
-    Task SaveChangesAsync(CancellationToken ct = default);
 }
 
 public interface IServiceSnapshotRepository
@@ -68,7 +64,6 @@ public interface IServiceSnapshotRepository
     Task<IReadOnlyList<ServiceSnapshot>> GetByMachineAsync(Guid machineId, CancellationToken ct = default);
     Task<ServiceSnapshot?> GetLatestAsync(Guid machineId, string serviceName, CancellationToken ct = default);
     Task AddAsync(ServiceSnapshot snapshot, CancellationToken ct = default);
-    Task SaveChangesAsync(CancellationToken ct = default);
 }
 
 public interface IAutomationRunRepository

@@ -12,6 +12,7 @@ namespace HomeManagement.Auditing.Tests;
 
 public sealed class AuditLoggerServiceTests
 {
+    private readonly IUnitOfWork _uow = Substitute.For<IUnitOfWork>();
     private readonly IAuditEventRepository _repo = Substitute.For<IAuditEventRepository>();
     private readonly ISensitiveDataFilter _filter = Substitute.For<ISensitiveDataFilter>();
     private readonly ICorrelationContext _correlation = Substitute.For<ICorrelationContext>();
@@ -31,8 +32,9 @@ public sealed class AuditLoggerServiceTests
         _filter.RedactProperties(Arg.Any<IReadOnlyDictionary<string, string>?>())
             .Returns(ci => ci.Arg<IReadOnlyDictionary<string, string>?>());
         _repo.GetLastEventHashAsync(Arg.Any<CancellationToken>()).Returns((string?)null);
+        _uow.AuditEvents.Returns(_repo);
 
-        _sut = new AuditLoggerService(_repo, _filter, _correlation, NullLogger<AuditLoggerService>.Instance, TestOptions);
+        _sut = new AuditLoggerService(_uow, _filter, _correlation, NullLogger<AuditLoggerService>.Instance, TestOptions);
     }
 
     [Fact]
@@ -43,7 +45,7 @@ public sealed class AuditLoggerServiceTests
         await _sut.RecordAsync(evt);
 
         await _repo.Received(1).AddAsync(Arg.Any<AuditEvent>(), Arg.Any<string?>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
-        await _repo.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+        await _uow.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]

@@ -28,11 +28,6 @@ public sealed class PatchHistoryRepository : IPatchHistoryRepository
         await _db.PatchHistory.AddAsync(entity, ct);
     }
 
-    public async Task SaveChangesAsync(CancellationToken ct = default)
-    {
-        await _db.SaveChangesAsync(ct);
-    }
-
     private static PatchHistoryEntry ToDomain(PatchHistoryEntity e) => new(
         e.Id, e.MachineId, e.PatchId, e.Title, e.State, e.TimestampUtc, e.ErrorMessage);
 
