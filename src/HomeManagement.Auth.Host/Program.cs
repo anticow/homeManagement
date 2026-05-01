@@ -61,8 +61,9 @@ await using (var scope = app.Services.CreateAsyncScope())
 // ── Security headers ──
 app.UseHomeManagementSecurityHeaders();
 
-// ── Correlation ID + HTTP request logging ──
+// ── Correlation ID + exception handling + HTTP request logging ──
 app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseHomeManagementExceptionHandler();
 app.UseSerilogRequestLogging(opts =>
     opts.GetLevel = (ctx, _, _) =>
         ctx.Request.Path.StartsWithSegments("/healthz") || ctx.Request.Path.StartsWithSegments("/readyz")
