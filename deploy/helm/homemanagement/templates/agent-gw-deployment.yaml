@@ -69,11 +69,17 @@ spec:
             httpGet:
               path: /healthz
               port: {{ .Values.agentGateway.apiPort }}
+              httpHeaders:
+                - name: Host
+                  value: localhost
             initialDelaySeconds: 10
             periodSeconds: 30
           readinessProbe:
             httpGet:
               path: /readyz
               port: {{ .Values.agentGateway.apiPort }}
+              httpHeaders:
+                - name: Host
+                  value: localhost
             initialDelaySeconds: 5
             periodSeconds: 10
