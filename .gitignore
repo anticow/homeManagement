@@ -36,6 +36,10 @@ deploy/docker/.env
 
 ## Development certificates
 certs/
+# Exception: the mssql-dev.crt placeholder is a public artifact, not a secret
+!deploy/docker/certs/
+!deploy/docker/certs/**
+
 
 ## Agent configuration (contains secrets - use hm-agent.json.template instead)
 hm-agent.json

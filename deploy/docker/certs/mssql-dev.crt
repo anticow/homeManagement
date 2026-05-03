@@ -1,0 +1,3 @@
+# Placeholder — replace with the actual SQL Server dev certificate.
+# Run: bash deploy/docker/scripts/setup-dev-mssql-cert.sh
+# Then rebuild: docker compose build broker auth agent-gw
