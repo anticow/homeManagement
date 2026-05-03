@@ -62,7 +62,7 @@ spec:
             - name: Serilog__MinimumLevel__Override__System.Net.Http
               value: {{ .Values.serilog.overrides.systemNetHttp | quote }}
             - name: AllowedHosts
-              value: "{{ .Values.ingress.host }};hm-agent-gw.{{ .Release.Namespace }}.svc.cluster.local;localhost"
+              value: "{{ .Values.ingress.agentGatewayApiHost }};{{ .Values.ingress.agentGatewayHost }};hm-agent-gw;hm-agent-gw.{{ .Release.Namespace }}.svc.cluster.local;localhost"
           resources:
             {{- toYaml .Values.agentGateway.resources | nindent 12 }}
           livenessProbe:

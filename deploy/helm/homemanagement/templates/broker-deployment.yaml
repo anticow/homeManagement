@@ -93,7 +93,7 @@ spec:
             - name: Serilog__MinimumLevel__Override__System.Net.Http
               value: {{ .Values.serilog.overrides.systemNetHttp | quote }}
             - name: AllowedHosts
-              value: "{{ .Values.ingress.host }};hm-broker.{{ .Release.Namespace }}.svc.cluster.local;localhost"
+              value: "{{ .Values.ingress.host }};{{ .Values.ingress.brokerHost }};hm-broker;hm-broker.{{ .Release.Namespace }}.svc.cluster.local;localhost"
           resources:
             {{- toYaml .Values.broker.resources | nindent 12 }}
           livenessProbe:
