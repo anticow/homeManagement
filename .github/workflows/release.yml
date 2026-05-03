@@ -288,8 +288,8 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer $DISPATCH_TOKEN" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            https://api.github.com/repos/anticow/ansible/actions/workflows/ansible-deploy.yml/dispatches \
-            -d '{"ref":"master","inputs":{"playbook":"configure-argocd-app.yml","environment":"cowgo","check":"false"}}')
+            https://api.github.com/repos/anticow/ansible/actions/workflows/platform-configure.yml/dispatches \
+            -d '{"ref":"master","inputs":{"operation":"argocd-app","environment":"cowgo","check":"false"}}')
           if echo "$HTTP_STATUS" | grep -qE "^(204|200)$"; then
             echo "Ansible dispatch succeeded (HTTP $HTTP_STATUS)"
           else
