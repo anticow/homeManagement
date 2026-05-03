@@ -274,3 +274,17 @@ jobs:
           git diff --staged --quiet && echo "No tag change to commit" && exit 0
           git commit -m "chore: deploy ${{ steps.version.outputs.version }} [skip ci]"
           git push origin master
+
+      - name: Trigger ArgoCD Application sync via Ansible
+        if: ${{ secrets.ANSIBLE_REPO_DISPATCH_TOKEN != '' }}
+        env:
+          DISPATCH_TOKEN: ${{ secrets.ANSIBLE_REPO_DISPATCH_TOKEN }}
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $DISPATCH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/anticow/ansible/actions/workflows/ansible-deploy.yml/dispatches \
+            -d '{"ref":"master","inputs":{"playbook":"configure-argocd-app.yml","environment":"cowgo","check":"false"}}' \
+          | grep -qE "^(204|200)$" && echo "Dispatch succeeded" || echo "Dispatch skipped (check ANSIBLE_REPO_DISPATCH_TOKEN)"
