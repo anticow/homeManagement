@@ -41,23 +41,14 @@ builder.Services.AddHealthChecks();
 // The health check treats 3xx as "service is alive" (Healthy with redirect noted in Detail).
 builder.Services.AddHttpClient("platform-health", c =>
     c.Timeout = TimeSpan.FromSeconds(5))
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-    {
-        ServerCertificateCustomValidationCallback =
-            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
-        AllowAutoRedirect = false,
-    });
+    .ConfigurePrimaryHttpMessageHandler(GatewayHttpHandlers.CreatePlatformHealthHandler);
 
 // Named client used by PlatformHealthEndpoint to query the Kubernetes API for pod start times.
-// Cert validation is bypassed for the in-cluster API server's self-signed certificate.
+// Cert validation uses the in-cluster CA when available, otherwise system trust.
 // Best-effort: failures produce no pod-age data, health checks are unaffected.
 builder.Services.AddHttpClient("k8s-api", c =>
     c.Timeout = TimeSpan.FromSeconds(5))
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-    {
-        ServerCertificateCustomValidationCallback =
-            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
-    });
+    .ConfigurePrimaryHttpMessageHandler(GatewayHttpHandlers.CreateK8sHandler);
 
 var app = builder.Build();
 

@@ -28,6 +28,29 @@ public sealed class UpdateCommandHandler(
         logger.LogInformation("Starting update to version {Version} from {Url}",
             directive.TargetVersion, directive.DownloadUrl);
 
+        // Reject directives missing required security fields before any I/O
+        if (directive.BinarySha256.IsEmpty)
+        {
+            logger.LogError("Rejecting update directive: BinarySha256 is required");
+            return;
+        }
+        if (directive.SignatureEd25519.IsEmpty)
+        {
+            logger.LogError("Rejecting update directive: SignatureEd25519 is required");
+            return;
+        }
+        var signingKey = config.Value.UpdateSigningPublicKey;
+        if (signingKey is null || signingKey.Length == 0)
+        {
+            logger.LogError("Rejecting update directive: UpdateSigningPublicKey is not configured");
+            return;
+        }
+        if (!directive.DownloadUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogError("Rejecting update directive: DownloadUrl must use HTTPS");
+            return;
+        }
+
         var stagingDir = Path.Combine(Path.GetTempPath(), "hm-agent-update", directive.TargetVersion);
         Directory.CreateDirectory(stagingDir);
 

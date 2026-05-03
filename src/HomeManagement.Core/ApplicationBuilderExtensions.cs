@@ -21,6 +21,8 @@ public static class ApplicationBuilderExtensions
             ctx.Response.Headers.Append("X-Frame-Options", "DENY");
             ctx.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
             ctx.Response.Headers.Append("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+            ctx.Response.Headers.Append("Content-Security-Policy",
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none';");
             await next();
         });
     }
@@ -104,7 +106,8 @@ public static class ApplicationBuilderExtensions
         app.MapGet("/version",
                 () => new { version = Environment.GetEnvironmentVariable("APP_VERSION") ?? "unknown" })
             .AllowAnonymous().ExcludeFromDescription();
-        app.MapPrometheusScrapingEndpoint();
+        app.MapPrometheusScrapingEndpoint()
+           .RequireHost("localhost", "127.0.0.1");
         return app;
     }
 }

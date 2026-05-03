@@ -59,6 +59,7 @@ await using (var scope = app.Services.CreateAsyncScope())
 }
 
 // ── Security headers ──
+app.UseHsts();
 app.UseHomeManagementSecurityHeaders();
 
 // ── Correlation ID + exception handling + HTTP request logging ──

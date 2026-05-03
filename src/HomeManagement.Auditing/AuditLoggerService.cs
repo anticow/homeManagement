@@ -18,7 +18,7 @@ namespace HomeManagement.Auditing;
 /// and are preserved but not part of the HMAC chain.
 /// Sensitive data is automatically redacted before persistence.
 /// </summary>
-internal sealed class AuditLoggerService : IAuditLogger
+internal sealed class AuditLoggerService : IAuditLogger, IDisposable
 {
     private const int ChainVersion = 1;
 
@@ -27,7 +27,7 @@ internal sealed class AuditLoggerService : IAuditLogger
     private readonly ICorrelationContext _correlation;
     private readonly ILogger<AuditLoggerService> _logger;
     private readonly byte[] _hmacKey;
-    private readonly object _chainLock = new();
+    private readonly SemaphoreSlim _chainLock = new SemaphoreSlim(1, 1);
 
     public AuditLoggerService(
         IUnitOfWork uow,
@@ -55,13 +55,18 @@ internal sealed class AuditLoggerService : IAuditLogger
                 : auditEvent.CorrelationId
         };
 
-        // Compute HMAC-SHA256 chain hash — lock ensures no two events race for the same previousHash
+        // Compute HMAC-SHA256 chain hash — semaphore ensures no two events race for the same previousHash
         string? previousHash;
         string eventHash;
-        lock (_chainLock)
+        await _chainLock.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            previousHash = _uow.AuditEvents.GetLastEventHashAsync(ct).GetAwaiter().GetResult();
+            previousHash = await _uow.AuditEvents.GetLastEventHashAsync(ct);
             eventHash = ComputeEventHash(redacted, previousHash, _hmacKey);
+        }
+        finally
+        {
+            _chainLock.Release();
         }
 
         await _uow.AuditEvents.AddAsync(redacted, previousHash, eventHash, ChainVersion, ct);
@@ -121,11 +126,6 @@ internal sealed class AuditLoggerService : IAuditLogger
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Quotes a CSV field and defends against spreadsheet formula injection (CWE-1236).
-    /// All fields are double-quoted; values starting with formula trigger characters
-    /// are prefixed with a tab to prevent execution in spreadsheet applications.
-    /// </summary>
     private static string CsvField(string? value)
     {
         var s = value ?? string.Empty;
@@ -134,4 +134,6 @@ internal sealed class AuditLoggerService : IAuditLogger
             s = '\t' + s;
         return $"\"{s.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
     }
+
+    public void Dispose() => _chainLock.Dispose();
 }

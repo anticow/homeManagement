@@ -72,6 +72,8 @@ spec:
             - name: Auth__BootstrapAdmin__Email
               value: {{ .Values.auth.bootstrapAdmin.email | quote }}
             {{- end }}
+            - name: AllowedHosts
+              value: "{{ .Values.ingress.host }};hm-auth.{{ .Release.Namespace }}.svc.cluster.local;localhost"
           resources:
             {{- toYaml .Values.authService.resources | nindent 12 }}
           livenessProbe:

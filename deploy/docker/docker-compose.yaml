@@ -32,10 +32,10 @@ services:
       dockerfile: docker/broker.Dockerfile
     restart: on-failure:3
     ports:
-      - "8082:8082"
+      - "127.0.0.1:8082:8082"
     environment:
       ASPNETCORE_URLS: "http://+:8082"
-      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=${HM_SQL_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True;Command Timeout=120;"
+      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=${HM_SQL_SA_PASSWORD};Encrypt=True;TrustServerCertificate=${HM_TRUST_SERVER_CERT:-True};Command Timeout=120;"
       AgentGateway__ApiKey: "${HM_AGENT_GATEWAY_API_KEY}"
       Auth__JwtSigningKey: "${HM_JWT_SIGNING_KEY}"
       Auth__Issuer: "homemanagement"
@@ -68,10 +68,10 @@ services:
       dockerfile: docker/auth.Dockerfile
     restart: on-failure:3
     ports:
-      - "8083:8083"
+      - "127.0.0.1:8083:8083"
     environment:
       ASPNETCORE_URLS: "http://+:8083"
-      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=${HM_SQL_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True;Command Timeout=120;"
+      ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=${HM_SQL_SA_PASSWORD};Encrypt=True;TrustServerCertificate=${HM_TRUST_SERVER_CERT:-True};Command Timeout=120;"
       Auth__JwtSigningKey: "${HM_JWT_SIGNING_KEY}"
       Auth__Issuer: "homemanagement"
       Auth__Audience: "homemanagement-api"
@@ -98,7 +98,7 @@ services:
       context: ../..
       dockerfile: docker/web.Dockerfile
     ports:
-      - "8084:8080"
+      - "127.0.0.1:8084:8080"
     environment:
       ASPNETCORE_URLS: "http://+:8080"
       BrokerApi__BaseUrl: "http://broker:8082"
@@ -121,7 +121,7 @@ services:
       context: ../..
       dockerfile: docker/gateway.Dockerfile
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     environment:
       ASPNETCORE_URLS: "http://+:8081"
       Auth__JwtSigningKey: "${HM_JWT_SIGNING_KEY}"
@@ -145,8 +145,8 @@ services:
       context: ../..
       dockerfile: docker/agent-gw.Dockerfile
     ports:
-      - "9444:9444"
-      - "9445:9445"
+      - "127.0.0.1:9444:9444"
+      - "127.0.0.1:9445:9445"
     environment:
       Kestrel__Endpoints__Grpc__Url: "http://+:9444"
       Kestrel__Endpoints__Grpc__Protocols: "Http2"

@@ -1,5 +1,5 @@
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 EXPOSE 8082
 
@@ -34,5 +34,9 @@ FROM base AS final
 RUN adduser --disabled-password --gecos "" appuser && \
     mkdir -p /app/logs && chown appuser:appuser /app/logs
 COPY --from=build /app/publish .
+COPY deploy/docker/certs/mssql-dev.crt /usr/local/share/ca-certificates/mssql-dev.crt
+RUN if grep -q "BEGIN CERTIFICATE" /usr/local/share/ca-certificates/mssql-dev.crt; then \
+      update-ca-certificates; \
+    fi
 USER appuser
 ENTRYPOINT ["dotnet", "HomeManagement.Broker.Host.dll"]

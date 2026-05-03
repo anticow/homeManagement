@@ -118,16 +118,28 @@ var app = builder.Build();
 app.Services.GetRequiredService<IJwtTokenService>();
 
 // ── Security headers ──
+app.UseHsts();
 app.UseHomeManagementSecurityHeaders();
 
 // ── Correlation ID + exception handling + HTTP request logging ──
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseHomeManagementExceptionHandler();
-app.UseSerilogRequestLogging(opts =>
-    opts.GetLevel = (ctx, _, _) =>
+app.UseSerilogRequestLogging(options =>
+{
+    options.GetLevel = (ctx, _, _) =>
         ctx.Request.Path.StartsWithSegments("/healthz") || ctx.Request.Path.StartsWithSegments("/readyz")
             ? Serilog.Events.LogEventLevel.Verbose
-            : Serilog.Events.LogEventLevel.Information);
+            : Serilog.Events.LogEventLevel.Information;
+    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+    {
+        // Scrub access_token from query string before it hits Seq
+        var query = httpContext.Request.QueryString.Value ?? string.Empty;
+        var scrubbed = System.Text.RegularExpressions.Regex.Replace(
+            query, @"access_token=[^&]*", "access_token=REDACTED",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        diagnosticContext.Set("RequestQuery", scrubbed);
+    };
+});
 
 // ── Health ──
 app.UseHomeManagementHealthEndpoints();

@@ -28,6 +28,7 @@ builder.Services.AddHealthChecks();
 var app = builder.Build();
 
 // ── Security headers ──
+app.UseHsts();
 app.UseHomeManagementSecurityHeaders();
 
 // ── Correlation ID + exception handling + HTTP request logging ──

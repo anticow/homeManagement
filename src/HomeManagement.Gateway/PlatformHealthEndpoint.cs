@@ -177,7 +177,7 @@ internal static class PlatformHealthEndpoint
             .Contains("text/html", StringComparison.OrdinalIgnoreCase);
         return wantsHtml
             ? Results.Content(BuildHtml(results, overall, checkedAt, gatewayVersion), "text/html; charset=utf-8")
-            : Results.Ok(new { status = overall, version = gatewayVersion, checkedAtUtc = checkedAt, components = results });
+            : Results.Ok(new { status = overall, checkedAtUtc = checkedAt, components = results });
     }
 
     // ── Health + version probing ───────────────────────────────────────────────────────────────

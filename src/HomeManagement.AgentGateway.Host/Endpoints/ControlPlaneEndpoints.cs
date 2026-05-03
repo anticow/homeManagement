@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using HomeManagement.Abstractions.Models;
 using HomeManagement.AgentGateway.Host.Services;
 
@@ -18,7 +19,9 @@ public static class ControlPlaneEndpoints
                 ?? throw new InvalidOperationException("AgentGateway:ApiKey must be configured.");
 
             var suppliedKey = context.HttpContext.Request.Headers[HeaderName].FirstOrDefault();
-            if (!string.Equals(expectedKey, suppliedKey, StringComparison.Ordinal))
+            var expectedBytes = System.Text.Encoding.UTF8.GetBytes(expectedKey ?? string.Empty);
+            var suppliedBytes = System.Text.Encoding.UTF8.GetBytes(suppliedKey ?? string.Empty);
+            if (!CryptographicOperations.FixedTimeEquals(expectedBytes, suppliedBytes))
             {
                 return Results.Unauthorized();
             }

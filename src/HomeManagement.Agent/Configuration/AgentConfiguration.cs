@@ -38,7 +38,7 @@ public sealed class AgentConfiguration
     public string SeqUrl { get; set; } = string.Empty;
 
     // ── Update ──
-    public bool AutoUpdateEnabled { get; set; } = true;
+    public bool AutoUpdateEnabled { get; set; }
     public string UpdateStagingDir { get; set; } = "staging/";
 
     /// <summary>
@@ -61,6 +61,10 @@ public sealed class AgentConfiguration
             throw new InvalidOperationException(
                 "Agent:UseTls may be false only when Agent:ControlServer targets localhost or another loopback address.");
         }
+
+        if (AutoUpdateEnabled && (UpdateSigningPublicKey is null || UpdateSigningPublicKey.Length == 0))
+            throw new InvalidOperationException(
+                "AgentConfiguration: UpdateSigningPublicKey must be set when AutoUpdateEnabled is true.");
     }
 
     internal static bool IsLoopbackControlServer(string controlServer)

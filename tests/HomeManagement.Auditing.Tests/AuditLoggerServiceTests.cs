@@ -10,7 +10,7 @@ using NSubstitute;
 
 namespace HomeManagement.Auditing.Tests;
 
-public sealed class AuditLoggerServiceTests
+public sealed class AuditLoggerServiceTests : IDisposable
 {
     private readonly IUnitOfWork _uow = Substitute.For<IUnitOfWork>();
     private readonly IAuditEventRepository _repo = Substitute.For<IAuditEventRepository>();
@@ -204,4 +204,6 @@ public sealed class AuditLoggerServiceTests
         Properties: null,
         Outcome: AuditOutcome.Success,
         ErrorMessage: null);
+
+    public void Dispose() => _sut.Dispose();
 }
