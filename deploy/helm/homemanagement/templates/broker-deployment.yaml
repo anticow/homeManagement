@@ -76,6 +76,10 @@ spec:
                   name: hm-secrets
                   key: action1-webhook-secret
             {{- end }}
+            - name: DataDirectory
+              value: "/tmp/homemanagement"
+            - name: Vault__StoragePath
+              value: "/tmp/hm-vault"
             - name: Prometheus__Enabled
               value: {{ .Values.prometheus.enabled | quote }}
             - name: Prometheus__Url

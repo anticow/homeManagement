@@ -38,5 +38,6 @@ COPY deploy/docker/certs/mssql-dev.crt /usr/local/share/ca-certificates/mssql-de
 RUN if grep -q "BEGIN CERTIFICATE" /usr/local/share/ca-certificates/mssql-dev.crt; then \
       update-ca-certificates; \
     fi
+ENV HOME=/home/appuser
 USER appuser
 ENTRYPOINT ["dotnet", "HomeManagement.Broker.Host.dll"]

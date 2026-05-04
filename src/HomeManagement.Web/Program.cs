@@ -2,6 +2,7 @@ using HomeManagement.Abstractions.CrossCutting;
 using HomeManagement.Web.Services;
 using HomeManagement.Core;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Refit;
 using Serilog;
 using System.Globalization;
@@ -62,6 +63,16 @@ builder.Services.AddScoped<EventHubClient>();
 
 builder.Services.AddHealthChecks();
 builder.Services.AddSingleton<ICorrelationContext, CorrelationContext>();
+
+// ── Data Protection — persist keys to file system so antiforgery tokens survive pod restarts ──
+var dpKeyPath = builder.Configuration["DataProtection:KeyStorePath"];
+var dpBuilder = builder.Services.AddDataProtection()
+    .SetApplicationName("homemanagement");
+if (!string.IsNullOrWhiteSpace(dpKeyPath))
+{
+    Directory.CreateDirectory(dpKeyPath);
+    dpBuilder.PersistKeysToFileSystem(new System.IO.DirectoryInfo(dpKeyPath));
+}
 
 var app = builder.Build();
 

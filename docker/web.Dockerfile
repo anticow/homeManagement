@@ -21,5 +21,6 @@ FROM base AS final
 RUN adduser --disabled-password --gecos "" appuser && \
     mkdir -p /app/logs && chown appuser:appuser /app/logs
 COPY --from=build /app/publish .
+ENV HOME=/home/appuser
 USER appuser
 ENTRYPOINT ["dotnet", "HomeManagement.Web.dll"]

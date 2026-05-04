@@ -47,6 +47,11 @@ spec:
               value: {{ .Values.serilog.overrides.systemNetHttp | quote }}
             - name: AllowedHosts
               value: "{{ .Values.ingress.host }};hm-web;hm-web.{{ .Release.Namespace }}.svc.cluster.local;localhost"
+            - name: DataProtection__KeyStorePath
+              value: "/dpkeys"
+          volumeMounts:
+            - name: dpkeys
+              mountPath: /dpkeys
           resources:
             {{- toYaml .Values.web.resources | nindent 12 }}
           livenessProbe:
@@ -67,6 +72,9 @@ spec:
                   value: localhost
             initialDelaySeconds: 5
             periodSeconds: 10
+      volumes:
+        - name: dpkeys
+          emptyDir: {}
 ---
 {{- if .Values.web.autoscaling.enabled }}
 apiVersion: autoscaling/v2
