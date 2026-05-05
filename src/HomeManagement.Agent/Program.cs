@@ -102,6 +102,7 @@ internal static class Program
                     services.AddSingleton<ICommandHandler, ServiceCommandHandler>();
                     services.AddSingleton<ICommandHandler, PatchCommandHandler>(sp => sp.GetRequiredService<PatchCommandHandler>());
                     services.AddSingleton<ICommandHandler, PatchApplyCommandHandler>();
+                    services.AddSingleton<ICommandHandler, ProcessListHandler>();
 
                     // Update handler
                     services.AddSingleton<UpdateCommandHandler>();

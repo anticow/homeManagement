@@ -27,6 +27,9 @@ public interface IBrokerApi
     [Get("/api/machines/summary")]
     Task<MachineSummary> GetMachineSummaryAsync(CancellationToken ct = default);
 
+    [Get("/api/machines/{id}/processes")]
+    Task<IReadOnlyList<ProcessInfo>> GetMachineProcessesAsync(Guid id, CancellationToken ct = default);
+
     // ── Patching ──
     [Post("/api/patching/scan")]
     Task<IReadOnlyList<PatchInfo>> ScanPatchesAsync([Body] PatchScanRequest request, CancellationToken ct = default);

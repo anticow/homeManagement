@@ -108,5 +108,22 @@ public static class MachineEndpoints
             var result = await executor.TestConnectionAsync(target, ct);
             return Results.Ok(result);
         });
+
+        group.MapGet("/{id:guid}/processes", async (
+            Guid id,
+            IInventoryService inventory,
+            IProcessListService? processListService,
+            CancellationToken ct) =>
+        {
+            var machine = await inventory.GetAsync(id, ct);
+            if (machine is null) return Results.NotFound();
+
+            if (processListService is null)
+                return Results.Ok(Array.Empty<ProcessInfo>());
+
+            var target = new MachineTarget(machine.Id, machine.Hostname, machine.OsType, machine.ConnectionMode, machine.Protocol, machine.Port, machine.CredentialId);
+            var processes = await processListService.ListAsync(target, ct);
+            return Results.Ok(processes);
+        });
     }
 }

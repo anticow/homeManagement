@@ -3,6 +3,7 @@ using HomeManagement.Web.Services;
 using HomeManagement.Core;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Options;
 using Refit;
 using Serilog;
 using System.Globalization;
@@ -63,6 +64,10 @@ builder.Services.AddScoped<EventHubClient>();
 
 builder.Services.AddHealthChecks();
 builder.Services.AddSingleton<ICorrelationContext, CorrelationContext>();
+
+// ── Grafana embedding configuration ──
+builder.Services.Configure<GrafanaOptions>(
+    builder.Configuration.GetSection(GrafanaOptions.SectionName));
 
 // ── Data Protection — persist keys to file system so antiforgery tokens survive pod restarts ──
 var dpKeyPath = builder.Configuration["DataProtection:KeyStorePath"];

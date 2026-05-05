@@ -1,7 +1,10 @@
 @page "/machines/{Id:guid}"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using HomeManagement.Abstractions
 @using HomeManagement.Abstractions.Models
+@using Microsoft.Extensions.Options
 @inject HomeManagement.Web.Services.IBrokerApi BrokerApi
+@inject IOptions<HomeManagement.Web.Services.GrafanaOptions> GrafanaOpts
 @inject NavigationManager Navigation
 
 @if (_loading)
@@ -37,7 +40,7 @@ else if (_machine is not null)
         </tbody>
     </table>
 
-    <!-- Live Prometheus metrics -->
+    <!-- ── Live Prometheus metrics ────────────────────────────────────────── -->
     <h2 style="margin-top:24px; display:flex; align-items:center; gap:10px;">
         Live Status
         @if (_state is not null)
@@ -100,6 +103,141 @@ else if (_machine is not null)
         }
     }
 
+    <!-- ── Grafana dashboard panels (F-5) ─────────────────────────────────── -->
+    @if (GrafanaOpts.Value.IsConfigured)
+    {
+        var grafana = GrafanaOpts.Value;
+        var isWindows = _machine.OsType == OsType.Windows;
+        var dashUid = isWindows ? grafana.WindowsExporterDashboardUid : grafana.NodeExporterDashboardUid;
+        var exporterPort = isWindows ? "9182" : "9100";
+        var instanceLabel = $"{_machine.Hostname}:{exporterPort}";
+
+        @if (!string.IsNullOrWhiteSpace(dashUid))
+        {
+            var dashboardUrl = $"{grafana.BaseUrl}/d/{dashUid}?orgId=1&var-instance={Uri.EscapeDataString(instanceLabel)}&from=now-3h&to=now&kiosk=tv";
+            var cpuPanelUrl = $"{grafana.BaseUrl}/d-solo/{dashUid}?orgId=1&var-instance={Uri.EscapeDataString(instanceLabel)}&panelId={grafana.CpuPanelId}&from=now-3h&to=now&theme=light";
+            var memPanelUrl = $"{grafana.BaseUrl}/d-solo/{dashUid}?orgId=1&var-instance={Uri.EscapeDataString(instanceLabel)}&panelId={grafana.MemoryPanelId}&from=now-3h&to=now&theme=light";
+
+            <h2 style="margin-top:24px;">Grafana Metrics
+                <a href="@dashboardUrl" target="_blank" style="font-size:0.8rem; margin-left:10px;">Open full dashboard ↗</a>
+            </h2>
+            <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                <iframe src="@cpuPanelUrl"
+                        width="450" height="200"
+                        frameborder="0"
+                        title="CPU Usage — @_machine.Hostname"
+                        style="border:1px solid #ddd; border-radius:4px;">
+                </iframe>
+                <iframe src="@memPanelUrl"
+                        width="450" height="200"
+                        frameborder="0"
+                        title="Memory Usage — @_machine.Hostname"
+                        style="border:1px solid #ddd; border-radius:4px;">
+                </iframe>
+            </div>
+        }
+    }
+
+    <!-- ── Patch history (F-6) ───────────────────────────────────────────── -->
+    <h2 style="margin-top:24px;">Patching</h2>
+    @if (_patchHistoryLoading)
+    {
+        <p style="color:#888;">Loading patch history…</p>
+    }
+    else if (_patchHistory is not null && _patchHistory.Count > 0)
+    {
+        <table>
+            <thead>
+                <tr>
+                    <th>Patch ID</th>
+                    <th>Title</th>
+                    <th>State</th>
+                    <th>Applied</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var entry in _patchHistory.Take(10))
+                {
+                    <tr>
+                        <td>@entry.PatchId</td>
+                        <td>@entry.Title</td>
+                        <td style="color:@(entry.State == PatchInstallState.Installed ? "#388e3c" : "#c62828");">
+                            @entry.State
+                        </td>
+                        <td>@entry.TimestampUtc.ToString("g")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_patchHistory.Count > 10)
+        {
+            <p style="color:#888; font-size:0.85rem;">Showing 10 of @_patchHistory.Count entries.</p>
+        }
+    }
+    else if (!_patchHistoryLoading)
+    {
+        <p style="color:#888;">No patch history recorded yet.</p>
+    }
+
+    <!-- ── Process listing (F-7) ─────────────────────────────────────────── -->
+    <h2 style="margin-top:24px;">
+        Processes
+        @if (!_processesLoading && _processes is not null)
+        {
+            <span style="font-size:0.8rem; font-weight:normal; color:#888;"> (@_processes.Count running)</span>
+        }
+    </h2>
+    @if (_processesLoading)
+    {
+        <p style="color:#888;">Loading processes…</p>
+    }
+    else if (_processesError is not null)
+    {
+        <p style="color:#888;">@_processesError</p>
+    }
+    else if (_processes is not null && _processes.Count > 0)
+    {
+        <input type="text"
+               @bind="_processFilter"
+               @bind:event="oninput"
+               placeholder="Filter processes…"
+               style="margin-bottom:8px; padding:4px 8px; width:250px;" />
+
+        var filtered = string.IsNullOrWhiteSpace(_processFilter)
+            ? _processes
+            : _processes.Where(p => p.ProcessName.Contains(_processFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        <table>
+            <thead>
+                <tr>
+                    <th>PID</th>
+                    <th>Name</th>
+                    <th>Memory</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var proc in filtered.Take(100))
+                {
+                    <tr>
+                        <td>@proc.ProcessId</td>
+                        <td>@proc.ProcessName</td>
+                        <td>@FormatBytes(proc.WorkingSetBytes)</td>
+                        <td>@proc.Status</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (filtered.Count > 100)
+        {
+            <p style="color:#888; font-size:0.85rem;">Showing 100 of @filtered.Count matching processes.</p>
+        }
+    }
+    else if (!_processesLoading)
+    {
+        <p style="color:#888;">Process listing unavailable — requires Agent transport protocol.</p>
+    }
+
     @if (_machine.Tags.Count > 0)
     {
         <h2>Tags</h2>
@@ -123,9 +261,15 @@ else if (_machine is not null)
 
     private bool _loading = true;
     private bool _stateLoading = true;
+    private bool _patchHistoryLoading = true;
+    private bool _processesLoading = true;
     private Machine? _machine;
     private MachineStateSnapshot? _state;
+    private IReadOnlyList<PatchHistoryEntry>? _patchHistory;
+    private IReadOnlyList<ProcessInfo>? _processes;
     private string? _errorMessage;
+    private string? _processesError;
+    private string _processFilter = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
@@ -147,21 +291,65 @@ else if (_machine is not null)
             _loading = false;
         }
 
-        // Load live state independently so machine info renders immediately
-        if (_machine is not null)
+        if (_machine is null) return;
+
+        // Fire all secondary loads in parallel so machine info renders immediately
+        var stateTask = LoadStateAsync();
+        var patchTask = LoadPatchHistoryAsync();
+        var processTask = LoadProcessesAsync();
+
+        await Task.WhenAll(stateTask, patchTask, processTask);
+    }
+
+    private async Task LoadStateAsync()
+    {
+        try
         {
-            try
-            {
-                _state = await BrokerApi.GetMachineStateAsync(Id);
-            }
-            catch
-            {
-                // State load failure is non-fatal — show machine info without live metrics
-            }
-            finally
-            {
-                _stateLoading = false;
-            }
+            _state = await BrokerApi.GetMachineStateAsync(Id);
+        }
+        catch
+        {
+            // State load failure is non-fatal — show machine info without live metrics
+        }
+        finally
+        {
+            _stateLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadPatchHistoryAsync()
+    {
+        try
+        {
+            _patchHistory = await BrokerApi.GetPatchHistoryAsync(Id);
+        }
+        catch
+        {
+            _patchHistory = [];
+        }
+        finally
+        {
+            _patchHistoryLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadProcessesAsync()
+    {
+        try
+        {
+            _processes = await BrokerApi.GetMachineProcessesAsync(Id);
+        }
+        catch (Exception ex)
+        {
+            _processesError = $"Process listing unavailable: {ex.Message}";
+            _processes = [];
+        }
+        finally
+        {
+            _processesLoading = false;
+            StateHasChanged();
         }
     }
 

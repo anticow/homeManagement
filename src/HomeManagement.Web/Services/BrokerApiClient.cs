@@ -31,6 +31,9 @@ public sealed class BrokerApiClient : IBrokerApi
     public Task<HomeManagement.Abstractions.Models.MachineSummary> GetMachineSummaryAsync(CancellationToken ct = default)
         => ExecuteAsync(api => api.GetMachineSummaryAsync(ct), ct);
 
+    public Task<IReadOnlyList<HomeManagement.Abstractions.Models.ProcessInfo>> GetMachineProcessesAsync(Guid id, CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetMachineProcessesAsync(id, ct), ct);
+
     public Task<HomeManagement.Abstractions.Models.PagedResult<HomeManagement.Abstractions.Models.Machine>> GetMachinesAsync(int page = 1, int pageSize = 25, CancellationToken ct = default)
         => ExecuteAsync(api => api.GetMachinesAsync(page, pageSize, ct), ct);
 
