@@ -192,8 +192,16 @@ healthPage:
     grafanaUrl: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local/api/health"
     argoCDUrl: "http://argocd-server.argocd.svc.cluster.local:80/healthz"
     awxUrl: "http://awx-service.awx.svc.cluster.local/api/v2/ping/"
+
+# -- Grafana panel embedding (iframes in MachineDetail)
+# baseUrl: public URL of Grafana (e.g. https://grafana.cowgomu.net)
+# Dashboard UIDs must match those imported by the monitoring Ansible role.
+# Leave baseUrl empty to disable the iframe section in the UI.
+grafana:
+  baseUrl: ""
+  nodeExporterDashboardUid: "node-exporter-full"
+  windowsExporterDashboardUid: "windows-exporter"
 
-# -- Serilog log levels (applied to all services via env vars; override per-environment via values)
 # Increase verbosity for debugging: set minimumLevel to "Debug" or "Verbose".
 # Reduce noise from framework components by tightening the overrides.
 serilog:

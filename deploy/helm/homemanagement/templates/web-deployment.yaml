@@ -49,6 +49,14 @@ spec:
               value: "{{ .Values.ingress.host }};hm-web;hm-web.{{ .Release.Namespace }}.svc.cluster.local;localhost"
             - name: DataProtection__KeyStorePath
               value: "/dpkeys"
+            {{- if .Values.grafana.baseUrl }}
+            - name: Grafana__BaseUrl
+              value: {{ .Values.grafana.baseUrl | quote }}
+            - name: Grafana__NodeExporterDashboardUid
+              value: {{ .Values.grafana.nodeExporterDashboardUid | quote }}
+            - name: Grafana__WindowsExporterDashboardUid
+              value: {{ .Values.grafana.windowsExporterDashboardUid | quote }}
+            {{- end }}
           volumeMounts:
             - name: dpkeys
               mountPath: /dpkeys
