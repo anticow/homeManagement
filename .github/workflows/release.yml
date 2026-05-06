@@ -42,7 +42,7 @@ jobs:
           dotnet test
           --no-build
           --configuration Release
-          --filter "Category!=Platform"
+          --filter "Category!=Platform&Category!=LiveGateway"
           --logger "trx;LogFileName=test-results.trx"
           --results-directory ./TestResults
 
