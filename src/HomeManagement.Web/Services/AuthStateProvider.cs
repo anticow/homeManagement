@@ -74,6 +74,26 @@ public sealed class AuthStateProvider : AuthenticationStateProvider
     private void OnSessionChanged()
     {
         NotifyAuthenticationStateChanged(GetAuthenticationStateAsync());
+
+        // When the session is cleared (e.g. refresh token expired), also remove the stale
+        // persisted browser session so subsequent circuit reconnects don't re-trigger the
+        // same expired-token refresh loop.
+        if (!_sessionState.IsAuthenticated && _initialized)
+        {
+            _ = TryClearPersistedSessionAsync();
+        }
+    }
+
+    private async Task TryClearPersistedSessionAsync()
+    {
+        try
+        {
+            await _storage.DeleteAsync(StorageKey);
+        }
+        catch
+        {
+            // JS interop may be unavailable (e.g. during prerendering) — ignore.
+        }
     }
 
     private sealed record StoredSession(string AccessToken, string RefreshToken);

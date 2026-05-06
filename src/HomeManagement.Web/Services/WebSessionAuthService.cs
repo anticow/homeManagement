@@ -54,15 +54,25 @@ public sealed class WebSessionAuthService : IWebSessionAuthService
             return false;
         }
 
-        var result = await _authApi.RefreshAsync(new WebRefreshRequest(_sessionState.RefreshToken), ct);
-        if (!result.Success || result.AccessToken is null || result.RefreshToken is null)
+        try
         {
+            var result = await _authApi.RefreshAsync(new WebRefreshRequest(_sessionState.RefreshToken), ct);
+            if (!result.Success || result.AccessToken is null || result.RefreshToken is null)
+            {
+                _sessionState.Clear();
+                return false;
+            }
+
+            _sessionState.SetSession(result.AccessToken, result.RefreshToken);
+            return true;
+        }
+        catch (ApiException)
+        {
+            // Refresh token is invalid or expired (e.g. 400 from auth service).
+            // Clear the session so callers redirect to login instead of showing a raw HTTP error.
             _sessionState.Clear();
             return false;
         }
-
-        _sessionState.SetSession(result.AccessToken, result.RefreshToken);
-        return true;
     }
 
     public async Task LogoutAsync(CancellationToken ct = default)
