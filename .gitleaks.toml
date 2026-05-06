@@ -4,23 +4,15 @@ title = "HomeManagement Gitleaks Config"
 # Use the default gitleaks ruleset as the base
 useDefault = true
 
-[[allowlist.commits]]
-description = "Audit fix sprint — test/example values in non-secret files"
-commits = []
-
-[[allowlist.paths]]
-description = "Example and template files are allowed to contain placeholder patterns"
-paths = [
-  ".env.example",
-  "*.example",
-  "*.sample",
-  "deploy/docker/README.md",
-]
-
-[[allowlist.regexes]]
-description = "Helm template placeholders (not real secrets)"
-regexes = [
-  "ValidationPassword_123!",          # Helm lint CI fixture
-  "validation-signing-key.*",         # Helm lint CI fixture
-  "validation-agent-gateway-api-key", # Helm lint CI fixture
-]
+[allowlist]
+  paths = [
+    '''.env\.example''',
+    '''.*\.example''',
+    '''.*\.sample''',
+    '''deploy/docker/README\.md''',
+  ]
+  regexes = [
+    '''ValidationPassword_123!''',
+    '''validation-signing-key.*''',
+    '''validation-agent-gateway-api-key''',
+  ]
