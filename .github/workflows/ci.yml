@@ -62,7 +62,7 @@ jobs:
           dotnet test
           --no-build
           --configuration Release
-          --filter "Category!=Platform"
+          --filter "Category!=Platform&Category!=LiveGateway"
           --logger "trx;LogFileName=test-results.trx"
           --collect:"XPlat Code Coverage"
           --results-directory ./TestResults

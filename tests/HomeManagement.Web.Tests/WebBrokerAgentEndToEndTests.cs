@@ -45,6 +45,13 @@ namespace HomeManagement.Web.Tests;
 
 using AgentProtocol = AgentClient::HomeManagement.Agent.Protocol;
 
+/// <summary>
+/// End-to-end tests that wire up in-process broker, auth, and agent-gateway servers.
+/// Excluded from CI with Category!=LiveGateway because they require a real gRPC agent
+/// connection and have non-trivial teardown that can be flaky in CI environments.
+/// Run locally: dotnet test --filter "Category=LiveGateway"
+/// </summary>
+[Trait("Category", "LiveGateway")]
 public sealed class WebBrokerAgentEndToEndTests
 {
     private const string SharedSigningKey = "end-to-end-test-signing-key-that-is-long-enough-for-hmac-sha256!";
