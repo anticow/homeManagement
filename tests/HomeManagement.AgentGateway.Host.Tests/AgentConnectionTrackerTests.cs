@@ -182,7 +182,7 @@ public sealed class AgentConnectionTrackerTests
             AgentApiKeys = new Dictionary<string, string> { ["agent-01"] = "expected-key" }
         });
 
-        var validator = new AgentApiKeyValidator(options, NullLogger<AgentApiKeyValidator>.Instance);
+        var validator = new AgentApiKeyValidator(options, new NullRevokedAgentStore(), NullLogger<AgentApiKeyValidator>.Instance);
         using var gateway = new StandaloneAgentGatewayService(NullLogger<StandaloneAgentGatewayService>.Instance);
         var service = new AgentGatewayGrpcService(
             validator,

@@ -12,11 +12,16 @@ public sealed class AgentApiKeyValidator : IAgentApiKeyValidator
 {
     private const string HeaderName = "x-agent-api-key";
     private readonly IReadOnlyDictionary<string, string> _configuredKeys;
+    private readonly IRevokedAgentStore _revokedAgentStore;
     private readonly ILogger<AgentApiKeyValidator> _logger;
 
-    public AgentApiKeyValidator(IOptions<AgentGatewayHostOptions> options, ILogger<AgentApiKeyValidator> logger)
+    public AgentApiKeyValidator(
+        IOptions<AgentGatewayHostOptions> options,
+        IRevokedAgentStore revokedAgentStore,
+        ILogger<AgentApiKeyValidator> logger)
     {
         _configuredKeys = BuildKeys(options.Value);
+        _revokedAgentStore = revokedAgentStore;
         _logger = logger;
 
         if (_configuredKeys.Count == 0)
@@ -31,6 +36,17 @@ public sealed class AgentApiKeyValidator : IAgentApiKeyValidator
         {
             _logger.LogWarning("gRPC call from {Peer} rejected — handshake missing agent id", context.Peer);
             throw new RpcException(new Status(StatusCode.Unauthenticated, "Agent ID required."));
+        }
+
+        // Revocation check — must happen before API key validation so revoked
+        // agents cannot use a valid key to reconnect after being blocked.
+        if (_revokedAgentStore.IsRevoked(handshake.AgentId))
+        {
+            _logger.LogWarning(
+                "gRPC call from {Peer} rejected — agent {AgentId} is revoked",
+                context.Peer,
+                handshake.AgentId);
+            throw new RpcException(new Status(StatusCode.PermissionDenied, "Agent certificate revoked."));
         }
 
         var apiKey = context.RequestHeaders.GetValue(HeaderName);

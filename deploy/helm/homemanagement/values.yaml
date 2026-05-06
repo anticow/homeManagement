@@ -28,7 +28,7 @@ auth:
   audience: "homemanagement-api"
   bootstrapAdmin:
     enabled: false
-    username: "admin"
+    username: "hmadmin"
     password: ""  # Set to seed a first-run admin account
     displayName: "System Administrator"
     email: "admin@homemanagement.local"

@@ -75,5 +75,38 @@ public static class ControlPlaneEndpoints
                 return Results.NotFound(new { error = ex.Message });
             }
         });
+
+        // ── Agent revocation management ─────────────────────────────────────────
+        // GET    /internal/agents/revoked             — list all revoked agents
+        // POST   /internal/agents/{agentId}/revoke    — block the agent immediately
+        // DELETE /internal/agents/{agentId}/revoke    — reinstate the agent
+        group.MapGet("/revoked", (IRevokedAgentStore store) =>
+            Results.Ok(store.GetAll()));
+
+        group.MapPost("/{agentId}/revoke", (
+            string agentId,
+            RevokeRequest? request,
+            IRevokedAgentStore store,
+            StandaloneAgentGatewayService gateway) =>
+        {
+            var reason = request?.Reason ?? "Revoked via control plane API";
+            store.Revoke(agentId, reason);
+
+            // Forcibly disconnect if currently online
+            if (gateway.GetConnectedAgents().Any(a => string.Equals(a.AgentId, agentId, StringComparison.OrdinalIgnoreCase)))
+            {
+                gateway.UnregisterAgent(agentId);
+            }
+
+            return Results.Ok(new { agentId, status = "revoked", reason });
+        });
+
+        group.MapDelete("/{agentId}/revoke", (string agentId, IRevokedAgentStore store) =>
+        {
+            store.Reinstate(agentId);
+            return Results.Ok(new { agentId, status = "reinstated" });
+        });
     }
 }
+
+internal sealed record RevokeRequest(string? Reason);

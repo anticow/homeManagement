@@ -18,6 +18,8 @@ builder.AddHomeManagementObservability("hm-agent-gw");
 builder.Services.AddOptions<AgentGatewayHostOptions>()
     .BindConfiguration(AgentGatewayHostOptions.SectionName)
     .ValidateOnStart();
+builder.Services.AddSingleton<RevokedAgentStore>();
+builder.Services.AddSingleton<IRevokedAgentStore>(sp => sp.GetRequiredService<RevokedAgentStore>());
 builder.Services.AddSingleton<AgentApiKeyValidator>();
 builder.Services.AddSingleton<IAgentApiKeyValidator>(sp => sp.GetRequiredService<AgentApiKeyValidator>());
 builder.Services.AddGrpc();

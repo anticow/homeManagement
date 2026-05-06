@@ -100,7 +100,7 @@ public sealed class AgentApiKeyValidatorTests
             else if (key.Equals(jsonKey, StringComparison.OrdinalIgnoreCase) && value is not null)
                 options.AgentApiKeysJson = value;
         }
-        return new AgentApiKeyValidator(Options.Create(options), NullLogger<AgentApiKeyValidator>.Instance);
+        return new AgentApiKeyValidator(Options.Create(options), new NullRevokedAgentStore(), NullLogger<AgentApiKeyValidator>.Instance);
     }
 }
 
