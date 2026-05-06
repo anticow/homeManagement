@@ -60,3 +60,17 @@ docker compose -f deploy/docker/docker-compose.yaml down -v
 | Agent GW API Key | `dev-agent-gateway-api-key` |
 
 > These are development-only values. Production secrets are managed via Ansible Vault.
+
+## Security Note — `.env` is for development only
+
+The `.env` file stores secrets as plaintext on disk. This is intentional for local
+development but **must not** be used in production.
+
+| Environment | Secret source |
+|---|---|
+| Local dev | `.env` file (git-ignored) |
+| Production | Ansible Vault → Kubernetes Secrets → Helm values |
+| Docker Swarm | `docker-compose.swarm-secrets.yaml` overlay (see that file for instructions) |
+
+The `.env.example` template contains placeholder values only. Copy it to `.env` and
+fill in your local dev values — never commit a populated `.env` file.

@@ -1,4 +1,9 @@
 services:
+  # ⚠️  DEVELOPMENT-ONLY — secrets come from the .env file.
+  #     In production, all secrets are managed via Ansible Vault and deployed
+  #     through Helm / Kubernetes Secrets. The .env file MUST NOT be used in
+  #     production. See docker-compose.swarm-secrets.yaml for the Swarm
+  #     secrets overlay pattern and the README for details.
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
