@@ -33,6 +33,8 @@ internal static class Program
                 : Path.Combine(AppContext.BaseDirectory, "hm-agent.json");
 
             var host = Host.CreateDefaultBuilder(args)
+                .UseWindowsService()   // Integrates with Windows SCM: signals SERVICE_RUNNING / handles stop/pause
+                .UseSystemd()          // Integrates with systemd on Linux (no-op on Windows)
                 .ConfigureAppConfiguration((_, config) =>
                 {
                     config.AddJsonFile(configPath, optional: true, reloadOnChange: false);

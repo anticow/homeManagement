@@ -14,6 +14,8 @@
     <PackageReference Include="Google.Protobuf" />
     <PackageReference Include="Grpc.Tools" PrivateAssets="All" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="Serilog" />
     <PackageReference Include="Serilog.Sinks.Console" />
