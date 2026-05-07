@@ -25,10 +25,17 @@ internal static class Program
 
         try
         {
+            // Support --config <path> for running as a Windows/Linux service with
+            // config files outside the install directory (e.g. /etc/homemanagement)
+            var configIdx = Array.IndexOf(args, "--config");
+            var configPath = configIdx >= 0 && configIdx + 1 < args.Length
+                ? args[configIdx + 1]
+                : Path.Combine(AppContext.BaseDirectory, "hm-agent.json");
+
             var host = Host.CreateDefaultBuilder(args)
                 .ConfigureAppConfiguration((_, config) =>
                 {
-                    config.AddJsonFile("hm-agent.json", optional: true, reloadOnChange: false);
+                    config.AddJsonFile(configPath, optional: true, reloadOnChange: false);
                 })
                 .ConfigureServices((context, services) =>
                 {
