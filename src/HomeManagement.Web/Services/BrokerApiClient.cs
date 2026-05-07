@@ -7,7 +7,7 @@ namespace HomeManagement.Web.Services;
 /// <summary>
 /// Session-aware Broker API client that forwards the current server-side access token.
 /// </summary>
-public sealed class BrokerApiClient : IBrokerApi
+public sealed class BrokerApiClient : IBrokerApi, IDisposable
 {
     public const string HttpClientName = "BrokerApi";
 
@@ -176,4 +176,6 @@ public sealed class BrokerApiClient : IBrokerApi
 
     private static UnauthorizedAccessException CreateUnauthorizedException(Exception innerException)
         => new("Web session has expired.", innerException);
+
+    public void Dispose() => _refreshLock.Dispose();
 }
