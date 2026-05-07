@@ -11,6 +11,6 @@ public sealed class RedirectToLogin : ComponentBase
 
     protected override void OnInitialized()
     {
-        Navigation.NavigateTo("/login", forceLoad: true);
+        Navigation.NavigateTo("/login");
     }
 }

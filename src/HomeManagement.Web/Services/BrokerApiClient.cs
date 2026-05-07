@@ -11,6 +11,10 @@ public sealed class BrokerApiClient : IBrokerApi
 {
     public const string HttpClientName = "BrokerApi";
 
+    // Serialises proactive token refreshes within a single circuit so that concurrent
+    // API calls don't all race to refresh simultaneously when the token is near expiry.
+    private readonly SemaphoreSlim _refreshLock = new(1, 1);
+
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ServerSessionState _sessionState;
     private readonly IWebSessionAuthService _authService;
@@ -74,6 +78,10 @@ public sealed class BrokerApiClient : IBrokerApi
             var api = await CreateApiAsync(ct);
             return await action(api);
         }
+        catch (ApiException ex) when (ex.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            throw new InvalidOperationException("Service is temporarily busy. Please try again in a moment.", ex);
+        }
         catch (ApiException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
         {
             if (!await _authService.RefreshAsync(ct))
@@ -101,6 +109,10 @@ public sealed class BrokerApiClient : IBrokerApi
             var api = await CreateApiAsync(ct);
             await action(api);
         }
+        catch (ApiException ex) when (ex.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            throw new InvalidOperationException("Service is temporarily busy. Please try again in a moment.", ex);
+        }
         catch (ApiException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
         {
             if (!await _authService.RefreshAsync(ct))
@@ -125,11 +137,24 @@ public sealed class BrokerApiClient : IBrokerApi
     {
         if (refreshIfNeeded && NeedsRefresh())
         {
-            var refreshed = await _authService.RefreshAsync(ct);
-            if (!refreshed)
+            // Serialise within-circuit concurrent refreshes: the first caller refreshes;
+            // subsequent callers see the updated token and skip the refresh entirely.
+            await _refreshLock.WaitAsync(ct);
+            try
             {
-                _sessionState.Clear();
-                throw new UnauthorizedAccessException("Web session has expired.");
+                if (NeedsRefresh()) // re-check after acquiring the lock
+                {
+                    var refreshed = await _authService.RefreshAsync(ct);
+                    if (!refreshed)
+                    {
+                        _sessionState.Clear();
+                        throw new UnauthorizedAccessException("Web session has expired.");
+                    }
+                }
+            }
+            finally
+            {
+                _refreshLock.Release();
             }
         }
 
@@ -149,9 +174,6 @@ public sealed class BrokerApiClient : IBrokerApi
             && expiresUtc <= DateTimeOffset.UtcNow.AddMinutes(1);
     }
 
-    private UnauthorizedAccessException CreateUnauthorizedException(Exception innerException)
-    {
-        _sessionState.Clear();
-        return new UnauthorizedAccessException("Web session has expired.", innerException);
-    }
+    private static UnauthorizedAccessException CreateUnauthorizedException(Exception innerException)
+        => new("Web session has expired.", innerException);
 }

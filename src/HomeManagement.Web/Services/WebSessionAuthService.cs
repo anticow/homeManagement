@@ -1,3 +1,4 @@
+using System.Net;
 using HomeManagement.Abstractions.Models;
 using Refit;
 
@@ -66,10 +67,15 @@ public sealed class WebSessionAuthService : IWebSessionAuthService
             _sessionState.SetSession(result.AccessToken, result.RefreshToken);
             return true;
         }
-        catch (ApiException)
+        catch (ApiException ex)
         {
-            // Refresh token is invalid or expired (e.g. 400 from auth service).
-            // Clear the session so callers redirect to login instead of showing a raw HTTP error.
+            // 429 = rate-limited: this is transient — the refresh token is still valid.
+            // Re-throwing lets the caller show a "try again" error without destroying the session.
+            if (ex.StatusCode == HttpStatusCode.TooManyRequests)
+                throw;
+
+            // Any other API error (400 bad token, 401, 5xx) means the refresh token is
+            // invalid or expired. Clear the session so the caller redirects to login.
             _sessionState.Clear();
             return false;
         }
