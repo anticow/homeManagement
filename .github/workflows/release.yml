@@ -275,14 +275,20 @@ jobs:
           git commit -m "chore: deploy ${{ steps.version.outputs.version }} [skip ci]"
           git push origin master
 
+      - name: Generate GitHub App token for Ansible dispatch
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.ANSIBLE_DISPATCHER_APP_ID }}
+          private-key: ${{ secrets.ANSIBLE_DISPATCHER_PRIVATE_KEY }}
+          # Scope token to the ansible repo only — least-privilege
+          repositories: ansible
+          owner: anticow
+
       - name: Trigger ArgoCD Application sync via Ansible
         env:
-          DISPATCH_TOKEN: ${{ secrets.ANSIBLE_REPO_DISPATCH_TOKEN }}
+          DISPATCH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          if [ -z "$DISPATCH_TOKEN" ]; then
-            echo "ANSIBLE_REPO_DISPATCH_TOKEN not set — skipping Ansible dispatch"
-            exit 0
-          fi
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST \
             -H "Accept: application/vnd.github+json" \
@@ -293,6 +299,6 @@ jobs:
           if echo "$HTTP_STATUS" | grep -qE "^(204|200)$"; then
             echo "Ansible dispatch succeeded (HTTP $HTTP_STATUS)"
           else
-            echo "Ansible dispatch failed (HTTP $HTTP_STATUS) — check ANSIBLE_REPO_DISPATCH_TOKEN"
+            echo "Ansible dispatch failed (HTTP $HTTP_STATUS)"
             exit 1
           fi
