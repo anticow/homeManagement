@@ -68,18 +68,49 @@ public sealed class MachineRepository : IMachineRepository
         await _db.Machines.AddRangeAsync(entities, ct);
     }
 
-    public Task UpdateAsync(Machine machine, CancellationToken ct = default)
+    public async Task UpdateAsync(Machine machine, CancellationToken ct = default)
     {
-        var entity = ToEntity(machine);
+        // Load the tracked entity with its tags so we can patch in-place.
+        // Re-building via ToEntity() generates new GUIDs for MachineTagEntity,
+        // which violates the unique (MachineId, Key) index on every Update call.
+        var entity = await _db.Machines
+            .Include(m => m.Tags)
+            .FirstAsync(m => m.Id == machine.Id, ct);
 
-        // Detach any previously tracked instance with the same key to avoid identity conflicts
-        var tracked = _db.ChangeTracker.Entries<MachineEntity>()
-            .FirstOrDefault(e => e.Entity.Id == entity.Id);
-        if (tracked is not null)
-            tracked.State = Microsoft.EntityFrameworkCore.EntityState.Detached;
+        entity.Hostname = machine.Hostname.ToString();
+        entity.Fqdn = machine.Fqdn;
+        entity.IpAddressesJson = JsonSerializer.Serialize(machine.IpAddresses.Select(ip => ip.ToString()));
+        entity.OsType = machine.OsType;
+        entity.OsVersion = machine.OsVersion;
+        entity.ConnectionMode = machine.ConnectionMode;
+        entity.Protocol = machine.Protocol;
+        entity.Port = machine.Port;
+        entity.CredentialId = machine.CredentialId;
+        entity.State = machine.State;
+        entity.CpuCores = machine.Hardware?.CpuCores;
+        entity.RamBytes = machine.Hardware?.RamBytes;
+        entity.Architecture = machine.Hardware?.Architecture;
+        entity.DisksJson = machine.Hardware is not null ? JsonSerializer.Serialize(machine.Hardware.Disks) : null;
+        entity.CreatedUtc = machine.CreatedUtc;
+        entity.UpdatedUtc = machine.UpdatedUtc;
+        entity.LastContactUtc = machine.LastContactUtc;
+        entity.AgentVersion = machine.AgentVersion;
+        entity.IsDeleted = machine.IsDeleted;
 
-        _db.Machines.Update(entity);
-        return Task.CompletedTask;
+        // Sync tags by key — preserves existing row GUIDs to avoid unique-index violations.
+        var existingByKey = entity.Tags.ToDictionary(t => t.Key, t => t);
+        var desiredKeys = machine.Tags.Keys.ToHashSet();
+
+        foreach (var tag in entity.Tags.Where(t => !desiredKeys.Contains(t.Key)).ToList())
+            entity.Tags.Remove(tag);
+
+        foreach (var (key, value) in machine.Tags)
+        {
+            if (existingByKey.TryGetValue(key, out var existing))
+                existing.Value = value;
+            else
+                entity.Tags.Add(new MachineTagEntity { Id = Guid.NewGuid(), MachineId = entity.Id, Key = key, Value = value });
+        }
     }
 
     public async Task SoftDeleteAsync(Guid id, CancellationToken ct = default)
