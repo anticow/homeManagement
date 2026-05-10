@@ -2,6 +2,7 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using HomeManagement.Abstractions
 @using HomeManagement.Abstractions.Models
+@using HomeManagement.Web.Services
 @using Microsoft.Extensions.Options
 @inject HomeManagement.Web.Services.IBrokerApi BrokerApi
 @inject IOptions<HomeManagement.Web.Services.GrafanaOptions> GrafanaOpts
@@ -142,6 +143,77 @@ else if (_machine is not null)
         }
     }
 
+    <!-- ── Services (from agent) ─────────────────────────────────────────── -->
+    <h2 style="margin-top:24px;">
+        Services
+        @if (!_servicesLoading && _services is not null)
+        {
+            var runningCount = _services.Count(s => s.State == ServiceState.Running);
+            <span style="font-size:0.8rem; font-weight:normal; color:#888;"> (@runningCount running of @_services.Count)</span>
+        }
+    </h2>
+    @if (_servicesLoading)
+    {
+        <p style="color:#888;">Loading services…</p>
+    }
+    else if (_servicesError is not null)
+    {
+        <p style="color:#888;">@_servicesError</p>
+    }
+    else if (_services is not null && _services.Count > 0)
+    {
+        <input type="text"
+               @bind="_serviceFilter"
+               @bind:event="oninput"
+               placeholder="Filter services…"
+               style="margin-bottom:8px; padding:4px 8px; width:250px;" />
+
+        var filteredSvc = string.IsNullOrWhiteSpace(_serviceFilter)
+            ? _services
+            : _services.Where(s =>
+                s.DisplayName.Contains(_serviceFilter, StringComparison.OrdinalIgnoreCase) ||
+                s.Name.Value.Contains(_serviceFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Display Name</th>
+                    <th>State</th>
+                    <th>Startup</th>
+                    <th>PID</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var svc in filteredSvc.OrderByDescending(s => s.State == ServiceState.Running).Take(150))
+                {
+                    var stateColor = svc.State switch
+                    {
+                        ServiceState.Running => "#388e3c",
+                        ServiceState.Stopped => "#c62828",
+                        ServiceState.Paused  => "#f57c00",
+                        _                    => "#888"
+                    };
+                    <tr>
+                        <td style="font-family:monospace; font-size:0.85rem;">@svc.Name</td>
+                        <td>@svc.DisplayName</td>
+                        <td style="color:@stateColor; font-weight:bold;">@svc.State</td>
+                        <td>@svc.StartupType</td>
+                        <td>@(svc.ProcessId?.ToString() ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (filteredSvc.Count > 150)
+        {
+            <p style="color:#888; font-size:0.85rem;">Showing 150 of @filteredSvc.Count matching services. Use the filter to narrow results.</p>
+        }
+    }
+    else if (!_servicesLoading)
+    {
+        <p style="color:#888;">No service data available — requires Agent transport protocol.</p>
+    }
+
     <!-- ── Patch history (F-6) ───────────────────────────────────────────── -->
     <h2 style="margin-top:24px;">Patching</h2>
     @if (_patchHistoryLoading)
@@ -257,6 +329,115 @@ else if (_machine is not null)
             </tbody>
         </table>
     }
+
+    <!-- ── Action1 patch management ──────────────────────────────────────── -->
+    @if (_action1EndpointId is not null)
+    {
+        <h2 style="margin-top:24px;">
+            Action1 — Available Patches
+            @if (!_action1Loading && _action1Patches is not null)
+            {
+                <span style="font-size:0.8rem; font-weight:normal; color:#888;"> (@_action1Patches.Count pending)</span>
+            }
+        </h2>
+
+        @if (_action1Loading)
+        {
+            <p style="color:#888;">Loading patches from Action1…</p>
+        }
+        else if (_action1Error is not null)
+        {
+            <p style="color:#888;">@_action1Error</p>
+        }
+        else if (_action1Patches is not null && _action1Patches.Count > 0)
+        {
+            <p style="font-size:0.85rem; color:#555; margin-bottom:8px;">
+                Select patches to deploy. Deployments are executed immediately after approval.
+            </p>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:32px;"></th>
+                        <th>Title</th>
+                        <th>Severity</th>
+                        <th>Category</th>
+                        <th>Size</th>
+                        <th>Reboot</th>
+                        <th>Published</th>
+                        <th>KB</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var patch in _action1Patches.OrderByDescending(p => SeverityOrder(p.Severity)))
+                    {
+                        var severityColor = patch.Severity switch
+                        {
+                            "Critical"  => "#c62828",
+                            "Important" => "#e65100",
+                            "Moderate"  => "#f57c00",
+                            "Low"       => "#388e3c",
+                            _           => "#888"
+                        };
+                        <tr>
+                            <td>
+                                <input type="checkbox"
+                                       checked="@_selectedPatchIds.Contains(patch.Id)"
+                                       @onchange="e => TogglePatch(patch.Id, (bool)e.Value!)" />
+                            </td>
+                            <td>@patch.Title</td>
+                            <td style="color:@severityColor; font-weight:bold;">@patch.Severity</td>
+                            <td>@patch.Category</td>
+                            <td>@FormatBytes(patch.SizeBytes)</td>
+                            <td>@(patch.RequiresReboot ? "⚠ Yes" : "No")</td>
+                            <td>@patch.PublishedUtc.ToString("d")</td>
+                            <td style="font-family:monospace; font-size:0.8rem;">@patch.KbArticleId</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <div style="margin-top:10px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                <button @onclick="DeploySelectedPatchesAsync"
+                        disabled="@(_selectedPatchIds.Count == 0 || _deployLoading)"
+                        style="padding:6px 16px; background:#1565c0; color:white; border:none; border-radius:4px; cursor:pointer;">
+                    @if (_deployLoading)
+                    {
+                        <span>Deploying…</span>
+                    }
+                    else
+                    {
+                        <span>Deploy @(_selectedPatchIds.Count) Selected</span>
+                    }
+                </button>
+
+                @if (_selectedPatchIds.Any(id => _action1Patches.Any(ap => ap.Id == id && ap.RequiresReboot)))
+                {
+                    <label style="font-size:0.85rem; display:flex; align-items:center; gap:4px;">
+                        <input type="checkbox"
+                               checked="@_allowReboot"
+                               @onchange="e => _allowReboot = (bool)e.Value!" />
+                        Allow reboot if required
+                    </label>
+                }
+            </div>
+
+            @if (_deployResult is not null)
+            {
+                <p style="margin-top:8px; color:#388e3c; font-size:0.85rem;">
+                    ✓ Deployment <code>@_deployResult</code> created successfully.
+                    Check Action1 console for progress.
+                </p>
+            }
+            @if (_deployError is not null)
+            {
+                <p style="margin-top:8px; color:#c62828; font-size:0.85rem;">@_deployError</p>
+            }
+        }
+        else if (!_action1Loading)
+        {
+            <p style="color:#388e3c;">✓ No pending patches — this machine is up to date.</p>
+        }
+    }
 }
 
 @code {
@@ -267,13 +448,26 @@ else if (_machine is not null)
     private bool _stateLoading = true;
     private bool _patchHistoryLoading = true;
     private bool _processesLoading = true;
+    private bool _servicesLoading = true;
+    private bool _action1Loading = true;
+    private bool _deployLoading;
     private Machine? _machine;
     private MachineStateSnapshot? _state;
     private IReadOnlyList<PatchHistoryEntry>? _patchHistory;
     private IReadOnlyList<ProcessInfo>? _processes;
+    private IReadOnlyList<ServiceInfo>? _services;
+    private IReadOnlyList<Action1PatchDto>? _action1Patches;
     private string? _errorMessage;
     private string? _processesError;
+    private string? _servicesError;
+    private string? _action1Error;
+    private string? _deployResult;
+    private string? _deployError;
+    private string? _action1EndpointId;
     private string _processFilter = string.Empty;
+    private string _serviceFilter = string.Empty;
+    private readonly HashSet<string> _selectedPatchIds = [];
+    private bool _allowReboot;
 
     protected override async Task OnInitializedAsync()
     {
@@ -297,12 +491,19 @@ else if (_machine is not null)
 
         if (_machine is null) return;
 
+        // Extract Action1 endpoint ID from machine tags if present
+        _machine.Tags.TryGetValue("action1:endpoint_id", out _action1EndpointId);
+
         // Fire all secondary loads in parallel so machine info renders immediately
         var stateTask = LoadStateAsync();
         var patchTask = LoadPatchHistoryAsync();
         var processTask = LoadProcessesAsync();
+        var servicesTask = LoadServicesAsync();
+        var action1Task = _action1EndpointId is not null
+            ? LoadAction1PatchesAsync()
+            : Task.Run(() => { _action1Loading = false; });
 
-        await Task.WhenAll(stateTask, patchTask, processTask);
+        await Task.WhenAll(stateTask, patchTask, processTask, servicesTask, action1Task);
     }
 
     private async Task LoadStateAsync()
@@ -356,6 +557,88 @@ else if (_machine is not null)
             StateHasChanged();
         }
     }
+
+    private async Task LoadServicesAsync()
+    {
+        try
+        {
+            _services = await BrokerApi.GetServicesAsync(Id);
+        }
+        catch (Exception ex)
+        {
+            _servicesError = $"Service listing unavailable: {ex.Message}";
+            _services = [];
+        }
+        finally
+        {
+            _servicesLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadAction1PatchesAsync()
+    {
+        if (_action1EndpointId is null) return;
+        try
+        {
+            _action1Patches = await BrokerApi.GetAction1PatchesAsync(_action1EndpointId);
+        }
+        catch (Exception ex)
+        {
+            _action1Error = $"Could not load Action1 patches: {ex.Message}";
+            _action1Patches = [];
+        }
+        finally
+        {
+            _action1Loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeploySelectedPatchesAsync()
+    {
+        if (_action1EndpointId is null || _selectedPatchIds.Count == 0) return;
+        _deployLoading = true;
+        _deployResult = null;
+        _deployError = null;
+        StateHasChanged();
+        try
+        {
+            var result = await BrokerApi.DeployAction1PatchesAsync(
+                _action1EndpointId,
+                new Action1DeployRequestDto(_selectedPatchIds.ToList(), _allowReboot));
+            _deployResult = result.DeploymentId;
+            _selectedPatchIds.Clear();
+            // Refresh patch list so deployed patches disappear
+            _action1Loading = true;
+            StateHasChanged();
+            await LoadAction1PatchesAsync();
+        }
+        catch (Exception ex)
+        {
+            _deployError = $"Deployment failed: {ex.Message}";
+        }
+        finally
+        {
+            _deployLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void TogglePatch(string patchId, bool selected)
+    {
+        if (selected) _selectedPatchIds.Add(patchId);
+        else _selectedPatchIds.Remove(patchId);
+    }
+
+    private static int SeverityOrder(string severity) => severity switch
+    {
+        "Critical"  => 4,
+        "Important" => 3,
+        "Moderate"  => 2,
+        "Low"       => 1,
+        _           => 0
+    };
 
     private static string FormatBytes(long? bytes)
     {

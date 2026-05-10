@@ -34,20 +34,21 @@ public static class Action1IntegrationRegistration
         // Read options eagerly to decide which implementation to register.
         var options = ReadOptions<Action1Options>(configuration, Action1Options.Section);
 
+        // ── Typed HTTP client (always registered so broker endpoints can inject it) ──
+        services.AddHttpClient<Action1Client>((sp, client) =>
+        {
+            var opts = sp.GetRequiredService<IOptions<Action1Options>>().Value;
+            client.BaseAddress = new Uri(opts.BaseUrl.TrimEnd('/') + "/");
+            if (!string.IsNullOrEmpty(opts.ApiKey))
+                client.DefaultRequestHeaders.Add("Authorization", $"Bearer {opts.ApiKey}");
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+        });
+
         if (!options.Enabled)
         {
             services.AddSingleton<IPatchService, DisabledAction1PatchService>();
             return services;
         }
-
-        // ── Typed HTTP client ─────────────────────────────────────────────────
-        services.AddHttpClient<Action1Client>((sp, client) =>
-        {
-            var opts = sp.GetRequiredService<IOptions<Action1Options>>().Value;
-            client.BaseAddress = new Uri(opts.BaseUrl.TrimEnd('/') + "/");
-            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {opts.ApiKey}");
-            client.DefaultRequestHeaders.Add("Accept", "application/json");
-        });
 
         // ── Core service ──────────────────────────────────────────────────────
         services.AddScoped<IPatchService, Action1PatchService>();

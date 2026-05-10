@@ -59,6 +59,15 @@ public sealed class BrokerApiClient : IBrokerApi, IDisposable
     public Task<IReadOnlyList<HomeManagement.Abstractions.Models.ServiceInfo>> GetServicesAsync(Guid machineId, CancellationToken ct = default)
         => ExecuteAsync(api => api.GetServicesAsync(machineId, ct), ct);
 
+    public Task<IReadOnlyList<Action1PatchDto>> GetAction1PatchesAsync(string endpointId, CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetAction1PatchesAsync(endpointId, ct), ct);
+
+    public Task<Action1DeploymentCreatedDto> DeployAction1PatchesAsync(string endpointId, [Body] Action1DeployRequestDto request, CancellationToken ct = default)
+        => ExecuteAsync(api => api.DeployAction1PatchesAsync(endpointId, request, ct), ct);
+
+    public Task<Action1DeploymentStatusDto> GetAction1DeploymentAsync(string deploymentId, CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetAction1DeploymentAsync(deploymentId, ct), ct);
+
     public Task<HomeManagement.Abstractions.Models.PagedResult<HomeManagement.Abstractions.Models.JobSummary>> GetJobsAsync(int page = 1, int pageSize = 25, CancellationToken ct = default)
         => ExecuteAsync(api => api.GetJobsAsync(page, pageSize, ct), ct);
 

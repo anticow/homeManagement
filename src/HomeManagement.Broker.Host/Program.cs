@@ -158,6 +158,7 @@ app.MapCredentialEndpoints();
 app.MapAuditEndpoints();
 app.MapAutomationEndpoints();
 app.MapAction1WebhookEndpoints();
+app.MapAction1BrokerEndpoints();
 
 // ── SignalR Hub ──
 app.MapHub<EventHub>("/hubs/events").RequireAuthorization();
