@@ -86,6 +86,8 @@ internal sealed class InventoryService : IInventoryService
             CredentialId = request.CredentialId ?? existing.CredentialId,
             State = request.State ?? existing.State,
             Tags = request.Tags?.AsReadOnly() ?? existing.Tags,
+            LastContactUtc = request.LastContactUtc ?? existing.LastContactUtc,
+            AgentVersion = request.AgentVersion ?? existing.AgentVersion,
             UpdatedUtc = DateTime.UtcNow
         };
 

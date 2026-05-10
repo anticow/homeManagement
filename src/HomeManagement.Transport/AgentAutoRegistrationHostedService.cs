@@ -96,10 +96,16 @@ internal sealed class AgentAutoRegistrationHostedService : BackgroundService
 
             if (match is not null)
             {
+                var agentVersion = _gateway.GetConnectedAgents()
+                    .FirstOrDefault(a => a.AgentId.Equals(agentId, StringComparison.OrdinalIgnoreCase))
+                    ?.AgentVersion;
+
                 await inventory.UpdateAsync(match.Id, new MachineUpdateRequest(
                     ConnectionMode: MachineConnectionMode.Agent,
                     Protocol: TransportProtocol.Agent,
-                    State: MachineState.Online));
+                    State: MachineState.Online,
+                    LastContactUtc: DateTime.UtcNow,
+                    AgentVersion: agentVersion));
 
                 _logger.LogInformation("Agent {AgentId} reconnected — updated machine {MachineId} ({Hostname})",
                     agentId, match.Id, hostname);

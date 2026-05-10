@@ -136,6 +136,7 @@ public sealed class MachineRepository : IMachineRepository
             e.CreatedUtc,
             e.UpdatedUtc,
             e.LastContactUtc,
+            e.AgentVersion,
             e.IsDeleted);
     }
 
@@ -159,6 +160,7 @@ public sealed class MachineRepository : IMachineRepository
         CreatedUtc = m.CreatedUtc,
         UpdatedUtc = m.UpdatedUtc,
         LastContactUtc = m.LastContactUtc,
+        AgentVersion = m.AgentVersion,
         IsDeleted = m.IsDeleted,
         Tags = m.Tags.Select(t => new MachineTagEntity
         {

@@ -22,6 +22,7 @@ public class MachineEntity
     public DateTime CreatedUtc { get; set; }
     public DateTime UpdatedUtc { get; set; }
     public DateTime LastContactUtc { get; set; }
+    public string? AgentVersion { get; set; }
     public bool IsDeleted { get; set; }
 
     // Navigation properties
