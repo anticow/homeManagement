@@ -37,6 +37,10 @@ else if (_machine is not null)
             <tr><td><strong>Protocol</strong></td><td>@_machine.Protocol</td></tr>
             <tr><td><strong>Created</strong></td><td>@_machine.CreatedUtc.ToString("g")</td></tr>
             <tr><td><strong>Last Contact</strong></td><td>@_machine.LastContactUtc.ToString("g")</td></tr>
+            @if (!string.IsNullOrEmpty(_machine.AgentVersion))
+            {
+                <tr><td><strong>Agent Version</strong></td><td>@_machine.AgentVersion</td></tr>
+            }
         </tbody>
     </table>
 

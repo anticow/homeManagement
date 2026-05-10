@@ -496,6 +496,9 @@ namespace HomeManagement.Data.SqlServer.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("AgentVersion")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Architecture")
                         .HasColumnType("nvarchar(max)");
 

@@ -22,6 +22,7 @@ public record Machine(
     DateTime CreatedUtc,
     DateTime UpdatedUtc,
     DateTime LastContactUtc,
+    string? AgentVersion = null,
     bool IsDeleted = false);
 
 public record HardwareInfo(
@@ -62,7 +63,9 @@ public record MachineUpdateRequest(
     int? Port = null,
     Guid? CredentialId = null,
     MachineState? State = null,
-    Dictionary<string, string>? Tags = null);
+    Dictionary<string, string>? Tags = null,
+    DateTime? LastContactUtc = null,
+    string? AgentVersion = null);
 
 public record MachineQuery(
     string? SearchText = null,
