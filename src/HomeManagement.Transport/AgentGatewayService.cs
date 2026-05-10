@@ -69,7 +69,7 @@ public sealed class AgentGatewayService : IAgentGateway, IDisposable
             var request = new CommandRequest
             {
                 RequestId = requestId,
-                CommandType = "Shell",
+                CommandType = command.CommandType,
                 CommandText = command.CommandText,
                 TimeoutSeconds = (int)command.Timeout.TotalSeconds,
                 ElevationMode = command.Elevation.ToString(),
