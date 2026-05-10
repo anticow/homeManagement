@@ -45,7 +45,10 @@ internal sealed class RemoteProcessListService : IProcessListService
         _logger.LogInformation("[{CorrelationId}] ProcessList requested for {Host}",
             _correlation.CorrelationId, target.Hostname);
 
-        var command = new RemoteCommand("ProcessList", TimeSpan.FromSeconds(30));
+        var command = new RemoteCommand(
+            CommandText: string.Empty,
+            Timeout: TimeSpan.FromSeconds(30),
+            CommandType: "ProcessList");
         var result = await _executor.ExecuteAsync(target, command, ct);
 
         if (result.ExitCode != 0)

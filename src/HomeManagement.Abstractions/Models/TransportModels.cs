@@ -7,7 +7,8 @@ public record RemoteCommand(
     TimeSpan Timeout,
     ElevationMode Elevation = ElevationMode.None,
     string? RunAsUser = null,
-    IDictionary<string, string>? EnvironmentVariables = null);
+    IDictionary<string, string>? EnvironmentVariables = null,
+    string CommandType = "Shell");
 
 public record RemoteResult(
     int ExitCode,
