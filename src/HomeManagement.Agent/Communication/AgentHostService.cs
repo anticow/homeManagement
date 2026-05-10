@@ -109,7 +109,7 @@ public sealed class AgentHostService : BackgroundService
 
         // Start heartbeat timer
         using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var heartbeatTask = HeartbeatLoopAsync(call.RequestStream, heartbeatCts.Token);
+        var heartbeatTask = HeartbeatLoopAsync(heartbeatCts.Token);
         var sendTask = SendLoopAsync(call.RequestStream, heartbeatCts.Token);
         var commandTask = CommandProcessingLoopAsync(heartbeatCts.Token);
         var receiveTask = ReceiveLoopAsync(call.ResponseStream, ct);
@@ -181,7 +181,7 @@ public sealed class AgentHostService : BackgroundService
         }
     }
 
-    private async Task HeartbeatLoopAsync(IClientStreamWriter<AgentMessage> stream, CancellationToken ct)
+    private async Task HeartbeatLoopAsync(CancellationToken ct)
     {
         var interval = TimeSpan.FromSeconds(_config.HeartbeatIntervalSeconds);
 
@@ -201,15 +201,16 @@ public sealed class AgentHostService : BackgroundService
 
             try
             {
-                await stream.WriteAsync(new AgentMessage { Heartbeat = heartbeat }, ct);
-                _logger.LogDebug("Heartbeat sent");
+                // Route through outbound channel so SendLoopAsync is the sole writer to the gRPC stream.
+                // IClientStreamWriter is not thread-safe; concurrent writes cause undefined behaviour.
+                await _outbound.Writer.WriteAsync(new AgentMessage { Heartbeat = heartbeat }, ct);
+                _logger.LogDebug("Heartbeat queued");
             }
-            catch (InvalidOperationException)
+            catch (OperationCanceledException)
             {
-                // Stream completed — exit loop
                 break;
             }
-            catch (RpcException ex) when (ex.StatusCode == StatusCode.Cancelled)
+            catch (ChannelClosedException)
             {
                 break;
             }

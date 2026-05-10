@@ -127,9 +127,11 @@ public sealed class ShellCommandHandler(ILogger<ShellCommandHandler> logger) : I
 
     private static async Task<string> ReadBoundedAsync(System.IO.StreamReader reader, int maxBytes)
     {
-        var buffer = new char[maxBytes / sizeof(char)];
-        var read = await reader.ReadAsync(buffer);
-        return new string(buffer, 0, read);
+        // ReadToEndAsync drains the full stream, preventing the pipe buffer from filling and
+        // deadlocking the process when output exceeds one read chunk.
+        var content = await reader.ReadToEndAsync();
+        var maxChars = maxBytes / sizeof(char);
+        return content.Length > maxChars ? content[..maxChars] : content;
     }
 
     private static void KillProcessTree(Process process)

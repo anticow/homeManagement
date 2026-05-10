@@ -34,7 +34,9 @@ public sealed class RemoteAgentGatewayClient : IAgentGateway, IDisposable
         _httpClient = new HttpClient
         {
             BaseAddress = new Uri(_options.BaseUrl, UriKind.Absolute),
-            Timeout = TimeSpan.FromSeconds(30)
+            // Per-request timeouts are applied in SendCommandAsync based on command.Timeout.
+            // Set to infinite here to prevent HttpClient from cutting off long-running commands.
+            Timeout = Timeout.InfiniteTimeSpan
         };
 
         if (!string.IsNullOrWhiteSpace(_options.ApiKey))
@@ -93,7 +95,11 @@ public sealed class RemoteAgentGatewayClient : IAgentGateway, IDisposable
     public async Task<RemoteResult> SendCommandAsync(string agentId, RemoteCommand command, CancellationToken ct = default)
     {
         EnsureStarted();
-        using var response = await _httpClient.PostAsJsonAsync($"/internal/agents/{Uri.EscapeDataString(agentId)}/commands", command, ct);
+        // Apply per-request timeout: command timeout + 30s buffer for network and gateway overhead.
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(command.Timeout + TimeSpan.FromSeconds(30));
+        using var response = await _httpClient.PostAsJsonAsync(
+            $"/internal/agents/{Uri.EscapeDataString(agentId)}/commands", command, timeoutCts.Token);
         return await ReadRequiredAsync<RemoteResult>(response, agentId, ct);
     }
 
