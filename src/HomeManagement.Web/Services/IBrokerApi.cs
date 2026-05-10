@@ -41,6 +41,16 @@ public interface IBrokerApi
     [Get("/api/services/{machineId}")]
     Task<IReadOnlyList<ServiceInfo>> GetServicesAsync(Guid machineId, CancellationToken ct = default);
 
+    // ── Action1 ──
+    [Get("/api/action1/endpoints/{endpointId}/patches")]
+    Task<IReadOnlyList<Action1PatchDto>> GetAction1PatchesAsync(string endpointId, CancellationToken ct = default);
+
+    [Post("/api/action1/endpoints/{endpointId}/deploy")]
+    Task<Action1DeploymentCreatedDto> DeployAction1PatchesAsync(string endpointId, [Body] Action1DeployRequestDto request, CancellationToken ct = default);
+
+    [Get("/api/action1/deployments/{deploymentId}")]
+    Task<Action1DeploymentStatusDto> GetAction1DeploymentAsync(string deploymentId, CancellationToken ct = default);
+
     // ── Jobs ──
     [Get("/api/jobs")]
     Task<PagedResult<JobSummary>> GetJobsAsync(int page = 1, int pageSize = 25, CancellationToken ct = default);
@@ -58,3 +68,28 @@ public interface IBrokerApi
 }
 
 public sealed record PatchScanRequest(Guid MachineId);
+
+// ── Action1 DTOs (web-layer copies; broker serialises from HomeManagement.Integration.Action1.Models) ──
+
+public sealed record Action1PatchDto(
+    string Id,
+    string Title,
+    string Description,
+    string Severity,
+    string Category,
+    long SizeBytes,
+    bool RequiresReboot,
+    DateTime PublishedUtc,
+    string KbArticleId);
+
+public sealed record Action1DeployRequestDto(
+    IReadOnlyList<string> PatchIds,
+    bool AllowReboot);
+
+public sealed record Action1DeploymentCreatedDto(string DeploymentId);
+
+public sealed record Action1DeploymentStatusDto(
+    string Id,
+    string Status,
+    DateTime CreatedUtc,
+    DateTime? CompletedUtc);
