@@ -121,6 +121,13 @@ public sealed class BrokerApiClient : IBrokerApi, IDisposable
                 throw CreateUnauthorizedException(retryEx);
             }
         }
+        catch (ApiException ex)
+        {
+            // Extract the ProblemDetails 'detail' field so the UI shows the actual error
+            // rather than the generic "Response status code does not indicate success: 502" message.
+            var detail = TryExtractProblemDetail(ex.Content);
+            throw new InvalidOperationException(detail ?? ex.Message, ex);
+        }
     }
 
     private async Task ExecuteAsync(Func<IBrokerApi, Task> action, CancellationToken ct)
@@ -152,6 +159,27 @@ public sealed class BrokerApiClient : IBrokerApi, IDisposable
                 throw CreateUnauthorizedException(retryEx);
             }
         }
+        catch (ApiException ex)
+        {
+            var detail = TryExtractProblemDetail(ex.Content);
+            throw new InvalidOperationException(detail ?? ex.Message, ex);
+        }
+    }
+
+    private static string? TryExtractProblemDetail(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return null;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(content);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("detail", out var detail) && detail.ValueKind == System.Text.Json.JsonValueKind.String)
+                return detail.GetString();
+            if (root.TryGetProperty("title", out var title) && title.ValueKind == System.Text.Json.JsonValueKind.String)
+                return title.GetString();
+        }
+        catch { /* non-JSON body; fall through */ }
+        return null;
     }
 
     private async Task<IBrokerApi> CreateApiAsync(CancellationToken ct, bool refreshIfNeeded = true)
