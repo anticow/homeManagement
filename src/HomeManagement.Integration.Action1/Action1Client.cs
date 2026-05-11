@@ -69,6 +69,7 @@ public sealed class Action1Client : IDisposable
 
             var form = new FormUrlEncodedContent(
             [
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
                 new KeyValuePair<string, string>("client_id", _options.ClientId),
                 new KeyValuePair<string, string>("client_secret", _options.ClientSecret)
             ]);
