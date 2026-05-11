@@ -37,7 +37,21 @@ internal sealed class UnixOrIsoDateTimeConverter : JsonConverter<DateTime?>
             case JsonTokenType.String:
                 var raw = reader.GetString();
                 if (string.IsNullOrEmpty(raw)) return null;
-                return DateTime.Parse(raw, null, System.Globalization.DateTimeStyles.RoundtripKind);
+
+                // Try standard ISO 8601 / RFC 3339 first
+                if (DateTime.TryParse(raw, null,
+                        System.Globalization.DateTimeStyles.RoundtripKind, out var iso))
+                    return iso;
+
+                // Action1 also uses a custom underscore-separated format: "2026-05-11_04-22-20"
+                if (DateTime.TryParseExact(raw, "yyyy-MM-dd_HH-mm-ss",
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.AssumeUniversal |
+                        System.Globalization.DateTimeStyles.AdjustToUniversal,
+                        out var custom))
+                    return custom;
+
+                return null;
 
             default:
                 return null;
