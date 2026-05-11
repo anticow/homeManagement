@@ -16,7 +16,9 @@ namespace HomeManagement.Integration.Action1.Models;
 /// <summary>Envelope for Action1 paginated list responses.</summary>
 public sealed record Action1PagedResponse<T>(
     [property: JsonPropertyName("items")] IReadOnlyList<T> Items,
-    [property: JsonPropertyName("total_items")] int TotalCount);
+    [property: JsonPropertyName("total_items")]
+    [property: JsonConverter(typeof(FlexibleIntConverter))]
+    int TotalCount);
 
 /// <summary>Represents a managed endpoint registered in Action1.</summary>
 public sealed record Action1Endpoint(
@@ -30,8 +32,12 @@ public sealed record Action1Endpoint(
     [property: JsonConverter(typeof(UnixOrIsoDateTimeConverter))]
     DateTime? LastSeenUtc,
     [property: JsonPropertyName("agent_version")] string? AgentVersion,
-    [property: JsonPropertyName("missing_critical_updates")] int MissingCriticalUpdates,
-    [property: JsonPropertyName("missing_other_updates")] int MissingOtherUpdates,
+    [property: JsonPropertyName("missing_critical_updates")]
+    [property: JsonConverter(typeof(FlexibleIntConverter))]
+    int MissingCriticalUpdates,
+    [property: JsonPropertyName("missing_other_updates")]
+    [property: JsonConverter(typeof(FlexibleIntConverter))]
+    int MissingOtherUpdates,
     [property: JsonPropertyName("user")] string? LastLoggedInUser,
     [property: JsonPropertyName("external_address")] string? ExternalAddress);
 

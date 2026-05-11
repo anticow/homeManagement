@@ -78,3 +78,27 @@ internal sealed class UnixOrIsoDateTimeNonNullableConverter : JsonConverter<Date
     public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options)
         => writer.WriteStringValue(value.ToString("O"));
 }
+
+/// <summary>
+/// Converts JSON numbers to int, accepting both integer (5) and float (5.0) values.
+/// Action1 API returns some count fields as JSON floats (e.g. "total_items": 5.0).
+/// Strings containing numeric values are also accepted ("5" → 5).
+/// Null / missing values return 0.
+/// </summary>
+internal sealed class FlexibleIntConverter : JsonConverter<int>
+{
+    public static readonly FlexibleIntConverter Instance = new();
+
+    public override int Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        => reader.TokenType switch
+        {
+            JsonTokenType.Number =>
+                reader.TryGetInt32(out var i) ? i : (int)reader.GetDouble(),
+            JsonTokenType.String =>
+                int.TryParse(reader.GetString(), out var s) ? s : 0,
+            _ => 0
+        };
+
+    public override void Write(Utf8JsonWriter writer, int value, JsonSerializerOptions options)
+        => writer.WriteNumberValue(value);
+}
