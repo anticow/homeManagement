@@ -157,25 +157,23 @@ public sealed class Action1Client : IDisposable
         return await resp.Content.ReadFromJsonAsync<Action1Endpoint>(JsonOpts, ct);
     }
 
-    // ── Patches ───────────────────────────────────────────────────────────────
+    // ── Patches / missing updates ─────────────────────────────────────────────
 
     /// <summary>
-    /// Get missing (available to install) patches for a specific endpoint.
+    /// Get missing updates for a specific endpoint.
     ///
-    /// NOTE: Action1's v3.0 API does not publicly document a per-endpoint patch list endpoint.
-    /// This uses the anticipated path based on the endpoint detail response fields.
-    /// The method returns an empty list (not an error) if the path is not found,
-    /// so the integration degrades gracefully while the patch count is still available
-    /// via ListEndpointsAsync (missing_critical_updates / missing_other_updates fields).
+    /// Real Action1 API: GET /updates/{orgId}?endpoint_id={endpointId}&amp;fields=*
+    ///
+    /// Returns an empty list on 404 so callers degrade gracefully.
+    /// Each item includes a <see cref="PatchToInstall.Version"/> which is required
+    /// when creating a deployment policy instance.
     /// </summary>
     public async Task<IReadOnlyList<Action1Patch>> GetAvailablePatchesAsync(
         string endpointId, CancellationToken ct = default)
     {
-        _logger.LogDebug("Action1: fetching available patches for endpoint {EndpointId}", endpointId);
-
-        // Attempt the most likely path; returns [] on 404 so callers degrade gracefully
+        _logger.LogDebug("Action1: fetching available updates for endpoint {EndpointId}", endpointId);
         return await GetPagedListAsync<Action1Patch>(
-            $"endpoints/managed/{_options.OrganizationId}/{endpointId}/patches/missing", ct);
+            $"updates/{_options.OrganizationId}?endpoint_id={Uri.EscapeDataString(endpointId)}&fields=*", ct);
     }
 
     /// <summary>Get installed software inventory for a specific endpoint.</summary>
@@ -184,17 +182,85 @@ public sealed class Action1Client : IDisposable
     {
         _logger.LogDebug("Action1: fetching software inventory for endpoint {EndpointId}", endpointId);
         return await GetPagedListAsync<Action1SoftwareItem>(
-            $"endpoints/managed/{_options.OrganizationId}/{endpointId}/software", ct);
+            $"apps/{_options.OrganizationId}/data/{endpointId}", ct);
     }
 
-    // ── Deployments ───────────────────────────────────────────────────────────
+    // ── Policy instance deployment (approve & install) ────────────────────────
 
     /// <summary>
-    /// Create a patch deployment (install request) for selected patches on an endpoint.
-    /// Returns the created deployment ID, or null if the request failed.
+    /// Create a one-time patch deployment by posting a policy instance to Action1.
     ///
-    /// NOTE: The exact Action1 API path for initiating patch installs is not in their
-    /// public documentation. Adjust the path below if Action1 support provides a different URL.
+    /// Real Action1 API: POST /policies/instances/{orgId}
+    ///
+    /// Action1 has no standalone "approve patch" endpoint. Approval is achieved by
+    /// creating a policy instance with template_id="deploy_update", scope="Specified",
+    /// update_approval="auto", and the specific packages listed. This runs immediately.
+    ///
+    /// Returns the created policy instance ID, or null if the request failed.
+    /// </summary>
+    public async Task<string?> CreateDeploymentAsync(
+        string endpointId,
+        IReadOnlyList<PatchToInstall> patches,
+        bool allowReboot,
+        CancellationToken ct = default)
+    {
+        _logger.LogInformation(
+            "Action1: creating deployment policy for {Count} patches on endpoint {EndpointId} (allowReboot={AllowReboot})",
+            patches.Count, endpointId, allowReboot);
+
+        // Build the packages dict: [{"pkg_id": "version"}, ...] — one object per patch.
+        // Action1 API uses an array of single-key objects, not a standard map.
+        var packageList = patches.Select(p =>
+            new Dictionary<string, string> { [p.Id] = p.Version ?? "latest" }
+        ).ToList();
+
+        var body = new
+        {
+            name = $"homeManagement: deploy {patches.Count} update(s) on {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC",
+            retry_minutes = 0,
+            endpoints = new[] { new { id = endpointId, type = "Endpoint" } },
+            actions = new[]
+            {
+                new
+                {
+                    name = "Deploy Update",
+                    template_id = "deploy_update",
+                    @params = new
+                    {
+                        display_summary = $"Approved via homeManagement ({patches.Count} update(s))",
+                        packages = packageList,
+                        update_approval = "auto",
+                        scope = "Specified",
+                        reboot_options = new
+                        {
+                            auto_reboot = allowReboot ? "yes" : "no",
+                            show_message = "yes",
+                            message_text = "System maintenance is in progress. Please save your work and allow the system to reboot.",
+                            timeout = 240
+                        }
+                    }
+                }
+            }
+        };
+
+        var resp = await PostJsonAsync($"policies/instances/{_options.OrganizationId}", body, ct);
+
+        if (!resp.IsSuccessStatusCode)
+        {
+            _logger.LogError("Action1: deployment policy creation returned {Status} for endpoint {EndpointId}",
+                resp.StatusCode, endpointId);
+            return null;
+        }
+
+        var created = await resp.Content.ReadFromJsonAsync<Action1PolicyInstance>(JsonOpts, ct);
+        _logger.LogInformation("Action1: policy instance {Id} created for endpoint {EndpointId}",
+            created?.Id, endpointId);
+        return created?.Id;
+    }
+
+    /// <summary>
+    /// Overload for callers that only have patch IDs (no version).
+    /// Fetches the current available patch list to resolve versions, then delegates.
     /// </summary>
     public async Task<string?> CreateDeploymentAsync(
         string endpointId,
@@ -202,48 +268,45 @@ public sealed class Action1Client : IDisposable
         bool allowReboot,
         CancellationToken ct = default)
     {
-        _logger.LogInformation(
-            "Action1: deploying {Count} patches to endpoint {EndpointId} (allowReboot={AllowReboot})",
-            patchIds.Count, endpointId, allowReboot);
+        // Resolve versions from the live missing-updates list so the deployment body is complete.
+        var available = await GetAvailablePatchesAsync(endpointId, ct);
+        var versionLookup = available.ToDictionary(p => p.Id, p => p.Version, StringComparer.OrdinalIgnoreCase);
 
-        var body = new
-        {
-            endpoint_id = endpointId,
-            patch_ids = patchIds,
-            allow_reboot = allowReboot
-        };
+        var items = patchIds.Select(id =>
+            new PatchToInstall(id, versionLookup.GetValueOrDefault(id))).ToList();
 
-        var resp = await PostJsonAsync(
-            $"endpoints/managed/{_options.OrganizationId}/patches/install", body, ct);
-
-        if (!resp.IsSuccessStatusCode)
-        {
-            _logger.LogError("Action1: deployment request returned {Status} for endpoint {EndpointId}",
-                resp.StatusCode, endpointId);
-            return null;
-        }
-
-        var created = await resp.Content.ReadFromJsonAsync<Action1DeploymentCreated>(JsonOpts, ct);
-        return created?.Id;
+        return await CreateDeploymentAsync(endpointId, items, allowReboot, ct);
     }
 
-    /// <summary>Get the current status of a deployment.</summary>
+    /// <summary>
+    /// Get the current status of a deployment (policy instance).
+    ///
+    /// Real Action1 API: GET /policies/instances/{orgId}/{instanceId}
+    /// Returns null if the instance is not found.
+    /// </summary>
     public async Task<Action1Deployment?> GetDeploymentAsync(
         string deploymentId, CancellationToken ct = default)
     {
         var resp = await GetAsync(
-            $"endpoints/managed/{_options.OrganizationId}/patches/deployments/{deploymentId}", ct);
+            $"policies/instances/{_options.OrganizationId}/{deploymentId}", ct);
 
         if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
             return null;
 
         resp.EnsureSuccessStatusCode();
-        return await resp.Content.ReadFromJsonAsync<Action1Deployment>(JsonOpts, ct);
+        var instance = await resp.Content.ReadFromJsonAsync<Action1PolicyInstance>(JsonOpts, ct);
+        if (instance is null) return null;
+
+        // Map policy instance to legacy Action1Deployment so existing callers aren't broken.
+        return new Action1Deployment(
+            Id: instance.Id,
+            Status: instance.Status,
+            Results: []);
     }
 
     /// <summary>
-    /// Poll a deployment until it reaches a terminal state (Succeeded/Failed/Cancelled/Completed)
-    /// or until <paramref name="timeout"/> elapses.
+    /// Poll a deployment (policy instance) until it reaches a terminal state
+    /// (Completed/Failed/Disabled) or until <paramref name="timeout"/> elapses.
     /// </summary>
     public async Task<Action1Deployment?> PollDeploymentUntilCompleteAsync(
         string deploymentId,
@@ -258,10 +321,11 @@ public sealed class Action1Client : IDisposable
             var deployment = await GetDeploymentAsync(deploymentId, ct);
             if (deployment is null) return null;
 
-            if (deployment.Status is "Succeeded" or "Failed" or "Cancelled" or "Completed")
+            // Policy instance terminal statuses
+            if (deployment.Status is "Completed" or "Failed" or "Disabled" or "Succeeded" or "Cancelled")
                 return deployment;
 
-            _logger.LogDebug("Action1: deployment {Id} still {Status}, polling in {Delay}s",
+            _logger.LogDebug("Action1: policy instance {Id} still {Status}, polling in {Delay}s",
                 deploymentId, deployment.Status, delay.TotalSeconds);
 
             await Task.Delay(delay, ct);
@@ -269,7 +333,7 @@ public sealed class Action1Client : IDisposable
                 delay += TimeSpan.FromSeconds(5);
         }
 
-        _logger.LogWarning("Action1: deployment {Id} did not complete within {Timeout}",
+        _logger.LogWarning("Action1: policy instance {Id} did not complete within {Timeout}",
             deploymentId, timeout);
         return null;
     }

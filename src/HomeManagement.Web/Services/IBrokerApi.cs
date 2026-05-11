@@ -86,17 +86,20 @@ public sealed record PatchScanRequest(Guid MachineId);
 
 public sealed record Action1PatchDto(
     string Id,
-    string Title,
+    string Name,
+    string? Version,
     string? Description,
     string Severity,
     string Category,
     long SizeBytes,
     bool RequiresReboot,
-    DateTime PublishedUtc,
+    DateTime? PublishedUtc,
     string? KbArticleId);
 
+public sealed record Action1PatchItemDto(string Id, string? Version);
+
 public sealed record Action1DeployRequestDto(
-    IReadOnlyList<string> PatchIds,
+    IReadOnlyList<Action1PatchItemDto> Patches,
     bool AllowReboot);
 
 public sealed record Action1DeploymentCreatedDto(string DeploymentId);

@@ -384,12 +384,12 @@ else if (_machine is not null)
                                        checked="@_selectedPatchIds.Contains(patch.Id)"
                                        @onchange="e => TogglePatch(patch.Id, (bool)e.Value!)" />
                             </td>
-                            <td>@patch.Title</td>
+                            <td>@patch.Name</td>
                             <td style="color:@severityColor; font-weight:bold;">@patch.Severity</td>
                             <td>@patch.Category</td>
                             <td>@FormatBytes(patch.SizeBytes)</td>
                             <td>@(patch.RequiresReboot ? "⚠ Yes" : "No")</td>
-                            <td>@patch.PublishedUtc.ToString("d")</td>
+                            <td>@(patch.PublishedUtc?.ToString("d") ?? "—")</td>
                             <td style="font-family:monospace; font-size:0.8rem;">@patch.KbArticleId</td>
                         </tr>
                     }
@@ -649,9 +649,13 @@ else if (_machine is not null)
         StateHasChanged();
         try
         {
+            var patchItems = _action1Patches!
+                .Where(p => _selectedPatchIds.Contains(p.Id))
+                .Select(p => new Action1PatchItemDto(p.Id, p.Version))
+                .ToList();
             var result = await BrokerApi.DeployAction1PatchesAsync(
                 _action1EndpointId,
-                new Action1DeployRequestDto(_selectedPatchIds.ToList(), _allowReboot));
+                new Action1DeployRequestDto(patchItems, _allowReboot));
             _deployResult = result.DeploymentId;
             _selectedPatchIds.Clear();
             // Refresh patch list so deployed patches disappear

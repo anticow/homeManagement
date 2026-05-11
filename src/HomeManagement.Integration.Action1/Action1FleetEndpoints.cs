@@ -164,8 +164,8 @@ public static class Action1FleetEndpoints
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
-            if (request.PatchIds is null || request.PatchIds.Count == 0)
-                return Results.BadRequest(new { Message = "At least one patch ID is required." });
+            if (request.Patches is null || request.Patches.Count == 0)
+                return Results.BadRequest(new { Message = "At least one patch is required." });
 
             try
             {
@@ -173,12 +173,16 @@ public static class Action1FleetEndpoints
                 if (endpointId is null)
                     return Results.NotFound(new { Message = $"Machine {machineId} is not enrolled in Action1." });
 
+                var patches = request.Patches
+                    .Select(p => new PatchToInstall(p.Id, p.Version))
+                    .ToList();
+
                 var deploymentId = await action1.CreateDeploymentAsync(
-                    endpointId, request.PatchIds, request.AllowReboot, ct);
+                    endpointId, patches, request.AllowReboot, ct);
 
                 if (deploymentId is null)
                     return Results.Problem(
-                        "Action1 failed to create the deployment. Check Action1 API access and endpoint ID.",
+                        "Action1 failed to create the deployment policy. Check Action1 API access and endpoint ID.",
                         statusCode: 502);
 
                 return Results.Accepted(
@@ -237,5 +241,8 @@ public sealed record FleetPatchSummary(
     int Online);
 
 public sealed record ApprovePatchesRequest(
-    IReadOnlyList<string> PatchIds,
+    IReadOnlyList<PatchApprovalItem> Patches,
     bool AllowReboot = false);
+
+/// <summary>A patch ID + version pair for patch approval requests.</summary>
+public sealed record PatchApprovalItem(string Id, string? Version);

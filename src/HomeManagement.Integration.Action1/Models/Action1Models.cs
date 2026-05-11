@@ -42,47 +42,80 @@ public sealed record Action1Endpoint(
     [property: JsonPropertyName("external_address")] string? ExternalAddress);
 
 /// <summary>
-/// Represents a missing (available to install) patch on an endpoint.
-/// NOTE: The exact path for per-endpoint patch listing is not publicly documented
-/// in Action1's v3.0 API. This model maps the anticipated response shape.
+/// Represents a missing (available to install) patch/update on an endpoint.
+///
+/// Data comes from GET /updates/{orgId}?endpoint_id={endpointId}
+/// Action1 uses "name" for the package display name. The "version" field is required
+/// when creating a policy instance deployment.
 /// </summary>
 public sealed record Action1Patch(
     [property: JsonPropertyName("id")] string Id,
-    [property: JsonPropertyName("title")] string Title,
+    // Action1 /updates API uses "name" not "title"; "title" kept as fallback alias
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("version")] string? Version,
     [property: JsonPropertyName("description")] string? Description,
     [property: JsonPropertyName("severity")] string Severity,
     [property: JsonPropertyName("category")] string Category,
-    [property: JsonPropertyName("size_bytes")] long SizeBytes,
+    [property: JsonPropertyName("size_bytes")]
+    [property: JsonConverter(typeof(FlexibleIntConverter))]
+    int SizeBytes,
     [property: JsonPropertyName("requires_reboot")] bool RequiresReboot,
     [property: JsonPropertyName("published_date")]
-    [property: JsonConverter(typeof(UnixOrIsoDateTimeNonNullableConverter))]
-    DateTime PublishedUtc,
+    [property: JsonConverter(typeof(UnixOrIsoDateTimeConverter))]
+    DateTime? PublishedUtc,
     [property: JsonPropertyName("kb_article")] string? KbArticleId);
 
-/// <summary>Result of a patch install operation.</summary>
-public sealed record Action1Deployment(
+/// <summary>
+/// Response from POST /policies/instances/{orgId} (one-time deployment/remediation).
+/// Also used by GET /policies/instances/{orgId}/{id} for status polling.
+/// </summary>
+public sealed record Action1PolicyInstance(
     [property: JsonPropertyName("id")] string Id,
-    [property: JsonPropertyName("endpoint_id")] string EndpointId,
-    [property: JsonPropertyName("status")] string Status,
-    [property: JsonPropertyName("created_at")]
-    [property: JsonConverter(typeof(UnixOrIsoDateTimeNonNullableConverter))]
-    DateTime CreatedUtc,
-    [property: JsonPropertyName("completed_at")]
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("status")] string? Status,
+    [property: JsonPropertyName("last_run")]
     [property: JsonConverter(typeof(UnixOrIsoDateTimeConverter))]
-    DateTime? CompletedUtc,
-    [property: JsonPropertyName("results")] IReadOnlyList<Action1DeploymentResult> Results);
+    DateTime? LastRunUtc,
+    [property: JsonPropertyName("next_run")]
+    [property: JsonConverter(typeof(UnixOrIsoDateTimeConverter))]
+    DateTime? NextRunUtc);
 
-/// <summary>Internal DTO returned when a deployment is first created.</summary>
-internal sealed record Action1DeploymentCreated(
-    [property: JsonPropertyName("id")] string Id);
+/// <summary>
+/// Status summary for a policy instance used to poll deployment completion.
+/// Terminal statuses: Completed, Failed, Disabled.
+/// </summary>
+public sealed record Action1PolicyInstanceStatus(
+    string Id,
+    string? Status,
+    IReadOnlyList<Action1PolicyEndpointResult> EndpointResults);
 
-/// <summary>Per-patch result within a deployment.</summary>
-public sealed record Action1DeploymentResult(
-    [property: JsonPropertyName("patch_id")] string PatchId,
-    [property: JsonPropertyName("title")] string Title,
+/// <summary>Per-endpoint result within a policy instance run.</summary>
+public sealed record Action1PolicyEndpointResult(
+    [property: JsonPropertyName("endpoint_id")] string EndpointId,
+    [property: JsonPropertyName("endpoint_name")] string? EndpointName,
     [property: JsonPropertyName("status")] string Status,
     [property: JsonPropertyName("error_message")] string? ErrorMessage,
     [property: JsonPropertyName("reboot_required")] bool RebootRequired);
+
+/// <summary>A patch + version pair, required when creating a policy instance deployment.</summary>
+public sealed record PatchToInstall(string Id, string? Version);
+
+/// <summary>
+/// Legacy deployment model — kept for backward compatibility with GetDeploymentAsync.
+/// New code should use Action1PolicyInstance.
+/// </summary>
+public sealed record Action1Deployment(
+    string Id,
+    string? Status,
+    IReadOnlyList<Action1DeploymentResult> Results);
+
+/// <summary>Per-patch result within a deployment (legacy).</summary>
+public sealed record Action1DeploymentResult(
+    string PatchId,
+    string Title,
+    string Status,
+    string? ErrorMessage,
+    bool RebootRequired);
 
 /// <summary>A software item from Action1 software inventory.</summary>
 public sealed record Action1SoftwareItem(

@@ -1,3 +1,4 @@
+using HomeManagement.Integration.Action1.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -84,7 +85,10 @@ public static class Action1BrokerEndpoints
         /// <summary>
         /// Create a patch deployment for selected patches on an endpoint.
         /// This is the approval gate: an authenticated user explicitly approves the
-        /// patches to deploy by calling this endpoint with the desired patch IDs.
+        /// patches to deploy by calling this endpoint with the desired patch IDs + versions.
+        ///
+        /// Action1's approval model works through policy instances: this creates a
+        /// one-time "Deploy Update" policy instance targeting the specific endpoint and packages.
         /// </summary>
         group.MapPost("endpoints/{endpointId}/deploy", async (
             string endpointId,
@@ -96,14 +100,14 @@ public static class Action1BrokerEndpoints
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
-            if (request.PatchIds is null || request.PatchIds.Count == 0)
-                return Results.BadRequest("At least one patch ID is required.");
+            if (request.Patches is null || request.Patches.Count == 0)
+                return Results.BadRequest("At least one patch is required.");
 
-            var deploymentId = await client.CreateDeploymentAsync(
-                endpointId, request.PatchIds, request.AllowReboot, ct);
+            var patches = request.Patches.Select(p => new PatchToInstall(p.Id, p.Version)).ToList();
+            var deploymentId = await client.CreateDeploymentAsync(endpointId, patches, request.AllowReboot, ct);
 
             if (deploymentId is null)
-                return Results.Problem("Action1 failed to create the deployment.", statusCode: 502);
+                return Results.Problem("Action1 failed to create the deployment policy.", statusCode: 502);
 
             return Results.Accepted($"/api/action1/deployments/{deploymentId}",
                 new { DeploymentId = deploymentId });
@@ -129,5 +133,8 @@ public static class Action1BrokerEndpoints
 
 /// <summary>Request body for POST /api/action1/endpoints/{id}/deploy.</summary>
 public sealed record DeployPatchesRequest(
-    IReadOnlyList<string> PatchIds,
+    IReadOnlyList<PatchDeployItem> Patches,
     bool AllowReboot = false);
+
+/// <summary>A patch ID + version pair for direct endpoint deploy requests.</summary>
+public sealed record PatchDeployItem(string Id, string? Version);

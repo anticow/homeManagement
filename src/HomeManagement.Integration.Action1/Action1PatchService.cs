@@ -202,13 +202,13 @@ internal sealed class Action1PatchService : IPatchService
 
     private static PatchInfo MapPatchInfo(Action1Patch p) => new(
         PatchId: p.Id,
-        Title: p.Title,
+        Title: p.Name,
         Severity: MapSeverity(p.Severity),
         Category: MapCategory(p.Category),
         Description: p.Description ?? string.Empty,
         SizeBytes: p.SizeBytes,
         RequiresReboot: p.RequiresReboot,
-        PublishedUtc: p.PublishedUtc);
+        PublishedUtc: p.PublishedUtc ?? DateTime.MinValue);
 
     private static System.Collections.ObjectModel.ReadOnlyCollection<PatchOutcome> MapOutcomes(IReadOnlyList<Action1DeploymentResult> results) =>
         results.Select(r => new PatchOutcome(

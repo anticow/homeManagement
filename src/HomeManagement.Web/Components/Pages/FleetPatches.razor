@@ -206,10 +206,14 @@ else if (_fleet is not null)
                                    @onchange="e => TogglePatch(patch.Id, (bool)e.Value!)"
                                    style="margin-top:2px; flex-shrink:0;" />
                             <div>
-                                <div style="font-size:0.88rem; font-weight:500;">@patch.Title</div>
+                                <div style="font-size:0.88rem; font-weight:500;">@patch.Name</div>
                                 <div style="font-size:0.78rem; color:#555; margin-top:2px;">
                                     <span style="color:@severityColor; font-weight:bold;">@patch.Severity</span>
                                     · @patch.Category
+                                    @if (!string.IsNullOrEmpty(patch.Version))
+                                    {
+                                        <span> · v@patch.Version</span>
+                                    }
                                     @if (patch.RequiresReboot)
                                     {
                                         <span style="color:#f57c00;"> · ⚠ Reboot</span>
@@ -389,9 +393,14 @@ else if (_fleet is not null)
 
         try
         {
+            var patchItems = _patches!
+                .Where(p => _selectedPatchIds.Contains(p.Id))
+                .Select(p => new Action1PatchItemDto(p.Id, p.Version))
+                .ToList();
+
             var result = await BrokerApi.ApprovePatchesAsync(
                 _selectedMachine.MachineId,
-                new Action1DeployRequestDto(_selectedPatchIds.ToList(), _allowReboot));
+                new Action1DeployRequestDto(patchItems, _allowReboot));
 
             _approveResult = result.DeploymentId;
             _selectedPatchIds.Clear();
