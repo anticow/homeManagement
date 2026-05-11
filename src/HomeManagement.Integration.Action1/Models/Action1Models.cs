@@ -8,6 +8,10 @@ namespace HomeManagement.Integration.Action1.Models;
 //
 // IMPORTANT: Action1 uses snake_case JSON property names.
 // All records use [JsonPropertyName] attributes to ensure correct deserialization.
+//
+// Date fields: Action1 returns Unix timestamps (integer seconds) for most date fields.
+// All DateTime / DateTime? properties use UnixOrIsoDateTimeConverter to handle
+// both Unix seconds and ISO 8601 strings transparently.
 
 /// <summary>Envelope for Action1 paginated list responses.</summary>
 public sealed record Action1PagedResponse<T>(
@@ -22,7 +26,9 @@ public sealed record Action1Endpoint(
     [property: JsonPropertyName("OS")] string OsName,
     [property: JsonPropertyName("platform")] string OsType,
     [property: JsonPropertyName("status")] string Status,
-    [property: JsonPropertyName("last_seen")] DateTime? LastSeenUtc,
+    [property: JsonPropertyName("last_seen")]
+    [property: JsonConverter(typeof(UnixOrIsoDateTimeConverter))]
+    DateTime? LastSeenUtc,
     [property: JsonPropertyName("agent_version")] string? AgentVersion,
     [property: JsonPropertyName("missing_critical_updates")] int MissingCriticalUpdates,
     [property: JsonPropertyName("missing_other_updates")] int MissingOtherUpdates,
@@ -42,7 +48,9 @@ public sealed record Action1Patch(
     [property: JsonPropertyName("category")] string Category,
     [property: JsonPropertyName("size_bytes")] long SizeBytes,
     [property: JsonPropertyName("requires_reboot")] bool RequiresReboot,
-    [property: JsonPropertyName("published_date")] DateTime PublishedUtc,
+    [property: JsonPropertyName("published_date")]
+    [property: JsonConverter(typeof(UnixOrIsoDateTimeNonNullableConverter))]
+    DateTime PublishedUtc,
     [property: JsonPropertyName("kb_article")] string? KbArticleId);
 
 /// <summary>Result of a patch install operation.</summary>
@@ -50,8 +58,12 @@ public sealed record Action1Deployment(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("endpoint_id")] string EndpointId,
     [property: JsonPropertyName("status")] string Status,
-    [property: JsonPropertyName("created_at")] DateTime CreatedUtc,
-    [property: JsonPropertyName("completed_at")] DateTime? CompletedUtc,
+    [property: JsonPropertyName("created_at")]
+    [property: JsonConverter(typeof(UnixOrIsoDateTimeNonNullableConverter))]
+    DateTime CreatedUtc,
+    [property: JsonPropertyName("completed_at")]
+    [property: JsonConverter(typeof(UnixOrIsoDateTimeConverter))]
+    DateTime? CompletedUtc,
     [property: JsonPropertyName("results")] IReadOnlyList<Action1DeploymentResult> Results);
 
 /// <summary>Internal DTO returned when a deployment is first created.</summary>
@@ -71,7 +83,9 @@ public sealed record Action1SoftwareItem(
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("version")] string? Version,
     [property: JsonPropertyName("publisher")] string? Publisher,
-    [property: JsonPropertyName("install_date")] DateTime? InstalledUtc);
+    [property: JsonPropertyName("install_date")]
+    [property: JsonConverter(typeof(UnixOrIsoDateTimeConverter))]
+    DateTime? InstalledUtc);
 
 /// <summary>OAuth2 token response from Action1.</summary>
 internal sealed record Action1TokenResponse(
