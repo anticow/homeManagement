@@ -35,43 +35,50 @@ public static class Action1FleetEndpoints
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
-            var machineQuery = new MachineQuery(IncludeDeleted: false, Page: 1, PageSize: 500);
-            var machines = await inventory.QueryAsync(machineQuery, ct);
-            var action1Endpoints = await action1.ListEndpointsAsync(ct);
-
-            var endpointById = action1Endpoints.ToDictionary(e => e.Id, StringComparer.OrdinalIgnoreCase);
-            var endpointByHostname = action1Endpoints
-                .GroupBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-
-            var results = machines.Items.Select(machine =>
+            try
             {
-                Action1Endpoint? endpoint = null;
+                var machineQuery = new MachineQuery(IncludeDeleted: false, Page: 1, PageSize: 500);
+                var machines = await inventory.QueryAsync(machineQuery, ct);
+                var action1Endpoints = await action1.ListEndpointsAsync(ct);
 
-                if (machine.Tags.TryGetValue("action1:endpoint_id", out var taggedId) &&
-                    !string.IsNullOrEmpty(taggedId))
+                var endpointById = action1Endpoints.ToDictionary(e => e.Id, StringComparer.OrdinalIgnoreCase);
+                var endpointByHostname = action1Endpoints
+                    .GroupBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+                var results = machines.Items.Select(machine =>
                 {
-                    endpointById.TryGetValue(taggedId, out endpoint);
-                }
+                    Action1Endpoint? endpoint = null;
 
-                if (endpoint is null)
-                    endpointByHostname.TryGetValue(machine.Hostname.Value, out endpoint);
+                    if (machine.Tags.TryGetValue("action1:endpoint_id", out var taggedId) &&
+                        !string.IsNullOrEmpty(taggedId))
+                    {
+                        endpointById.TryGetValue(taggedId, out endpoint);
+                    }
 
-                return new FleetMachineStatus(
-                    MachineId: machine.Id,
-                    Hostname: machine.Hostname.Value,
-                    OsType: machine.OsType.ToString(),
-                    MachineState: machine.State.ToString(),
-                    Action1EndpointId: endpoint?.Id,
-                    Action1Status: endpoint?.Status ?? "NotEnrolled",
-                    Action1LastSeen: endpoint?.LastSeenUtc,
-                    AgentVersion: endpoint?.AgentVersion,
-                    CriticalPatchCount: endpoint?.MissingCriticalUpdates ?? 0,
-                    OtherPatchCount: endpoint?.MissingOtherUpdates ?? 0,
-                    LastLoggedInUser: endpoint?.LastLoggedInUser);
-            }).ToList();
+                    if (endpoint is null)
+                        endpointByHostname.TryGetValue(machine.Hostname.Value, out endpoint);
 
-            return Results.Ok(results);
+                    return new FleetMachineStatus(
+                        MachineId: machine.Id,
+                        Hostname: machine.Hostname.Value,
+                        OsType: machine.OsType.ToString(),
+                        MachineState: machine.State.ToString(),
+                        Action1EndpointId: endpoint?.Id,
+                        Action1Status: endpoint?.Status ?? "NotEnrolled",
+                        Action1LastSeen: endpoint?.LastSeenUtc,
+                        AgentVersion: endpoint?.AgentVersion,
+                        CriticalPatchCount: endpoint?.MissingCriticalUpdates ?? 0,
+                        OtherPatchCount: endpoint?.MissingOtherUpdates ?? 0,
+                        LastLoggedInUser: endpoint?.LastLoggedInUser);
+                }).ToList();
+
+                return Results.Ok(results);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+            }
         });
 
         group.MapGet("summary", async (
@@ -83,21 +90,28 @@ public static class Action1FleetEndpoints
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
-            var endpoints = await action1.ListEndpointsAsync(ct);
-            var machineQuery = new MachineQuery(IncludeDeleted: false, Page: 1, PageSize: 1);
-            var machinePage = await inventory.QueryAsync(machineQuery, ct);
+            try
+            {
+                var endpoints = await action1.ListEndpointsAsync(ct);
+                var machineQuery = new MachineQuery(IncludeDeleted: false, Page: 1, PageSize: 1);
+                var machinePage = await inventory.QueryAsync(machineQuery, ct);
 
-            var summary = new FleetPatchSummary(
-                TotalMachines: machinePage.TotalCount,
-                EnrolledInAction1: endpoints.Count,
-                TotalCriticalPatches: endpoints.Sum(e => e.MissingCriticalUpdates),
-                TotalOtherPatches: endpoints.Sum(e => e.MissingOtherUpdates),
-                FullyPatched: endpoints.Count(e =>
-                    e.MissingCriticalUpdates == 0 && e.MissingOtherUpdates == 0),
-                Online: endpoints.Count(e =>
-                    string.Equals(e.Status, "Online", StringComparison.OrdinalIgnoreCase)));
+                var summary = new FleetPatchSummary(
+                    TotalMachines: machinePage.TotalCount,
+                    EnrolledInAction1: endpoints.Count,
+                    TotalCriticalPatches: endpoints.Sum(e => e.MissingCriticalUpdates),
+                    TotalOtherPatches: endpoints.Sum(e => e.MissingOtherUpdates),
+                    FullyPatched: endpoints.Count(e =>
+                        e.MissingCriticalUpdates == 0 && e.MissingOtherUpdates == 0),
+                    Online: endpoints.Count(e =>
+                        string.Equals(e.Status, "Online", StringComparison.OrdinalIgnoreCase)));
 
-            return Results.Ok(summary);
+                return Results.Ok(summary);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+            }
         });
 
         group.MapGet("{machineId:guid}/patches", async (
@@ -110,12 +124,19 @@ public static class Action1FleetEndpoints
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
-            var endpointId = await ResolveEndpointIdAsync(machineId, action1, inventory, ct);
-            if (endpointId is null)
-                return Results.NotFound(new { Message = $"Machine {machineId} is not enrolled in Action1." });
+            try
+            {
+                var endpointId = await ResolveEndpointIdAsync(machineId, action1, inventory, ct);
+                if (endpointId is null)
+                    return Results.NotFound(new { Message = $"Machine {machineId} is not enrolled in Action1." });
 
-            var patches = await action1.GetAvailablePatchesAsync(endpointId, ct);
-            return Results.Ok(patches);
+                var patches = await action1.GetAvailablePatchesAsync(endpointId, ct);
+                return Results.Ok(patches);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+            }
         });
 
         group.MapPost("{machineId:guid}/approve", async (
@@ -132,21 +153,28 @@ public static class Action1FleetEndpoints
             if (request.PatchIds is null || request.PatchIds.Count == 0)
                 return Results.BadRequest(new { Message = "At least one patch ID is required." });
 
-            var endpointId = await ResolveEndpointIdAsync(machineId, action1, inventory, ct);
-            if (endpointId is null)
-                return Results.NotFound(new { Message = $"Machine {machineId} is not enrolled in Action1." });
+            try
+            {
+                var endpointId = await ResolveEndpointIdAsync(machineId, action1, inventory, ct);
+                if (endpointId is null)
+                    return Results.NotFound(new { Message = $"Machine {machineId} is not enrolled in Action1." });
 
-            var deploymentId = await action1.CreateDeploymentAsync(
-                endpointId, request.PatchIds, request.AllowReboot, ct);
+                var deploymentId = await action1.CreateDeploymentAsync(
+                    endpointId, request.PatchIds, request.AllowReboot, ct);
 
-            if (deploymentId is null)
-                return Results.Problem(
-                    "Action1 failed to create the deployment. Check Action1 API access and endpoint ID.",
-                    statusCode: 502);
+                if (deploymentId is null)
+                    return Results.Problem(
+                        "Action1 failed to create the deployment. Check Action1 API access and endpoint ID.",
+                        statusCode: 502);
 
-            return Results.Accepted(
-                $"/api/action1/fleet/{machineId}/deployments/{deploymentId}",
-                new { DeploymentId = deploymentId, EndpointId = endpointId });
+                return Results.Accepted(
+                    $"/api/action1/fleet/{machineId}/deployments/{deploymentId}",
+                    new { DeploymentId = deploymentId, EndpointId = endpointId });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+            }
         });
 
         return app;
