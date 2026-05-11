@@ -42,22 +42,36 @@ public static class Action1FleetEndpoints
                 var action1Endpoints = await action1.ListEndpointsAsync(ct);
 
                 var endpointById = action1Endpoints.ToDictionary(e => e.Id, StringComparer.OrdinalIgnoreCase);
-                var endpointByHostname = action1Endpoints
-                    .GroupBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
-                    .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+                // Build lookup by ALL possible name forms so FQDN vs short-name mismatches resolve.
+                // Action1 may register as "DC2.cowgomu.net" while HM stores "DC2", or vice versa.
+                var endpointByName = new Dictionary<string, Action1Endpoint>(StringComparer.OrdinalIgnoreCase);
+                foreach (var ep in action1Endpoints)
+                {
+                    endpointByName.TryAdd(ep.Name, ep);
+                    // Also index the short name (first label of FQDN) if the name contains dots
+                    var dot = ep.Name.IndexOf('.');
+                    if (dot > 0)
+                        endpointByName.TryAdd(ep.Name[..dot], ep);
+                }
 
                 var results = machines.Items.Select(machine =>
                 {
                     Action1Endpoint? endpoint = null;
 
+                    // 1. Prefer explicit tag binding — zero ambiguity
                     if (machine.Tags.TryGetValue("action1:endpoint_id", out var taggedId) &&
                         !string.IsNullOrEmpty(taggedId))
                     {
                         endpointById.TryGetValue(taggedId, out endpoint);
                     }
 
+                    // 2. Fuzzy hostname match: try short name, then FQDN
                     if (endpoint is null)
-                        endpointByHostname.TryGetValue(machine.Hostname.Value, out endpoint);
+                        endpointByName.TryGetValue(machine.Hostname.Value, out endpoint);
+
+                    if (endpoint is null && !string.IsNullOrEmpty(machine.Fqdn))
+                        endpointByName.TryGetValue(machine.Fqdn, out endpoint);
 
                     return new FleetMachineStatus(
                         MachineId: machine.Id,
