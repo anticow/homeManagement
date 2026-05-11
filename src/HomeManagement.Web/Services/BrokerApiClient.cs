@@ -92,6 +92,9 @@ public sealed class BrokerApiClient : IBrokerApi, IDisposable
     public Task<ApproveDeploymentResultDto> ApprovePatchesAsync(Guid machineId, [Body] Action1DeployRequestDto request, CancellationToken ct = default)
         => ExecuteAsync(api => api.ApprovePatchesAsync(machineId, request, ct), ct);
 
+    public Task<IReadOnlyList<Action1VulnerabilityDto>> GetFleetVulnerabilitiesAsync(CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetFleetVulnerabilitiesAsync(ct), ct);
+
     private async Task<T> ExecuteAsync<T>(Func<IBrokerApi, Task<T>> action, CancellationToken ct)
     {
         try

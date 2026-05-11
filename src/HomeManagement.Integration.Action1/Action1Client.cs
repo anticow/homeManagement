@@ -185,6 +185,68 @@ public sealed class Action1Client : IDisposable
             $"apps/{_options.OrganizationId}/data/{endpointId}", ct);
     }
 
+    // ── Installed updates & compliance ────────────────────────────────────────
+
+    /// <summary>
+    /// Fetch installed update history for the organization (or optionally filtered to one endpoint).
+    ///
+    /// Real Action1 API: GET /updates/installed/{orgId}?fields=*
+    ///   Optional filter: &amp;endpoint_id={endpointId}
+    ///
+    /// Returns an empty list on 404 (endpoint not found or no history yet).
+    /// Use <see cref="GetLastPatchedDatesAsync"/> for a pre-aggregated map.
+    /// </summary>
+    public async Task<IReadOnlyList<Action1InstalledUpdate>> GetInstalledUpdatesAsync(
+        string? endpointId = null, CancellationToken ct = default)
+    {
+        var path = $"updates/installed/{_options.OrganizationId}?fields=*";
+        if (!string.IsNullOrEmpty(endpointId))
+            path += $"&endpoint_id={Uri.EscapeDataString(endpointId)}";
+
+        _logger.LogDebug("Action1: fetching installed updates for org {OrgId} (endpoint={EndpointId})",
+            _options.OrganizationId, endpointId ?? "ALL");
+
+        return await GetPagedListAsync<Action1InstalledUpdate>(path, ct);
+    }
+
+    /// <summary>
+    /// Returns a dictionary of endpointId → most recent install date by fetching
+    /// all installed updates for the org in one call and aggregating.
+    ///
+    /// Results are cached per call (not across calls). Callers on the fleet page
+    /// should call this once and share the result to avoid repeated API calls.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, DateTime>> GetLastPatchedDatesAsync(
+        CancellationToken ct = default)
+    {
+        var allInstalled = await GetInstalledUpdatesAsync(null, ct);
+        return allInstalled
+            .Where(u => u.EndpointId is not null && u.InstallDate.HasValue)
+            .GroupBy(u => u.EndpointId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Max(u => u.InstallDate!.Value),
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    // ── CVE / Vulnerabilities ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Fetch CVEs with available remediations in Action1.
+    ///
+    /// Real Action1 API: GET /Vulnerabilities/{orgId}?fields=*
+    ///
+    /// Action1 correlates NVD CVEs with packages in its software repository.
+    /// Returns an empty list on 404.
+    /// </summary>
+    public async Task<IReadOnlyList<Action1Vulnerability>> GetVulnerabilitiesAsync(
+        CancellationToken ct = default)
+    {
+        _logger.LogDebug("Action1: fetching vulnerabilities for org {OrgId}", _options.OrganizationId);
+        return await GetPagedListAsync<Action1Vulnerability>(
+            $"Vulnerabilities/{_options.OrganizationId}?fields=*", ct);
+    }
+
     // ── Policy instance deployment (approve & install) ────────────────────────
 
     /// <summary>
