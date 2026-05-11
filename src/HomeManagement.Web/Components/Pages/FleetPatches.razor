@@ -54,6 +54,29 @@ else if (_summary is not null)
             <div style="color:#555; font-size:0.85rem;">Online</div>
         </div>
     </div>
+
+    @* ── Patch compliance bands ──────────────────────────────────────────────── *@
+    @if (_summary.EnrolledInAction1 > 0)
+    {
+        <h3 style="margin:0 0 8px; font-size:1rem; color:#333;">Patch Compliance (enrolled machines)</h3>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px;">
+            <div style="background:#e8f5e9; border:1px solid #388e3c; border-radius:6px; padding:12px 20px; min-width:120px; text-align:center;">
+                <div style="font-size:1.6rem; font-weight:bold; color:#388e3c;">@_summary.PatchedWithin30Days</div>
+                <div style="color:#388e3c; font-size:0.8rem; font-weight:600;">✓ Current</div>
+                <div style="color:#555; font-size:0.75rem;">Patched ≤ 30 days</div>
+            </div>
+            <div style="background:#fff8e1; border:1px solid #f9a825; border-radius:6px; padding:12px 20px; min-width:120px; text-align:center;">
+                <div style="font-size:1.6rem; font-weight:bold; color:#f57c00;">@_summary.PatchedWithin90Days</div>
+                <div style="color:#f57c00; font-size:0.8rem; font-weight:600;">⚠ Aging</div>
+                <div style="color:#555; font-size:0.75rem;">Patched 31–90 days</div>
+            </div>
+            <div style="background:#ffebee; border:1px solid #c62828; border-radius:6px; padding:12px 20px; min-width:120px; text-align:center;">
+                <div style="font-size:1.6rem; font-weight:bold; color:#c62828;">@_summary.OverdueCount</div>
+                <div style="color:#c62828; font-size:0.8rem; font-weight:600;">✗ Overdue</div>
+                <div style="color:#555; font-size:0.75rem;">&gt; 90 days or never</div>
+            </div>
+        </div>
+    }
 }
 
 <h2>Machines</h2>
@@ -85,6 +108,7 @@ else if (_fleet is not null)
                 <th>Action1 Status</th>
                 <th style="color:#c62828;">Critical</th>
                 <th style="color:#f57c00;">Other</th>
+                <th>Last Patched</th>
                 <th>Agent Version</th>
                 <th>Last Seen</th>
                 <th></th>
@@ -102,7 +126,19 @@ else if (_fleet is not null)
                 };
                 var hmStateColor = machine.MachineState == "Online" ? "#388e3c" : "#888";
 
-                <tr>
+                var daysSincePatched = machine.LastPatchedUtc.HasValue
+                    ? (int)(DateTime.UtcNow - machine.LastPatchedUtc.Value).TotalDays
+                    : (int?)null;
+
+                var patchAgeColor = machine.PatchRiskLevel switch
+                {
+                    "Healthy" => "#388e3c",
+                    "Warning" => "#f57c00",
+                    "Overdue" => "#c62828",
+                    _ => "#888"
+                };
+
+                <tr style="@(machine.PatchRiskLevel == "Overdue" && machine.Action1EndpointId is not null ? "background:#fff8f8;" : "")">
                     <td>
                         <a href="/machines/@machine.MachineId" style="font-weight:500;">@machine.Hostname</a>
                     </td>
@@ -116,6 +152,21 @@ else if (_fleet is not null)
                     </td>
                     <td style="text-align:center; color:@(machine.OtherPatchCount > 0 ? "#f57c00" : "#388e3c");">
                         @machine.OtherPatchCount
+                    </td>
+                    <td style="font-size:0.85rem; color:@patchAgeColor; font-weight:@(daysSincePatched > 30 ? "600" : "normal");">
+                        @if (machine.LastPatchedUtc.HasValue)
+                        {
+                            @(machine.LastPatchedUtc.Value.ToString("d"))
+                            <span style="font-size:0.75rem; margin-left:4px;">(@daysSincePatched&#160;d ago)</span>
+                        }
+                        else if (machine.Action1EndpointId is not null)
+                        {
+                            <span style="color:#c62828;">No history</span>
+                        }
+                        else
+                        {
+                            <span style="color:#888;">—</span>
+                        }
                     </td>
                     <td style="font-size:0.8rem; color:#555;">@(machine.AgentVersion ?? "—")</td>
                     <td style="font-size:0.8rem; color:#888;">

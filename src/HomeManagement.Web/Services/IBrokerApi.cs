@@ -64,6 +64,9 @@ public interface IBrokerApi
     [Post("/api/action1/fleet/{machineId}/approve")]
     Task<ApproveDeploymentResultDto> ApprovePatchesAsync(Guid machineId, [Body] Action1DeployRequestDto request, CancellationToken ct = default);
 
+    [Get("/api/action1/fleet/vulnerabilities")]
+    Task<IReadOnlyList<Action1VulnerabilityDto>> GetFleetVulnerabilitiesAsync(CancellationToken ct = default);
+
     // ── Jobs ──
     [Get("/api/jobs")]
     Task<PagedResult<JobSummary>> GetJobsAsync(int page = 1, int pageSize = 25, CancellationToken ct = default);
@@ -121,7 +124,9 @@ public sealed record FleetMachineStatusDto(
     string? AgentVersion,
     int CriticalPatchCount,
     int OtherPatchCount,
-    string? LastLoggedInUser);
+    string? LastLoggedInUser,
+    DateTime? LastPatchedUtc,
+    string PatchRiskLevel);
 
 public sealed record FleetPatchSummaryDto(
     int TotalMachines,
@@ -129,6 +134,25 @@ public sealed record FleetPatchSummaryDto(
     int TotalCriticalPatches,
     int TotalOtherPatches,
     int FullyPatched,
-    int Online);
+    int Online,
+    int PatchedWithin30Days,
+    int PatchedWithin90Days,
+    int OverdueCount);
+
+public sealed record Action1VulnerabilityDto(
+    string CveId,
+    string? Description,
+    double? CvssScore,
+    DateTime? PublishedUtc,
+    IReadOnlyList<Action1VulnerableSoftwareDto>? Software);
+
+public sealed record Action1VulnerableSoftwareDto(
+    string? Name,
+    IReadOnlyList<Action1VulnerabilityUpdateDto>? AvailableUpdates);
+
+public sealed record Action1VulnerabilityUpdateDto(
+    string PackageId,
+    string? Version,
+    string? Name);
 
 public sealed record ApproveDeploymentResultDto(string DeploymentId, string EndpointId);

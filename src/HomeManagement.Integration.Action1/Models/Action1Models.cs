@@ -131,3 +131,50 @@ internal sealed record Action1TokenResponse(
     [property: JsonPropertyName("access_token")] string AccessToken,
     [property: JsonPropertyName("expires_in")] int ExpiresIn,
     [property: JsonPropertyName("token_type")] string TokenType);
+
+// ── Installed updates ─────────────────────────────────────────────────────────
+
+/// <summary>
+/// Represents an update that has been installed on a managed endpoint.
+/// Source: GET /updates/installed/{orgId}?fields=*
+///
+/// Used to determine the "last patched" date per endpoint for compliance tracking.
+/// </summary>
+public sealed record Action1InstalledUpdate(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("endpoint_id")] string? EndpointId,
+    [property: JsonPropertyName("endpoint_name")] string? EndpointName,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("version")] string? Version,
+    [property: JsonPropertyName("install_date")]
+    [property: JsonConverter(typeof(UnixOrIsoDateTimeConverter))]
+    DateTime? InstallDate);
+
+// ── Vulnerabilities (CVE correlation) ─────────────────────────────────────────
+
+/// <summary>
+/// A CVE with known available remediations in Action1.
+/// Source: GET /Vulnerabilities/{orgId}?fields=*
+///
+/// Action1 correlates CVEs from NVD with packages in the software repository,
+/// providing actionable remediation data per vulnerability.
+/// </summary>
+public sealed record Action1Vulnerability(
+    [property: JsonPropertyName("cve_id")] string CveId,
+    [property: JsonPropertyName("description")] string? Description,
+    [property: JsonPropertyName("cvss_score")] double? CvssScore,
+    [property: JsonPropertyName("published")]
+    [property: JsonConverter(typeof(UnixOrIsoDateTimeConverter))]
+    DateTime? PublishedUtc,
+    [property: JsonPropertyName("software")] IReadOnlyList<Action1VulnerableSoftware>? Software);
+
+/// <summary>Software affected by a CVE, with available update packages.</summary>
+public sealed record Action1VulnerableSoftware(
+    [property: JsonPropertyName("name")] string? Name,
+    [property: JsonPropertyName("available_updates")] IReadOnlyList<Action1VulnerabilityUpdate>? AvailableUpdates);
+
+/// <summary>An update package that remediates a CVE.</summary>
+public sealed record Action1VulnerabilityUpdate(
+    [property: JsonPropertyName("package_id")] string PackageId,
+    [property: JsonPropertyName("version")] string? Version,
+    [property: JsonPropertyName("name")] string? Name);

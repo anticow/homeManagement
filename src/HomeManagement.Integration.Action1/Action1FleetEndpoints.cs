@@ -38,8 +38,14 @@ public static class Action1FleetEndpoints
             try
             {
                 var machineQuery = new MachineQuery(IncludeDeleted: false, Page: 1, PageSize: 500);
-                var machines = await inventory.QueryAsync(machineQuery, ct);
-                var action1Endpoints = await action1.ListEndpointsAsync(ct);
+                var machinesTask = inventory.QueryAsync(machineQuery, ct);
+                var endpointsTask = action1.ListEndpointsAsync(ct);
+                var lastPatchedTask = action1.GetLastPatchedDatesAsync(ct);
+                await Task.WhenAll(machinesTask, endpointsTask, lastPatchedTask);
+
+                var machines = machinesTask.Result;
+                var action1Endpoints = endpointsTask.Result;
+                var lastPatchedDates = lastPatchedTask.Result;
 
                 var endpointById = action1Endpoints.ToDictionary(e => e.Id, StringComparer.OrdinalIgnoreCase);
 
@@ -84,7 +90,13 @@ public static class Action1FleetEndpoints
                         AgentVersion: endpoint?.AgentVersion,
                         CriticalPatchCount: endpoint?.MissingCriticalUpdates ?? 0,
                         OtherPatchCount: endpoint?.MissingOtherUpdates ?? 0,
-                        LastLoggedInUser: endpoint?.LastLoggedInUser);
+                        LastLoggedInUser: endpoint?.LastLoggedInUser,
+                        LastPatchedUtc: endpoint?.Id is not null &&
+                                        lastPatchedDates.TryGetValue(endpoint.Id, out var lp) ? lp : null,
+                        PatchRiskLevel: ComputePatchRiskLevel(
+                            endpoint,
+                            endpoint?.Id is not null &&
+                            lastPatchedDates.TryGetValue(endpoint.Id, out var lpRisk) ? lpRisk : null));
                 }).ToList();
 
                 return Results.Ok(results);
@@ -106,9 +118,21 @@ public static class Action1FleetEndpoints
 
             try
             {
-                var endpoints = await action1.ListEndpointsAsync(ct);
-                var machineQuery = new MachineQuery(IncludeDeleted: false, Page: 1, PageSize: 1);
-                var machinePage = await inventory.QueryAsync(machineQuery, ct);
+                var endpointsTask = action1.ListEndpointsAsync(ct);
+                var lastPatchedTask = action1.GetLastPatchedDatesAsync(ct);
+                var machineCountTask = inventory.QueryAsync(
+                    new MachineQuery(IncludeDeleted: false, Page: 1, PageSize: 1), ct);
+                await Task.WhenAll(endpointsTask, lastPatchedTask, machineCountTask);
+
+                var endpoints = endpointsTask.Result;
+                var lastPatchedDates = lastPatchedTask.Result;
+                var machinePage = machineCountTask.Result;
+
+                var now = DateTime.UtcNow;
+                var enrolledWithHistory = endpoints
+                    .Select(e => (Endpoint: e,
+                                  LastPatched: lastPatchedDates.TryGetValue(e.Id, out var lp) ? lp : (DateTime?)null))
+                    .ToList();
 
                 var summary = new FleetPatchSummary(
                     TotalMachines: machinePage.TotalCount,
@@ -118,7 +142,13 @@ public static class Action1FleetEndpoints
                     FullyPatched: endpoints.Count(e =>
                         e.MissingCriticalUpdates == 0 && e.MissingOtherUpdates == 0),
                     Online: endpoints.Count(e =>
-                        string.Equals(e.Status, "Online", StringComparison.OrdinalIgnoreCase)));
+                        string.Equals(e.Status, "Online", StringComparison.OrdinalIgnoreCase)),
+                    PatchedWithin30Days: enrolledWithHistory.Count(x =>
+                        x.LastPatched.HasValue && (now - x.LastPatched.Value).TotalDays <= 30),
+                    PatchedWithin90Days: enrolledWithHistory.Count(x =>
+                        x.LastPatched.HasValue && (now - x.LastPatched.Value).TotalDays is > 30 and <= 90),
+                    OverdueCount: enrolledWithHistory.Count(x =>
+                        !x.LastPatched.HasValue || (now - x.LastPatched.Value).TotalDays > 90));
 
                 return Results.Ok(summary);
             }
@@ -195,6 +225,27 @@ public static class Action1FleetEndpoints
             }
         });
 
+        // ── Vulnerabilities (CVE correlation) ─────────────────────────────────
+
+        group.MapGet("vulnerabilities", async (
+            Action1Client action1,
+            IOptions<Action1Options> opts,
+            CancellationToken ct) =>
+        {
+            if (!opts.Value.Enabled)
+                return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
+
+            try
+            {
+                var vulns = await action1.GetVulnerabilitiesAsync(ct);
+                return Results.Ok(vulns);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+            }
+        });
+
         return app;
     }
 
@@ -217,6 +268,33 @@ public static class Action1FleetEndpoints
                 string.Equals(e.Name, machine.Hostname.Value, StringComparison.OrdinalIgnoreCase))
             ?.Id;
     }
+
+    /// <summary>
+    /// Derives a patch risk level string for UI color-coding.
+    ///
+    /// Thresholds:
+    ///   Healthy  — no pending patches AND last patched ≤ 30 days ago
+    ///   Warning  — other-only patches pending OR last patched 31–90 days ago
+    ///   Overdue  — critical patches pending OR last patched > 90 days OR no patch history
+    ///   Unknown  — not enrolled in Action1
+    /// </summary>
+    private static string ComputePatchRiskLevel(Action1Endpoint? endpoint, DateTime? lastPatchedUtc)
+    {
+        if (endpoint is null)
+            return "Unknown";
+
+        var days = lastPatchedUtc.HasValue
+            ? (DateTime.UtcNow - lastPatchedUtc.Value).TotalDays
+            : (double?)null;
+
+        if (endpoint.MissingCriticalUpdates > 0 || days is null or > 90)
+            return "Overdue";
+
+        if (endpoint.MissingOtherUpdates > 0 || days > 30)
+            return "Warning";
+
+        return "Healthy";
+    }
 }
 
 public sealed record FleetMachineStatus(
@@ -230,7 +308,9 @@ public sealed record FleetMachineStatus(
     string? AgentVersion,
     int CriticalPatchCount,
     int OtherPatchCount,
-    string? LastLoggedInUser);
+    string? LastLoggedInUser,
+    DateTime? LastPatchedUtc,
+    string PatchRiskLevel);
 
 public sealed record FleetPatchSummary(
     int TotalMachines,
@@ -238,7 +318,10 @@ public sealed record FleetPatchSummary(
     int TotalCriticalPatches,
     int TotalOtherPatches,
     int FullyPatched,
-    int Online);
+    int Online,
+    int PatchedWithin30Days,
+    int PatchedWithin90Days,
+    int OverdueCount);
 
 public sealed record ApprovePatchesRequest(
     IReadOnlyList<PatchApprovalItem> Patches,
