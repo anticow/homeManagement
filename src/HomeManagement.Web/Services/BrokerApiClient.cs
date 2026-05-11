@@ -80,6 +80,18 @@ public sealed class BrokerApiClient : IBrokerApi, IDisposable
     public Task<HomeManagement.Abstractions.Models.PagedResult<HomeManagement.Abstractions.Models.AuditEvent>> GetAuditEventsAsync(int page = 1, int pageSize = 50, CancellationToken ct = default)
         => ExecuteAsync(api => api.GetAuditEventsAsync(page, pageSize, ct), ct);
 
+    public Task<IReadOnlyList<FleetMachineStatusDto>> GetFleetStatusAsync(CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetFleetStatusAsync(ct), ct);
+
+    public Task<FleetPatchSummaryDto> GetFleetSummaryAsync(CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetFleetSummaryAsync(ct), ct);
+
+    public Task<IReadOnlyList<Action1PatchDto>> GetMachinePatchesAsync(Guid machineId, CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetMachinePatchesAsync(machineId, ct), ct);
+
+    public Task<ApproveDeploymentResultDto> ApprovePatchesAsync(Guid machineId, [Body] Action1DeployRequestDto request, CancellationToken ct = default)
+        => ExecuteAsync(api => api.ApprovePatchesAsync(machineId, request, ct), ct);
+
     private async Task<T> ExecuteAsync<T>(Func<IBrokerApi, Task<T>> action, CancellationToken ct)
     {
         try

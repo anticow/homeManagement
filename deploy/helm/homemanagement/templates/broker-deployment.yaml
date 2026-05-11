@@ -65,16 +65,16 @@ spec:
             - name: Action1__SyncIntervalMinutes
               value: {{ .Values.action1.syncIntervalMinutes | quote }}
             {{- if .Values.action1.enabled }}
-            - name: Action1__ApiKey
+            - name: Action1__ClientId
               valueFrom:
                 secretKeyRef:
                   name: hm-secrets
-                  key: action1-api-key
-            - name: Action1__WebhookSecret
+                  key: action1-client-id
+            - name: Action1__ClientSecret
               valueFrom:
                 secretKeyRef:
                   name: hm-secrets
-                  key: action1-webhook-secret
+                  key: action1-client-secret
             {{- end }}
             - name: DataDirectory
               value: "/tmp/homemanagement"

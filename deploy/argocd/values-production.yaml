@@ -1,6 +1,6 @@
 # Production values for homeManagement — non-secret settings only.
 # This file is tracked in Git and updated by the release pipeline (ci: bump imageTag).
-# Secret values (connectionString, jwtSigningKey, apiKey, etc.) are injected by Ansible
+# Secret values (connectionString, jwtSigningKey, clientId, clientSecret, etc.) are injected by Ansible
 # into the ArgoCD Application's valuesObject and are NOT stored here.
 
 global:
@@ -26,8 +26,12 @@ agentGateway:
 
 action1:
   enabled: false
+  # organizationId is non-secret and may be stored here.
+  # It is the GUID from ?org= in the Action1 console URL.
   organizationId: ""
-  baseUrl: "https://api.action1.com/"
+  # clientId and clientSecret are secrets and must be supplied via ArgoCD valuesObject,
+  # not committed to Git. Example clientId format: api-key-xxxxx@action1.com
+  baseUrl: "https://app.action1.com/api/3.0/"
   syncIntervalMinutes: 15
 
 prometheus:

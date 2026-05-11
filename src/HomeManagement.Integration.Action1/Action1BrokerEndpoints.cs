@@ -1,4 +1,3 @@
-using HomeManagement.Integration.Action1.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;

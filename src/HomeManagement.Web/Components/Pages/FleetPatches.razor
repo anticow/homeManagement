@@ -1,0 +1,446 @@
+@page "/fleet/patches"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using HomeManagement.Web.Services
+@inject IBrokerApi BrokerApi
+@inject NavigationManager Navigation
+
+<h1>Fleet Patch Management</h1>
+<p style="color:#555; margin-bottom:16px;">
+    Single pane of glass for patch approvals across all Action1-enrolled machines.
+    Patch counts come from Action1 in real-time; deployments are approved here and executed by Action1.
+</p>
+
+@if (_summaryLoading)
+{
+    <p style="color:#888;">Loading fleet summary…</p>
+}
+else if (_summaryError is not null)
+{
+    <div style="background:#fff3e0; border:1px solid #f57c00; border-radius:4px; padding:12px; margin-bottom:16px;">
+        <strong>⚠ Action1 Unavailable:</strong> @_summaryError
+        @if (_summaryError.Contains("not enabled"))
+        {
+            <p style="margin:4px 0 0;">Enable Action1 integration by setting <code>Action1:Enabled=true</code>,
+            <code>Action1:ClientId</code>, <code>Action1:ClientSecret</code>, and
+            <code>Action1:OrganizationId</code> in the broker configuration.</p>
+        }
+    </div>
+}
+else if (_summary is not null)
+{
+    <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px;">
+        <div style="background:#fff; border:1px solid #ddd; border-radius:6px; padding:16px; min-width:140px; text-align:center;">
+            <div style="font-size:2rem; font-weight:bold;">@_summary.TotalMachines</div>
+            <div style="color:#555; font-size:0.85rem;">Total Machines</div>
+        </div>
+        <div style="background:#fff; border:1px solid #ddd; border-radius:6px; padding:16px; min-width:140px; text-align:center;">
+            <div style="font-size:2rem; font-weight:bold; color:#1565c0;">@_summary.EnrolledInAction1</div>
+            <div style="color:#555; font-size:0.85rem;">Enrolled in Action1</div>
+        </div>
+        <div style="background:@(_summary.TotalCriticalPatches > 0 ? "#ffebee" : "#e8f5e9"); border:1px solid @(_summary.TotalCriticalPatches > 0 ? "#c62828" : "#388e3c"); border-radius:6px; padding:16px; min-width:140px; text-align:center;">
+            <div style="font-size:2rem; font-weight:bold; color:@(_summary.TotalCriticalPatches > 0 ? "#c62828" : "#388e3c");">@_summary.TotalCriticalPatches</div>
+            <div style="color:#555; font-size:0.85rem;">Critical Patches</div>
+        </div>
+        <div style="background:#fff; border:1px solid #ddd; border-radius:6px; padding:16px; min-width:140px; text-align:center;">
+            <div style="font-size:2rem; font-weight:bold; color:#f57c00;">@_summary.TotalOtherPatches</div>
+            <div style="color:#555; font-size:0.85rem;">Other Patches</div>
+        </div>
+        <div style="background:#e8f5e9; border:1px solid #388e3c; border-radius:6px; padding:16px; min-width:140px; text-align:center;">
+            <div style="font-size:2rem; font-weight:bold; color:#388e3c;">@_summary.FullyPatched</div>
+            <div style="color:#555; font-size:0.85rem;">Fully Patched</div>
+        </div>
+        <div style="background:#fff; border:1px solid #ddd; border-radius:6px; padding:16px; min-width:140px; text-align:center;">
+            <div style="font-size:2rem; font-weight:bold; color:#1565c0;">@_summary.Online</div>
+            <div style="color:#555; font-size:0.85rem;">Online</div>
+        </div>
+    </div>
+}
+
+<h2>Machines</h2>
+
+@if (_fleetLoading)
+{
+    <p style="color:#888;">Loading fleet status…</p>
+}
+else if (_fleet is not null)
+{
+    <input type="text"
+           @bind="_filter"
+           @bind:event="oninput"
+           placeholder="Filter machines…"
+           style="margin-bottom:8px; padding:4px 8px; width:280px;" />
+
+    var filtered = string.IsNullOrWhiteSpace(_filter)
+        ? _fleet
+        : _fleet.Where(m =>
+            m.Hostname.Contains(_filter, StringComparison.OrdinalIgnoreCase) ||
+            m.Action1Status.Contains(_filter, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    <table>
+        <thead>
+            <tr>
+                <th>Hostname</th>
+                <th>OS</th>
+                <th>HM State</th>
+                <th>Action1 Status</th>
+                <th style="color:#c62828;">Critical</th>
+                <th style="color:#f57c00;">Other</th>
+                <th>Agent Version</th>
+                <th>Last Seen</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var machine in filtered.OrderByDescending(m => m.CriticalPatchCount).ThenByDescending(m => m.OtherPatchCount))
+            {
+                var a1StatusColor = machine.Action1Status switch
+                {
+                    "Online" => "#388e3c",
+                    "Offline" => "#c62828",
+                    "NotEnrolled" => "#888",
+                    _ => "#888"
+                };
+                var hmStateColor = machine.MachineState == "Online" ? "#388e3c" : "#888";
+
+                <tr>
+                    <td>
+                        <a href="/machines/@machine.MachineId" style="font-weight:500;">@machine.Hostname</a>
+                    </td>
+                    <td>@machine.OsType</td>
+                    <td style="color:@hmStateColor;">@machine.MachineState</td>
+                    <td style="color:@a1StatusColor; font-weight:bold;">
+                        @machine.Action1Status
+                    </td>
+                    <td style="text-align:center; font-weight:bold; color:@(machine.CriticalPatchCount > 0 ? "#c62828" : "#388e3c");">
+                        @machine.CriticalPatchCount
+                    </td>
+                    <td style="text-align:center; color:@(machine.OtherPatchCount > 0 ? "#f57c00" : "#388e3c");">
+                        @machine.OtherPatchCount
+                    </td>
+                    <td style="font-size:0.8rem; color:#555;">@(machine.AgentVersion ?? "—")</td>
+                    <td style="font-size:0.8rem; color:#888;">
+                        @(machine.Action1LastSeen?.ToString("g") ?? "—")
+                    </td>
+                    <td>
+                        @if (machine.Action1EndpointId is not null && (machine.CriticalPatchCount + machine.OtherPatchCount) > 0)
+                        {
+                            <button @onclick="() => OpenPatchPanel(machine)"
+                                    style="padding:4px 10px; background:#1565c0; color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.82rem;">
+                                Review Patches
+                            </button>
+                        }
+                        else if (machine.Action1EndpointId is null)
+                        {
+                            <span style="color:#888; font-size:0.8rem;">Not enrolled</span>
+                        }
+                        else
+                        {
+                            <span style="color:#388e3c; font-size:0.8rem;">✓ Patched</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (filtered.Count == 0)
+    {
+        <p style="color:#888;">No machines match the filter.</p>
+    }
+}
+
+@if (_selectedMachine is not null)
+{
+    <div style="position:fixed; top:0; right:0; width:560px; height:100vh; background:white;
+                border-left:2px solid #ddd; box-shadow:-4px 0 12px rgba(0,0,0,0.1);
+                display:flex; flex-direction:column; z-index:1000;">
+
+        <div style="padding:16px; border-bottom:1px solid #ddd; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <strong style="font-size:1.1rem;">@_selectedMachine.Hostname</strong>
+                <span style="margin-left:8px; font-size:0.8rem; color:#888;">Action1 Patch Approval</span>
+            </div>
+            <button @onclick="ClosePatchPanel"
+                    style="background:none; border:none; font-size:1.2rem; cursor:pointer; color:#555;">✕</button>
+        </div>
+
+        <div style="flex:1; overflow-y:auto; padding:16px;">
+            @if (_patchesLoading)
+            {
+                <p style="color:#888;">Loading patches…</p>
+            }
+            else if (_patchError is not null)
+            {
+                <p style="color:#c62828;">@_patchError</p>
+            }
+            else if (_patches is not null && _patches.Count > 0)
+            {
+                <p style="font-size:0.85rem; color:#555; margin-bottom:12px;">
+                    Select patches to approve for deployment on <strong>@_selectedMachine.Hostname</strong>.
+                    Deployments execute immediately after approval via Action1.
+                </p>
+
+                <div style="margin-bottom:8px;">
+                    <label style="font-size:0.82rem; color:#555; cursor:pointer;">
+                        <input type="checkbox"
+                               @onchange="e => SelectAllPatches((bool)e.Value!)"
+                               style="margin-right:4px;" />
+                        Select all (@_patches.Count patches)
+                    </label>
+                </div>
+
+                @foreach (var patch in _patches.OrderByDescending(p => SeverityOrder(p.Severity)))
+                {
+                    var severityColor = patch.Severity switch
+                    {
+                        "Critical" => "#c62828",
+                        "Important" => "#e65100",
+                        "Moderate" => "#f57c00",
+                        "Low" => "#388e3c",
+                        _ => "#888"
+                    };
+                    <div style="border:1px solid #ddd; border-radius:4px; padding:10px; margin-bottom:8px;
+                                border-left:4px solid @severityColor;">
+                        <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;">
+                            <input type="checkbox"
+                                   checked="@_selectedPatchIds.Contains(patch.Id)"
+                                   @onchange="e => TogglePatch(patch.Id, (bool)e.Value!)"
+                                   style="margin-top:2px; flex-shrink:0;" />
+                            <div>
+                                <div style="font-size:0.88rem; font-weight:500;">@patch.Title</div>
+                                <div style="font-size:0.78rem; color:#555; margin-top:2px;">
+                                    <span style="color:@severityColor; font-weight:bold;">@patch.Severity</span>
+                                    · @patch.Category
+                                    @if (patch.RequiresReboot)
+                                    {
+                                        <span style="color:#f57c00;"> · ⚠ Reboot</span>
+                                    }
+                                    @if (!string.IsNullOrEmpty(patch.KbArticleId))
+                                    {
+                                        <span> · @patch.KbArticleId</span>
+                                    }
+                                    · @FormatBytes(patch.SizeBytes)
+                                </div>
+                            </div>
+                        </label>
+                    </div>
+                }
+            }
+            else if (!_patchesLoading)
+            {
+                <p style="color:#388e3c;">✓ No pending patches for this machine.</p>
+            }
+        </div>
+
+        <div style="padding:16px; border-top:1px solid #ddd; display:flex; flex-direction:column; gap:8px;">
+            @if (_selectedPatchIds.Any(id => _patches?.Any(p => p.Id == id && p.RequiresReboot) == true))
+            {
+                <label style="font-size:0.83rem; display:flex; align-items:center; gap:6px; color:#f57c00;">
+                    <input type="checkbox"
+                           checked="@_allowReboot"
+                           @onchange="e => _allowReboot = (bool)e.Value!" />
+                    Allow automatic reboot if required by selected patches
+                </label>
+            }
+
+            <div style="display:flex; gap:8px;">
+                <button @onclick="ApproveSelectedAsync"
+                        disabled="@(_selectedPatchIds.Count == 0 || _approving)"
+                        style="flex:1; padding:8px; background:#1565c0; color:white; border:none;
+                               border-radius:4px; cursor:pointer; font-weight:bold;">
+                    @if (_approving)
+                    {
+                        <span>Deploying…</span>
+                    }
+                    else
+                    {
+                        <span>✓ Approve &amp; Deploy (@_selectedPatchIds.Count)</span>
+                    }
+                </button>
+                <button @onclick="ClosePatchPanel"
+                        style="padding:8px 16px; background:#f5f5f5; border:1px solid #ddd;
+                               border-radius:4px; cursor:pointer;">
+                    Cancel
+                </button>
+            </div>
+
+            @if (_approveResult is not null)
+            {
+                <p style="color:#388e3c; font-size:0.82rem; margin:0;">
+                    ✓ Deployment <code>@_approveResult</code> created. Check Action1 for progress.
+                </p>
+            }
+            @if (_approveError is not null)
+            {
+                <p style="color:#c62828; font-size:0.82rem; margin:0;">@_approveError</p>
+            }
+        </div>
+    </div>
+
+    <div @onclick="ClosePatchPanel"
+         style="position:fixed; top:0; left:0; width:100vw; height:100vh;
+                background:rgba(0,0,0,0.2); z-index:999;"></div>
+}
+
+@code {
+    private bool _summaryLoading = true;
+    private bool _fleetLoading = true;
+    private bool _patchesLoading;
+    private bool _approving;
+    private FleetPatchSummaryDto? _summary;
+    private IReadOnlyList<FleetMachineStatusDto>? _fleet;
+    private IReadOnlyList<Action1PatchDto>? _patches;
+    private FleetMachineStatusDto? _selectedMachine;
+    private string? _summaryError;
+    private string? _patchError;
+    private string? _approveResult;
+    private string? _approveError;
+    private string _filter = string.Empty;
+    private readonly HashSet<string> _selectedPatchIds = [];
+    private bool _allowReboot;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var summaryTask = LoadSummaryAsync();
+        var fleetTask = LoadFleetAsync();
+        await Task.WhenAll(summaryTask, fleetTask);
+    }
+
+    private async Task LoadSummaryAsync()
+    {
+        try
+        {
+            _summary = await BrokerApi.GetFleetSummaryAsync();
+        }
+        catch (Exception ex)
+        {
+            _summaryError = ex.Message.Contains("503") || ex.Message.Contains("not enabled")
+                ? "Action1 integration is not enabled on the broker."
+                : $"Could not load fleet summary: {ex.Message}";
+        }
+        finally
+        {
+            _summaryLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadFleetAsync()
+    {
+        try
+        {
+            _fleet = await BrokerApi.GetFleetStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            _fleet = [];
+            _summaryError ??= $"Could not load fleet: {ex.Message}";
+        }
+        finally
+        {
+            _fleetLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OpenPatchPanel(FleetMachineStatusDto machine)
+    {
+        _selectedMachine = machine;
+        _selectedPatchIds.Clear();
+        _patches = null;
+        _patchError = null;
+        _approveResult = null;
+        _approveError = null;
+        _allowReboot = false;
+        _patchesLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            _patches = await BrokerApi.GetMachinePatchesAsync(machine.MachineId);
+        }
+        catch (Exception ex)
+        {
+            _patchError = $"Could not load patches: {ex.Message}";
+            _patches = [];
+        }
+        finally
+        {
+            _patchesLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ClosePatchPanel()
+    {
+        _selectedMachine = null;
+        _patches = null;
+        _approveResult = null;
+        _approveError = null;
+        StateHasChanged();
+    }
+
+    private async Task ApproveSelectedAsync()
+    {
+        if (_selectedMachine is null || _selectedPatchIds.Count == 0) return;
+        _approving = true;
+        _approveResult = null;
+        _approveError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await BrokerApi.ApprovePatchesAsync(
+                _selectedMachine.MachineId,
+                new Action1DeployRequestDto(_selectedPatchIds.ToList(), _allowReboot));
+
+            _approveResult = result.DeploymentId;
+            _selectedPatchIds.Clear();
+
+            await LoadFleetAsync();
+            await LoadSummaryAsync();
+        }
+        catch (Exception ex)
+        {
+            _approveError = $"Approval failed: {ex.Message}";
+        }
+        finally
+        {
+            _approving = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SelectAllPatches(bool select)
+    {
+        _selectedPatchIds.Clear();
+        if (select && _patches is not null)
+        {
+            foreach (var p in _patches)
+            {
+                _selectedPatchIds.Add(p.Id);
+            }
+        }
+    }
+
+    private void TogglePatch(string id, bool selected)
+    {
+        if (selected) _selectedPatchIds.Add(id);
+        else _selectedPatchIds.Remove(id);
+    }
+
+    private static int SeverityOrder(string severity) => severity switch
+    {
+        "Critical" => 4,
+        "Important" => 3,
+        "Moderate" => 2,
+        "Low" => 1,
+        _ => 0
+    };
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes <= 0) return "—";
+        double mb = bytes / (1024.0 * 1024.0);
+        return mb >= 1 ? $"{mb:F0} MB" : $"{bytes / 1024.0:F0} KB";
+    }
+}

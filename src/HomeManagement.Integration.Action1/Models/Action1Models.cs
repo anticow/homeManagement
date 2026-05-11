@@ -1,88 +1,80 @@
+using System.Text.Json.Serialization;
+
 namespace HomeManagement.Integration.Action1.Models;
 
 // ── Action1 API Response Models ────────────────────────────────────────────────
-// These map to the Action1 REST API v1 response shapes.
-// See: https://api.action1.com/docs
-
-/// <summary>Represents a managed endpoint registered in Action1.</summary>
-public sealed record Action1Endpoint(
-    string Id,
-    string Name,
-    string IpAddress,
-    string OsName,
-    string OsVersion,
-    string OsType,           // "Windows" | "Linux"
-    string Status,           // "Online" | "Offline"
-    DateTime LastSeenUtc,
-    string? GroupId,
-    string? GroupName);
-
-/// <summary>Represents a patch available on an endpoint.</summary>
-public sealed record Action1Patch(
-    string Id,
-    string Title,
-    string Description,
-    string Severity,         // "Critical" | "Important" | "Moderate" | "Low" | "None"
-    string Category,         // "Security" | "NonSecurity" | "Driver" | "FeaturePack"
-    long SizeBytes,
-    bool RequiresReboot,
-    DateTime PublishedUtc,
-    string KbArticleId);
-
-/// <summary>Represents a patch deployment operation.</summary>
-public sealed record Action1Deployment(
-    string Id,
-    string EndpointId,
-    string Status,           // "Pending" | "InProgress" | "Succeeded" | "Failed" | "Cancelled"
-    DateTime CreatedUtc,
-    DateTime? CompletedUtc,
-    IReadOnlyList<Action1DeploymentResult> Results);
-
-/// <summary>Per-patch result within a deployment.</summary>
-public sealed record Action1DeploymentResult(
-    string PatchId,
-    string Title,
-    string Status,           // "Installed" | "Failed" | "Skipped"
-    string? ErrorMessage,
-    bool RebootRequired);
-
-/// <summary>A software item from Action1 software inventory.</summary>
-public sealed record Action1SoftwareItem(
-    string Name,
-    string Version,
-    string Publisher,
-    DateTime? InstalledUtc);
+// These map to the Action1 REST API v3.0 response shapes.
+// See: https://app.action1.com/apidocs/
+//
+// IMPORTANT: Action1 uses snake_case JSON property names.
+// All records use [JsonPropertyName] attributes to ensure correct deserialization.
 
 /// <summary>Envelope for Action1 paginated list responses.</summary>
 public sealed record Action1PagedResponse<T>(
-    IReadOnlyList<T> Items,
-    int TotalCount,
-    int PageSize,
-    int PageNumber);
+    [property: JsonPropertyName("items")] IReadOnlyList<T> Items,
+    [property: JsonPropertyName("total_items")] int TotalCount);
 
-// ── Webhook Models ────────────────────────────────────────────────────────────
+/// <summary>Represents a managed endpoint registered in Action1.</summary>
+public sealed record Action1Endpoint(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("address")] string IpAddress,
+    [property: JsonPropertyName("OS")] string OsName,
+    [property: JsonPropertyName("platform")] string OsType,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("last_seen")] DateTime? LastSeenUtc,
+    [property: JsonPropertyName("agent_version")] string? AgentVersion,
+    [property: JsonPropertyName("missing_critical_updates")] int MissingCriticalUpdates,
+    [property: JsonPropertyName("missing_other_updates")] int MissingOtherUpdates,
+    [property: JsonPropertyName("user")] string? LastLoggedInUser,
+    [property: JsonPropertyName("external_address")] string? ExternalAddress);
 
-/// <summary>Root payload for Action1 webhook POST.</summary>
-public sealed record Action1WebhookPayload(
-    string EventType,
-    string EventId,
-    DateTime OccurredAtUtc,
-    Action1WebhookEndpointRef? Endpoint,
-    Action1WebhookDeploymentRef? Deployment);
+/// <summary>
+/// Represents a missing (available to install) patch on an endpoint.
+/// NOTE: The exact path for per-endpoint patch listing is not publicly documented
+/// in Action1's v3.0 API. This model maps the anticipated response shape.
+/// </summary>
+public sealed record Action1Patch(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("description")] string? Description,
+    [property: JsonPropertyName("severity")] string Severity,
+    [property: JsonPropertyName("category")] string Category,
+    [property: JsonPropertyName("size_bytes")] long SizeBytes,
+    [property: JsonPropertyName("requires_reboot")] bool RequiresReboot,
+    [property: JsonPropertyName("published_date")] DateTime PublishedUtc,
+    [property: JsonPropertyName("kb_article")] string? KbArticleId);
 
-public sealed record Action1WebhookEndpointRef(string Id, string Name);
+/// <summary>Result of a patch install operation.</summary>
+public sealed record Action1Deployment(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("endpoint_id")] string EndpointId,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("created_at")] DateTime CreatedUtc,
+    [property: JsonPropertyName("completed_at")] DateTime? CompletedUtc,
+    [property: JsonPropertyName("results")] IReadOnlyList<Action1DeploymentResult> Results);
 
-public sealed record Action1WebhookDeploymentRef(
-    string Id,
-    string Status,
-    int SucceededCount,
-    int FailedCount);
+/// <summary>Internal DTO returned when a deployment is first created.</summary>
+internal sealed record Action1DeploymentCreated(
+    [property: JsonPropertyName("id")] string Id);
 
-// ── Known event type constants ─────────────────────────────────────────────────
-public static class Action1EventTypes
-{
-    public const string PatchDeploymentCompleted = "patch_deployment_completed";
-    public const string PatchDeploymentFailed = "patch_deployment_failed";
-    public const string EndpointConnected = "endpoint_connected";
-    public const string EndpointDisconnected = "endpoint_disconnected";
-}
+/// <summary>Per-patch result within a deployment.</summary>
+public sealed record Action1DeploymentResult(
+    [property: JsonPropertyName("patch_id")] string PatchId,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("error_message")] string? ErrorMessage,
+    [property: JsonPropertyName("reboot_required")] bool RebootRequired);
+
+/// <summary>A software item from Action1 software inventory.</summary>
+public sealed record Action1SoftwareItem(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("version")] string? Version,
+    [property: JsonPropertyName("publisher")] string? Publisher,
+    [property: JsonPropertyName("install_date")] DateTime? InstalledUtc);
+
+/// <summary>OAuth2 token response from Action1.</summary>
+internal sealed record Action1TokenResponse(
+    [property: JsonPropertyName("access_token")] string AccessToken,
+    [property: JsonPropertyName("expires_in")] int ExpiresIn,
+    [property: JsonPropertyName("token_type")] string TokenType);

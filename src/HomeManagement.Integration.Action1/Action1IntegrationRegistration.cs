@@ -1,5 +1,8 @@
 using HomeManagement.Abstractions.Interfaces;
 using HomeManagement.Abstractions.Models;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -9,11 +12,14 @@ namespace HomeManagement.Integration.Action1;
 
 /// <summary>
 /// DI registration for the Action1 integration.
-/// Call <c>services.AddAction1Integration(configuration)</c> in Broker Program.cs,
-/// then <c>app.MapAction1WebhookEndpoints()</c> after <c>app.Build()</c>.
 ///
-/// When <see cref="Action1Options.Enabled"/> is false, <see cref="DisabledAction1PatchService"/>
-/// is registered instead and no HTTP client or sync job is created.
+/// Call services.AddAction1Integration(configuration) in Broker Program.cs,
+/// then app.MapAction1BrokerEndpoints() and app.MapAction1WebhookEndpoints()
+/// after app.Build().
+///
+/// Authentication: OAuth2 client_credentials (ClientId + ClientSecret).
+/// When Enabled = false, DisabledAction1PatchService is registered and
+/// Action1Client is still available for broker endpoints (they return 503).
 /// </summary>
 public static class Action1IntegrationRegistration
 {
@@ -24,25 +30,24 @@ public static class Action1IntegrationRegistration
         services
             .AddOptions<Action1Options>()
             .Bind(configuration.GetSection(Action1Options.Section))
-            .Validate(o => !o.Enabled || !string.IsNullOrWhiteSpace(o.ApiKey),
-                "Action1:ApiKey is required when Action1:Enabled is true. " +
-                "Set via environment variable Action1__ApiKey or Kubernetes secret.")
+            .Validate(o => !o.Enabled || !string.IsNullOrWhiteSpace(o.ClientId),
+                "Action1:ClientId is required when Action1:Enabled is true.")
+            .Validate(o => !o.Enabled || !string.IsNullOrWhiteSpace(o.ClientSecret),
+                "Action1:ClientSecret is required when Action1:Enabled is true.")
             .Validate(o => !o.Enabled || !string.IsNullOrWhiteSpace(o.OrganizationId),
                 "Action1:OrganizationId is required when Action1:Enabled is true.")
             .ValidateOnStart();
 
-        // Read options eagerly to decide which implementation to register.
-        var options = ReadOptions<Action1Options>(configuration, Action1Options.Section);
-
-        // ── Typed HTTP client (always registered so broker endpoints can inject it) ──
+        // Action1Client is always registered (even when disabled) so broker endpoints
+        // can inject it unconditionally and return 503 when the integration is off.
         services.AddHttpClient<Action1Client>((sp, client) =>
         {
             var opts = sp.GetRequiredService<IOptions<Action1Options>>().Value;
             client.BaseAddress = new Uri(opts.BaseUrl.TrimEnd('/') + "/");
-            if (!string.IsNullOrEmpty(opts.ApiKey))
-                client.DefaultRequestHeaders.Add("Authorization", $"Bearer {opts.ApiKey}");
-            client.DefaultRequestHeaders.Add("Accept", "application/json");
+            // Auth header is set per-request by Action1Client via OAuth2 token flow
         });
+
+        var options = ReadOptions<Action1Options>(configuration, Action1Options.Section);
 
         if (!options.Enabled)
         {
@@ -50,15 +55,11 @@ public static class Action1IntegrationRegistration
             return services;
         }
 
-        // ── Core service ──────────────────────────────────────────────────────
         services.AddScoped<IPatchService, Action1PatchService>();
 
-        // ── Reconciliation sync job ───────────────────────────────────────────
         services.AddQuartz(q =>
         {
-            q.AddJob<Action1SyncJob>(opts =>
-                opts.WithIdentity(Action1SyncJob.Key).StoreDurably());
-
+            q.AddJob<Action1SyncJob>(opts => opts.WithIdentity(Action1SyncJob.Key).StoreDurably());
             q.AddTrigger(t => t
                 .ForJob(Action1SyncJob.Key)
                 .WithIdentity("action1-sync-trigger", "homemanagement-integrations")
@@ -76,10 +77,7 @@ public static class Action1IntegrationRegistration
         => configuration.GetSection(section).Get<TOptions>() ?? new TOptions();
 }
 
-/// <summary>
-/// No-op patch service used when the Action1 integration is disabled.
-/// All operations return empty results, allowing the system to run without Action1.
-/// </summary>
+/// <summary>No-op patch service used when the Action1 integration is disabled.</summary>
 internal sealed class DisabledAction1PatchService : IPatchService
 {
     public Task<IReadOnlyList<PatchInfo>> DetectAsync(

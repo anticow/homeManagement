@@ -205,7 +205,7 @@ internal sealed class Action1PatchService : IPatchService
         Title: p.Title,
         Severity: MapSeverity(p.Severity),
         Category: MapCategory(p.Category),
-        Description: p.Description,
+        Description: p.Description ?? string.Empty,
         SizeBytes: p.SizeBytes,
         RequiresReboot: p.RequiresReboot,
         PublishedUtc: p.PublishedUtc);
