@@ -277,7 +277,7 @@ jobs:
 
       - name: Generate GitHub App token for Ansible dispatch
         id: app-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.ANSIBLE_DISPATCHER_APP_ID }}
           private-key: ${{ secrets.ANSIBLE_DISPATCHER_PRIVATE_KEY }}
