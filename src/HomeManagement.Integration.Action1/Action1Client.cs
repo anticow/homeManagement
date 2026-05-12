@@ -102,12 +102,35 @@ public sealed class Action1Client : IDisposable
 
     // ── HTTP helpers ──────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Invalidates the cached token so the next call to GetAccessTokenAsync forces a fresh fetch.
+    /// Called automatically on 401/403 before a single retry.
+    /// </summary>
+    private void InvalidateToken()
+    {
+        _accessToken = null;
+        _tokenExpiresAt = DateTime.MinValue;
+    }
+
     private async Task<HttpResponseMessage> GetAsync(string relativePath, CancellationToken ct)
     {
         var token = await GetAccessTokenAsync(ct);
         using var req = new HttpRequestMessage(HttpMethod.Get, relativePath);
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        return await _http.SendAsync(req, ct);
+        var resp = await _http.SendAsync(req, ct);
+
+        if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        {
+            _logger.LogWarning("Action1: {Status} on GET {Path} — forcing token refresh and retrying once.", resp.StatusCode, relativePath);
+            resp.Dispose();
+            InvalidateToken();
+            var freshToken = await GetAccessTokenAsync(ct);
+            using var retry = new HttpRequestMessage(HttpMethod.Get, relativePath);
+            retry.Headers.Authorization = new AuthenticationHeaderValue("Bearer", freshToken);
+            return await _http.SendAsync(retry, ct);
+        }
+
+        return resp;
     }
 
     private async Task<HttpResponseMessage> PostJsonAsync<T>(string relativePath, T body, CancellationToken ct)
@@ -116,7 +139,21 @@ public sealed class Action1Client : IDisposable
         using var req = new HttpRequestMessage(HttpMethod.Post, relativePath);
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         req.Content = JsonContent.Create(body, options: JsonOpts);
-        return await _http.SendAsync(req, ct);
+        var resp = await _http.SendAsync(req, ct);
+
+        if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        {
+            _logger.LogWarning("Action1: {Status} on POST {Path} — forcing token refresh and retrying once.", resp.StatusCode, relativePath);
+            resp.Dispose();
+            InvalidateToken();
+            var freshToken = await GetAccessTokenAsync(ct);
+            using var retry = new HttpRequestMessage(HttpMethod.Post, relativePath);
+            retry.Headers.Authorization = new AuthenticationHeaderValue("Bearer", freshToken);
+            retry.Content = JsonContent.Create(body, options: JsonOpts);
+            return await _http.SendAsync(retry, ct);
+        }
+
+        return resp;
     }
 
     private async Task<HttpResponseMessage> PatchJsonAsync<T>(string relativePath, T body, CancellationToken ct)
@@ -125,7 +162,21 @@ public sealed class Action1Client : IDisposable
         using var req = new HttpRequestMessage(HttpMethod.Patch, relativePath);
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         req.Content = JsonContent.Create(body, options: JsonOpts);
-        return await _http.SendAsync(req, ct);
+        var resp = await _http.SendAsync(req, ct);
+
+        if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        {
+            _logger.LogWarning("Action1: {Status} on PATCH {Path} — forcing token refresh and retrying once.", resp.StatusCode, relativePath);
+            resp.Dispose();
+            InvalidateToken();
+            var freshToken = await GetAccessTokenAsync(ct);
+            using var retry = new HttpRequestMessage(HttpMethod.Patch, relativePath);
+            retry.Headers.Authorization = new AuthenticationHeaderValue("Bearer", freshToken);
+            retry.Content = JsonContent.Create(body, options: JsonOpts);
+            return await _http.SendAsync(retry, ct);
+        }
+
+        return resp;
     }
 
     private async Task<IReadOnlyList<T>> GetPagedListAsync<T>(string path, CancellationToken ct)
@@ -485,17 +536,26 @@ public sealed class Action1Client : IDisposable
     /// </summary>
     public async Task<bool> DeleteScheduleAsync(string scheduleId, CancellationToken ct = default)
     {
+        var path = $"policies/schedules/{_options.OrganizationId}/{scheduleId}";
         var token = await GetAccessTokenAsync(ct);
-        using var req = new HttpRequestMessage(
-            HttpMethod.Delete,
-            $"policies/schedules/{_options.OrganizationId}/{scheduleId}");
+        using var req = new HttpRequestMessage(HttpMethod.Delete, path);
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         var resp = await _http.SendAsync(req, ct);
 
+        if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        {
+            _logger.LogWarning("Action1: {Status} on DELETE {Path} — forcing token refresh and retrying once.", resp.StatusCode, path);
+            resp.Dispose();
+            InvalidateToken();
+            var freshToken = await GetAccessTokenAsync(ct);
+            using var retry = new HttpRequestMessage(HttpMethod.Delete, path);
+            retry.Headers.Authorization = new AuthenticationHeaderValue("Bearer", freshToken);
+            resp = await _http.SendAsync(retry, ct);
+        }
+
         if (!resp.IsSuccessStatusCode)
         {
-            _logger.LogError("Action1: schedule DELETE {Id} failed {Status}",
-                scheduleId, resp.StatusCode);
+            _logger.LogError("Action1: schedule DELETE {Id} failed {Status}", scheduleId, resp.StatusCode);
             return false;
         }
 
