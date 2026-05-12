@@ -107,6 +107,9 @@ public sealed class BrokerApiClient : IBrokerApi, IDisposable
     public Task DeleteScheduleAsync(string scheduleId, CancellationToken ct = default)
         => ExecuteAsync(api => api.DeleteScheduleAsync(scheduleId, ct), ct);
 
+    public Task<IReadOnlyList<Action1OrgDto>> GetAction1ClientsAsync(CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetAction1ClientsAsync(ct), ct);
+
     private async Task<T> ExecuteAsync<T>(Func<IBrokerApi, Task<T>> action, CancellationToken ct)
     {
         try

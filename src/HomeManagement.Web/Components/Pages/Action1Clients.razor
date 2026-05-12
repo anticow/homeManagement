@@ -1,0 +1,275 @@
+@page "/action1/clients"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using HomeManagement.Web.Services
+@inject IBrokerApi BrokerApi
+
+<h1>Action1 Clients</h1>
+<p style="color:#555; margin-bottom:16px;">
+    Action1 organizations and their enrolled agent endpoints.
+    Each organization is an isolated tenant; the <strong>configured org</strong> shows full enrollment detail.
+</p>
+
+@if (_error is not null)
+{
+    <div style="background:#ffebee; border:1px solid #c62828; border-radius:4px; padding:12px; margin-bottom:16px;">
+        <strong>⚠ Error:</strong> @_error
+    </div>
+}
+
+<div style="margin-bottom:16px;">
+    <button style="@Btn("default")" @onclick="Reload" disabled="@_loading">
+        @(_loading ? "Loading…" : "⟳ Refresh")
+    </button>
+</div>
+
+@if (_loading)
+{
+    <p style="color:#888;">Loading clients…</p>
+}
+else if (_orgs is not null)
+{
+    @if (_orgs.Count == 0)
+    {
+        <p style="color:#888;">No organizations returned from Action1.</p>
+    }
+
+    @foreach (var org in _orgs)
+    {
+        var borderColor = org.IsConfiguredOrg ? "#1565c0" : "#ddd";
+        var headerBg = org.IsConfiguredOrg ? "#e3f2fd" : "#f5f5f5";
+
+        <div style="border:1px solid @borderColor; border-radius:6px; margin-bottom:24px;">
+            @* ── Org header ── *@
+            <div style="background:@headerBg; padding:12px 16px; border-radius:6px 6px 0 0; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <span style="font-size:1.1rem; font-weight:600;">@org.Name</span>
+                    @if (org.IsConfiguredOrg)
+                    {
+                        <span style="background:#1565c0; color:white; border-radius:3px; padding:2px 6px; font-size:0.75rem; margin-left:8px;">Configured</span>
+                    }
+                    @if (!string.IsNullOrEmpty(org.Status))
+                    {
+                        <span style="color:#555; font-size:0.85rem; margin-left:8px;">@org.Status</span>
+                    }
+                </div>
+                <div style="margin-left:auto; display:flex; gap:16px; font-size:0.85rem; color:#555;">
+                    <span>📦 @org.EndpointCount endpoint(s)</span>
+                    @if (org.Groups.Count > 0)
+                    {
+                        <span>🗂 @org.Groups.Count group(s)</span>
+                    }
+                    @if (org.CreatedUtc.HasValue)
+                    {
+                        <span>Created @org.CreatedUtc.Value.ToString("yyyy-MM-dd")</span>
+                    }
+                </div>
+            </div>
+
+            @* ── Groups summary ── *@
+            @if (org.Groups.Count > 0)
+            {
+                <div style="padding:8px 16px; background:#fafafa; border-bottom:1px solid #eee; display:flex; gap:8px; flex-wrap:wrap;">
+                    @foreach (var g in org.Groups)
+                    {
+                        <span style="background:#e8f5e9; border:1px solid #a5d6a7; border-radius:3px; padding:2px 8px; font-size:0.8rem;">
+                            @g.Name (@g.EndpointCount)
+                        </span>
+                    }
+                </div>
+            }
+
+            @* ── Enrolled endpoints ── *@
+            @if (org.IsConfiguredOrg)
+            {
+                @if (org.Endpoints.Count == 0)
+                {
+                    <p style="padding:16px; color:#888; margin:0;">No enrolled endpoints found in this organization.</p>
+                }
+                else
+                {
+                    @* Summary bar *@
+                    var online = org.Endpoints.Count(e => string.Equals(e.Status, "Connected", StringComparison.OrdinalIgnoreCase)
+                                                       || string.Equals(e.Status, "Online", StringComparison.OrdinalIgnoreCase));
+                    var outdated = org.Endpoints.Count(e => !e.IsAgentCurrent);
+                    var needsPatching = org.Endpoints.Count(e => e.MissingCriticalPatches > 0);
+
+                    <div style="padding:12px 16px; display:flex; gap:16px; flex-wrap:wrap; border-bottom:1px solid #eee; background:#fafafa;">
+                        <div style="text-align:center; min-width:80px;">
+                            <div style="font-size:1.4rem; font-weight:bold; color:#388e3c;">@online</div>
+                            <div style="font-size:0.75rem; color:#555;">Online</div>
+                        </div>
+                        <div style="text-align:center; min-width:80px;">
+                            <div style="font-size:1.4rem; font-weight:bold; color:#555;">@org.Endpoints.Count</div>
+                            <div style="font-size:0.75rem; color:#555;">Total</div>
+                        </div>
+                        @if (outdated > 0)
+                        {
+                            <div style="text-align:center; min-width:80px;">
+                                <div style="font-size:1.4rem; font-weight:bold; color:#f57c00;">@outdated</div>
+                                <div style="font-size:0.75rem; color:#555;">Agent Outdated</div>
+                            </div>
+                        }
+                        @if (needsPatching > 0)
+                        {
+                            <div style="text-align:center; min-width:80px;">
+                                <div style="font-size:1.4rem; font-weight:bold; color:#c62828;">@needsPatching</div>
+                                <div style="font-size:0.75rem; color:#555;">Critical Patches</div>
+                            </div>
+                        }
+                    </div>
+
+                    <table style="width:100%; border-collapse:collapse; font-size:0.875rem;">
+                        <thead>
+                            <tr style="border-bottom:2px solid #ddd; text-align:left; background:#fafafa;">
+                                <th style="padding:8px 12px;">Endpoint</th>
+                                <th style="padding:8px 12px;">Status</th>
+                                <th style="padding:8px 12px;">Agent Version</th>
+                                <th style="padding:8px 12px;">OS</th>
+                                <th style="padding:8px 12px;">IP</th>
+                                <th style="padding:8px 12px;">Last Seen</th>
+                                <th style="padding:8px 12px;">Last User</th>
+                                <th style="padding:8px 12px;">Schedules</th>
+                                <th style="padding:8px 12px;">Patches</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var ep in org.Endpoints.OrderBy(e => e.Name))
+                            {
+                                var isOnline = string.Equals(ep.Status, "Connected", StringComparison.OrdinalIgnoreCase)
+                                           || string.Equals(ep.Status, "Online", StringComparison.OrdinalIgnoreCase);
+                                var statusColor = isOnline ? "#388e3c" : "#888";
+                                var statusDot = isOnline ? "●" : "○";
+                                <tr style="border-bottom:1px solid #eee;">
+                                    <td style="padding:8px 12px; font-weight:500;">@ep.Name</td>
+                                    <td style="padding:8px 12px; color:@statusColor;">@statusDot @ep.Status</td>
+                                    <td style="padding:8px 12px;">
+                                        @if (!string.IsNullOrEmpty(ep.AgentVersion))
+                                        {
+                                            @if (!ep.IsAgentCurrent)
+                                            {
+                                                <span style="color:#f57c00;" title="Outdated agent">⚠ @ep.AgentVersion</span>
+                                            }
+                                            else
+                                            {
+                                                <span style="color:#388e3c;">✓ @ep.AgentVersion</span>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span style="color:#888;">—</span>
+                                        }
+                                    </td>
+                                    <td style="padding:8px 12px; color:#555;">@(ep.OsName ?? ep.OsType ?? "—")</td>
+                                    <td style="padding:8px 12px; font-family:monospace; font-size:0.8rem;">
+                                        @(ep.IpAddress ?? "—")
+                                        @if (!string.IsNullOrEmpty(ep.ExternalAddress) && ep.ExternalAddress != ep.IpAddress)
+                                        {
+                                            <br /><span style="color:#888;">ext: @ep.ExternalAddress</span>
+                                        }
+                                    </td>
+                                    <td style="padding:8px 12px; color:#555; font-size:0.82rem;">
+                                        @if (ep.LastSeenUtc.HasValue)
+                                        {
+                                            var ago = DateTime.UtcNow - ep.LastSeenUtc.Value;
+                                            @if (ago.TotalMinutes < 5)
+                                            {
+                                                <span style="color:#388e3c;">just now</span>
+                                            }
+                                            else if (ago.TotalHours < 1)
+                                            {
+                                                <span>@((int)ago.TotalMinutes)m ago</span>
+                                            }
+                                            else if (ago.TotalDays < 1)
+                                            {
+                                                <span>@((int)ago.TotalHours)h ago</span>
+                                            }
+                                            else
+                                            {
+                                                <span style="color:@(ago.TotalDays > 7 ? "#c62828" : "#f57c00")">
+                                                    @((int)ago.TotalDays)d ago
+                                                </span>
+                                            }
+                                        }
+                                        else { <span style="color:#888;">—</span> }
+                                    </td>
+                                    <td style="padding:8px 12px; color:#555; font-size:0.82rem;">@(ep.LastLoggedInUser ?? "—")</td>
+                                    <td style="padding:8px 12px;">
+                                        @if (ep.Schedules.Count == 0)
+                                        {
+                                            <span style="color:#888; font-size:0.8rem;">None</span>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var s in ep.Schedules)
+                                            {
+                                                var sColor = s.IsManagedByHm ? "#1565c0" : "#555";
+                                                var sDisabled = (s.Settings ?? "").StartsWith("DISABLED", StringComparison.OrdinalIgnoreCase);
+                                                <div style="font-size:0.78rem; color:@sColor; opacity:@(sDisabled ? "0.5" : "1");"
+                                                     title="@s.Settings">
+                                                    @(sDisabled ? "⏸" : "▶") @s.ScheduleName
+                                                </div>
+                                            }
+                                        }
+                                    </td>
+                                    <td style="padding:8px 12px;">
+                                        @if (ep.MissingCriticalPatches > 0)
+                                        {
+                                            <span style="color:#c62828; font-weight:600;">@ep.MissingCriticalPatches critical</span>
+                                        }
+                                        @if (ep.MissingOtherPatches > 0)
+                                        {
+                                            <span style="color:#f57c00; margin-left:4px;">@ep.MissingOtherPatches other</span>
+                                        }
+                                        @if (ep.MissingCriticalPatches == 0 && ep.MissingOtherPatches == 0)
+                                        {
+                                            <span style="color:#388e3c;">✓</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            }
+            else
+            {
+                <p style="padding:12px 16px; margin:0; color:#888; font-size:0.85rem;">
+                    Endpoint details only available for the configured organization.
+                    To manage this org, update <code>Action1:OrganizationId</code> in broker settings.
+                </p>
+            }
+        </div>
+    }
+}
+
+@code {
+    private IReadOnlyList<Action1OrgDto>? _orgs;
+    private string? _error;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    private async Task Reload()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _orgs = await BrokerApi.GetAction1ClientsAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string Btn(string v) => v switch
+    {
+        "default" => "padding:8px 16px; background:#f5f5f5; color:#333; border:1px solid #ccc; border-radius:4px; cursor:pointer;",
+        _ => ""
+    };
+}

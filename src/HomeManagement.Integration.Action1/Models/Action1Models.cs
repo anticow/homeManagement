@@ -133,6 +133,49 @@ internal sealed record Action1TokenResponse(
     [property: JsonPropertyName("expires_in")] int ExpiresIn,
     [property: JsonPropertyName("token_type")] string TokenType);
 
+// ── Organizations ─────────────────────────────────────────────────────────────
+
+/// <summary>
+/// An Action1 organization (equivalent to an MSP "client" or isolated tenant).
+/// Source: GET /organizations  (enterprise-wide, no orgId in path)
+///
+/// Each organization scopes all endpoints, automations, reports, and logs.
+/// In a single-user setup there is typically one org; MSP setups have many.
+/// </summary>
+public sealed record Action1Organization(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("description")] string? Description,
+    [property: JsonPropertyName("endpoint_count")]
+    [property: JsonConverter(typeof(FlexibleIntConverter))]
+    int EndpointCount,
+    [property: JsonPropertyName("status")] string? Status,
+    [property: JsonPropertyName("created")]
+    [property: JsonConverter(typeof(UnixOrIsoDateTimeConverter))]
+    DateTime? CreatedUtc);
+
+// ── Endpoint Groups ───────────────────────────────────────────────────────────
+
+/// <summary>
+/// A named group of endpoints in Action1, used to scope automation schedules.
+/// Source: GET /endpoints/groups/{orgId}
+/// </summary>
+public sealed record Action1EndpointGroup(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("description")] string? Description,
+    [property: JsonPropertyName("endpoint_count")]
+    [property: JsonConverter(typeof(FlexibleIntConverter))]
+    int EndpointCount);
+
+/// <summary>
+/// A member endpoint returned from GET /endpoints/groups/{orgId}/{groupId}/contents.
+/// Contains just id + name for listing group membership.
+/// </summary>
+public sealed record Action1EndpointGroupMember(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("name")] string Name);
+
 // ── Installed updates ─────────────────────────────────────────────────────────
 
 /// <summary>

@@ -463,6 +463,132 @@ public static class Action1FleetEndpoints
 
         return "Healthy";
     }
+
+    // ── Clients / enrollment endpoints ────────────────────────────────────────
+
+    public static IEndpointRouteBuilder MapAction1ClientEndpoints(this IEndpointRouteBuilder app)
+    {
+        var group = app.MapGroup("/api/action1/clients")
+            .WithTags("Action1Clients")
+            .RequireAuthorization();
+
+        // GET /api/action1/clients
+        // Returns all Action1 organizations (MSP clients) with their enrolled endpoints.
+        // For single-org setups this returns one entry. For MSP setups, one per client.
+        group.MapGet("", async (
+            Action1Client action1,
+            IOptions<Action1Options> opts,
+            CancellationToken ct) =>
+        {
+            if (!opts.Value.Enabled)
+                return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
+
+            try
+            {
+                // Fetch orgs + current org endpoints + groups in parallel
+                var orgsTask = action1.GetOrganizationsAsync(ct);
+                var endpointsTask = action1.ListEndpointsAsync(ct);
+                var groupsTask = action1.GetEndpointGroupsAsync(ct);
+                var schedulesTask = action1.GetSchedulesAsync(ct);
+                await Task.WhenAll(orgsTask, endpointsTask, groupsTask, schedulesTask);
+
+                var orgs = orgsTask.Result;
+                var endpoints = endpointsTask.Result;
+                var groups = groupsTask.Result;
+                var schedules = schedulesTask.Result;
+
+                // Determine the most common agent version as "current" baseline
+                var currentAgentVersion = endpoints
+                    .Where(e => !string.IsNullOrEmpty(e.AgentVersion))
+                    .GroupBy(e => e.AgentVersion!)
+                    .OrderByDescending(g => g.Count())
+                    .FirstOrDefault()?.Key;
+
+                // Build schedule → endpoint/group membership map
+                // Schedules targeting ALL or an EndpointGroup apply to all/group endpoints
+                // Schedules targeting specific Endpoints map directly
+                var schedulesByEndpoint = new Dictionary<string, List<Models.Action1Schedule>>(StringComparer.OrdinalIgnoreCase);
+                var broadSchedules = new List<Models.Action1Schedule>();
+
+                foreach (var s in schedules)
+                {
+                    var targets = s.Endpoints ?? [];
+                    var hasAll = targets.Any(e => string.Equals(e.Id, "ALL", StringComparison.OrdinalIgnoreCase));
+                    if (hasAll || targets.Count == 0)
+                    {
+                        broadSchedules.Add(s);
+                        continue;
+                    }
+                    foreach (var t in targets)
+                    {
+                        if (string.Equals(t.Type, "Endpoint", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (!schedulesByEndpoint.TryGetValue(t.Id, out var list))
+                                schedulesByEndpoint[t.Id] = list = [];
+                            list.Add(s);
+                        }
+                        // EndpointGroup targets: resolved after group membership fetch (future)
+                    }
+                }
+
+                // Map endpoints to client DTOs
+                var endpointDtos = endpoints.Select(ep =>
+                {
+                    var epSchedules = broadSchedules.ToList();
+                    if (schedulesByEndpoint.TryGetValue(ep.Id, out var direct))
+                        epSchedules.AddRange(direct);
+
+                    return new Action1EnrolledEndpointDto(
+                        EndpointId: ep.Id,
+                        Name: ep.Name,
+                        AgentVersion: ep.AgentVersion,
+                        IsAgentCurrent: currentAgentVersion is null ||
+                            string.Equals(ep.AgentVersion, currentAgentVersion, StringComparison.OrdinalIgnoreCase),
+                        Status: ep.Status,
+                        IpAddress: ep.IpAddress,
+                        ExternalAddress: ep.ExternalAddress,
+                        OsName: ep.OsName,
+                        OsType: ep.OsType,
+                        LastLoggedInUser: ep.LastLoggedInUser,
+                        LastSeenUtc: ep.LastSeenUtc,
+                        MissingCriticalPatches: ep.MissingCriticalUpdates,
+                        MissingOtherPatches: ep.MissingOtherUpdates,
+                        Schedules: epSchedules
+                            .DistinctBy(s => s.Id)
+                            .Select(s => new Action1ClientScheduleDto(
+                                ScheduleId: s.Id,
+                                ScheduleName: s.Name,
+                                IsManagedByHm: s.Name.StartsWith("homeManagement: ", StringComparison.OrdinalIgnoreCase),
+                                Settings: s.Settings))
+                            .ToList());
+                }).ToList();
+
+                // Map organizations — annotate which one matches the configured orgId
+                var orgDtos = orgs.Select(org => new Action1OrgDto(
+                    OrgId: org.Id,
+                    Name: org.Name,
+                    Description: org.Description,
+                    IsConfiguredOrg: string.Equals(org.Id, opts.Value.OrganizationId, StringComparison.OrdinalIgnoreCase),
+                    EndpointCount: org.EndpointCount,
+                    Status: org.Status,
+                    CreatedUtc: org.CreatedUtc,
+                    // Endpoints and groups are only populated for the configured org
+                    Endpoints: string.Equals(org.Id, opts.Value.OrganizationId, StringComparison.OrdinalIgnoreCase)
+                        ? endpointDtos : [],
+                    Groups: string.Equals(org.Id, opts.Value.OrganizationId, StringComparison.OrdinalIgnoreCase)
+                        ? groups.Select(g => new Action1GroupDto(g.Id, g.Name, g.Description, g.EndpointCount)).ToList()
+                        : [])).ToList();
+
+                return Results.Ok(orgDtos);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+            }
+        });
+
+        return app;
+    }
 }
 
 public sealed record FleetMachineStatus(
@@ -516,3 +642,50 @@ public sealed record ScheduleDto(
 public sealed record SchedulePatchRequest(
     string? Settings,
     string? Name);
+
+/// <summary>
+/// An Action1 organization (MSP client / isolated tenant) with its enrolled endpoints.
+/// </summary>
+public sealed record Action1OrgDto(
+    string OrgId,
+    string Name,
+    string? Description,
+    bool IsConfiguredOrg,
+    int EndpointCount,
+    string? Status,
+    DateTime? CreatedUtc,
+    IReadOnlyList<Action1EnrolledEndpointDto> Endpoints,
+    IReadOnlyList<Action1GroupDto> Groups);
+
+/// <summary>An endpoint group within an org.</summary>
+public sealed record Action1GroupDto(
+    string GroupId,
+    string Name,
+    string? Description,
+    int EndpointCount);
+
+/// <summary>
+/// A single Action1-enrolled endpoint with agent details and cross-referenced schedules.
+/// </summary>
+public sealed record Action1EnrolledEndpointDto(
+    string EndpointId,
+    string Name,
+    string? AgentVersion,
+    bool IsAgentCurrent,
+    string Status,
+    string? IpAddress,
+    string? ExternalAddress,
+    string? OsName,
+    string? OsType,
+    string? LastLoggedInUser,
+    DateTime? LastSeenUtc,
+    int MissingCriticalPatches,
+    int MissingOtherPatches,
+    IReadOnlyList<Action1ClientScheduleDto> Schedules);
+
+/// <summary>A schedule that targets this client endpoint (or ALL endpoints).</summary>
+public sealed record Action1ClientScheduleDto(
+    string ScheduleId,
+    string ScheduleName,
+    bool IsManagedByHm,
+    string? Settings);

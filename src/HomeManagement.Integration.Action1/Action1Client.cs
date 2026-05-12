@@ -470,6 +470,48 @@ public sealed class Action1Client : IDisposable
 
     public void Dispose() => _tokenLock.Dispose();
 
+    // ── Organizations ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// List all organizations in the Action1 enterprise.
+    ///
+    /// Real Action1 API: GET /organizations  (enterprise-wide — no orgId in path)
+    ///
+    /// In single-org setups returns one item. MSP accounts return one per client.
+    /// </summary>
+    public async Task<IReadOnlyList<Action1Organization>> GetOrganizationsAsync(CancellationToken ct = default)
+    {
+        _logger.LogDebug("Action1: fetching organizations (enterprise-wide)");
+        return await GetPagedListAsync<Action1Organization>("organizations?fields=*", ct);
+    }
+
+    // ── Endpoint Groups ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// List all endpoint groups in the organization.
+    ///
+    /// Real Action1 API: GET /endpoints/groups/{orgId}?fields=*
+    /// </summary>
+    public async Task<IReadOnlyList<Action1EndpointGroup>> GetEndpointGroupsAsync(CancellationToken ct = default)
+    {
+        _logger.LogDebug("Action1: fetching endpoint groups for org {OrgId}", _options.OrganizationId);
+        return await GetPagedListAsync<Action1EndpointGroup>(
+            $"endpoints/groups/{_options.OrganizationId}?fields=*", ct);
+    }
+
+    /// <summary>
+    /// List all endpoints belonging to a specific endpoint group.
+    ///
+    /// Real Action1 API: GET /endpoints/groups/{orgId}/{groupId}/contents
+    /// </summary>
+    public async Task<IReadOnlyList<Action1EndpointGroupMember>> GetEndpointGroupMembersAsync(
+        string groupId, CancellationToken ct = default)
+    {
+        _logger.LogDebug("Action1: fetching members of group {GroupId}", groupId);
+        return await GetPagedListAsync<Action1EndpointGroupMember>(
+            $"endpoints/groups/{_options.OrganizationId}/{groupId}/contents", ct);
+    }
+
     // ── Automation Schedules ──────────────────────────────────────────────────
 
     /// <summary>
