@@ -270,7 +270,13 @@ public static class Action1FleetEndpoints
             try
             {
                 var schedules = await action1.GetSchedulesAsync(ct);
-                return Results.Ok(schedules.Select(MapScheduleDto));
+                var syncConfigured = opts.Value.ScheduleSync.Enabled && opts.Value.ScheduleSync.Rules.Count > 0;
+                return Results.Ok(new
+                {
+                    SyncConfigured = syncConfigured,
+                    RuleCount = opts.Value.ScheduleSync.Rules.Count,
+                    Schedules = schedules.Select(MapScheduleDto).ToList()
+                });
             }
             catch (Exception ex)
             {

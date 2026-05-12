@@ -69,7 +69,7 @@ public interface IBrokerApi
 
     // ── Action1 Schedule Management ──
     [Get("/api/action1/schedules")]
-    Task<IReadOnlyList<ScheduleDto>> GetSchedulesAsync(CancellationToken ct = default);
+    Task<ScheduleListDto> GetSchedulesAsync(CancellationToken ct = default);
 
     [Post("/api/action1/schedules/sync")]
     Task<ScheduleSyncResultDto> SyncSchedulesAsync(CancellationToken ct = default);
@@ -169,6 +169,11 @@ public sealed record Action1VulnerabilityUpdateDto(
     string? Name);
 
 public sealed record ApproveDeploymentResultDto(string DeploymentId, string EndpointId);
+
+public sealed record ScheduleListDto(
+    bool SyncConfigured,
+    int RuleCount,
+    IReadOnlyList<ScheduleDto> Schedules);
 
 public sealed record ScheduleDto(
     string Id,
