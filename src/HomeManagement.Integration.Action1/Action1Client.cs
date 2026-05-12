@@ -119,6 +119,15 @@ public sealed class Action1Client : IDisposable
         return await _http.SendAsync(req, ct);
     }
 
+    private async Task<HttpResponseMessage> PatchJsonAsync<T>(string relativePath, T body, CancellationToken ct)
+    {
+        var token = await GetAccessTokenAsync(ct);
+        using var req = new HttpRequestMessage(HttpMethod.Patch, relativePath);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        req.Content = JsonContent.Create(body, options: JsonOpts);
+        return await _http.SendAsync(req, ct);
+    }
+
     private async Task<IReadOnlyList<T>> GetPagedListAsync<T>(string path, CancellationToken ct)
     {
         var resp = await GetAsync(path, ct);
@@ -401,4 +410,96 @@ public sealed class Action1Client : IDisposable
     }
 
     public void Dispose() => _tokenLock.Dispose();
+
+    // ── Automation Schedules ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// List all automation schedules (recurring patch automations) in the organization.
+    ///
+    /// Real Action1 API: GET /policies/schedules/{orgId}?fields=*
+    ///
+    /// homeManagement-managed schedules are identified by the "homeManagement: " name prefix.
+    /// </summary>
+    public async Task<IReadOnlyList<Action1Schedule>> GetSchedulesAsync(CancellationToken ct = default)
+    {
+        _logger.LogDebug("Action1: fetching automation schedules for org {OrgId}", _options.OrganizationId);
+        return await GetPagedListAsync<Action1Schedule>(
+            $"policies/schedules/{_options.OrganizationId}?fields=*", ct);
+    }
+
+    /// <summary>
+    /// Create a new automation schedule in Action1.
+    ///
+    /// Real Action1 API: POST /policies/schedules/{orgId}
+    ///
+    /// Returns the created schedule's ID, or null on failure.
+    /// </summary>
+    public async Task<string?> CreateScheduleAsync(object scheduleBody, CancellationToken ct = default)
+    {
+        var resp = await PostJsonAsync($"policies/schedules/{_options.OrganizationId}", scheduleBody, ct);
+
+        if (!resp.IsSuccessStatusCode)
+        {
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            _logger.LogError("Action1: schedule creation failed {Status}: {Body}", resp.StatusCode, body);
+            return null;
+        }
+
+        var created = await resp.Content.ReadFromJsonAsync<Action1Schedule>(JsonOpts, ct);
+        _logger.LogInformation("Action1: schedule {Id} ({Name}) created", created?.Id, created?.Name);
+        return created?.Id;
+    }
+
+    /// <summary>
+    /// Update an existing schedule via PATCH.
+    ///
+    /// Real Action1 API: PATCH /policies/schedules/{orgId}/{id}
+    ///
+    /// Only fields included in <paramref name="patch"/> are changed.
+    /// Returns true on success.
+    /// </summary>
+    public async Task<bool> UpdateScheduleAsync(string scheduleId, object patch, CancellationToken ct = default)
+    {
+        var resp = await PatchJsonAsync(
+            $"policies/schedules/{_options.OrganizationId}/{scheduleId}", patch, ct);
+
+        if (!resp.IsSuccessStatusCode)
+        {
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            _logger.LogError("Action1: schedule PATCH {Id} failed {Status}: {Body}",
+                scheduleId, resp.StatusCode, body);
+            return false;
+        }
+
+        _logger.LogInformation("Action1: schedule {Id} updated", scheduleId);
+        return true;
+    }
+
+    /// <summary>
+    /// Delete an automation schedule.
+    ///
+    /// Real Action1 API: DELETE /policies/schedules/{orgId}/{id}
+    ///
+    /// Only deletes HM-managed schedules (name starts with "homeManagement: ").
+    /// Returns true on success.
+    /// </summary>
+    public async Task<bool> DeleteScheduleAsync(string scheduleId, CancellationToken ct = default)
+    {
+        var token = await GetAccessTokenAsync(ct);
+        using var req = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"policies/schedules/{_options.OrganizationId}/{scheduleId}");
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var resp = await _http.SendAsync(req, ct);
+
+        if (!resp.IsSuccessStatusCode)
+        {
+            _logger.LogError("Action1: schedule DELETE {Id} failed {Status}",
+                scheduleId, resp.StatusCode);
+            return false;
+        }
+
+        _logger.LogInformation("Action1: schedule {Id} deleted", scheduleId);
+        return true;
+    }
 }

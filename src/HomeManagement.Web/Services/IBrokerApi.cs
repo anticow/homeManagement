@@ -67,6 +67,19 @@ public interface IBrokerApi
     [Get("/api/action1/fleet/vulnerabilities")]
     Task<IReadOnlyList<Action1VulnerabilityDto>> GetFleetVulnerabilitiesAsync(CancellationToken ct = default);
 
+    // ── Action1 Schedule Management ──
+    [Get("/api/action1/schedules")]
+    Task<IReadOnlyList<ScheduleDto>> GetSchedulesAsync(CancellationToken ct = default);
+
+    [Post("/api/action1/schedules/sync")]
+    Task<ScheduleSyncResultDto> SyncSchedulesAsync(CancellationToken ct = default);
+
+    [Patch("/api/action1/schedules/{scheduleId}")]
+    Task PatchScheduleAsync(string scheduleId, [Body] SchedulePatchRequestDto request, CancellationToken ct = default);
+
+    [Delete("/api/action1/schedules/{scheduleId}")]
+    Task DeleteScheduleAsync(string scheduleId, CancellationToken ct = default);
+
     // ── Jobs ──
     [Get("/api/jobs")]
     Task<PagedResult<JobSummary>> GetJobsAsync(int page = 1, int pageSize = 25, CancellationToken ct = default);
@@ -156,3 +169,22 @@ public sealed record Action1VulnerabilityUpdateDto(
     string? Name);
 
 public sealed record ApproveDeploymentResultDto(string DeploymentId, string EndpointId);
+
+public sealed record ScheduleDto(
+    string Id,
+    string Name,
+    string? Settings,
+    string? RetryMinutes,
+    DateTime? LastRun,
+    DateTime? NextRun,
+    bool IsSystem,
+    bool IsManagedByHm,
+    string? UpdateApproval,
+    int DeferDays,
+    bool AllowReboot);
+
+public sealed record SchedulePatchRequestDto(string? Settings, string? Name);
+
+public sealed record ScheduleSyncResultDto(
+    IReadOnlyList<string> Created,
+    IReadOnlyList<string> Updated);

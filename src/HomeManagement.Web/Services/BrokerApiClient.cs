@@ -95,6 +95,18 @@ public sealed class BrokerApiClient : IBrokerApi, IDisposable
     public Task<IReadOnlyList<Action1VulnerabilityDto>> GetFleetVulnerabilitiesAsync(CancellationToken ct = default)
         => ExecuteAsync(api => api.GetFleetVulnerabilitiesAsync(ct), ct);
 
+    public Task<IReadOnlyList<ScheduleDto>> GetSchedulesAsync(CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetSchedulesAsync(ct), ct);
+
+    public Task<ScheduleSyncResultDto> SyncSchedulesAsync(CancellationToken ct = default)
+        => ExecuteAsync(api => api.SyncSchedulesAsync(ct), ct);
+
+    public Task PatchScheduleAsync(string scheduleId, SchedulePatchRequestDto request, CancellationToken ct = default)
+        => ExecuteAsync(api => api.PatchScheduleAsync(scheduleId, request, ct), ct);
+
+    public Task DeleteScheduleAsync(string scheduleId, CancellationToken ct = default)
+        => ExecuteAsync(api => api.DeleteScheduleAsync(scheduleId, ct), ct);
+
     private async Task<T> ExecuteAsync<T>(Func<IBrokerApi, Task<T>> action, CancellationToken ct)
     {
         try

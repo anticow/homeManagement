@@ -249,6 +249,168 @@ public static class Action1FleetEndpoints
         return app;
     }
 
+    // ── Public schedule management entry point ────────────────────────────────
+    // Registered separately under /api/action1/schedules to keep concerns clean.
+
+    public static IEndpointRouteBuilder MapAction1ScheduleEndpoints(this IEndpointRouteBuilder app)
+    {
+        var group = app.MapGroup("/api/action1/schedules")
+            .WithTags("Action1Schedules")
+            .RequireAuthorization();
+
+        // ── List all schedules ────────────────────────────────────────────────
+        group.MapGet("", async (
+            Action1Client action1,
+            IOptions<Action1Options> opts,
+            CancellationToken ct) =>
+        {
+            if (!opts.Value.Enabled)
+                return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
+
+            try
+            {
+                var schedules = await action1.GetSchedulesAsync(ct);
+                return Results.Ok(schedules.Select(MapScheduleDto));
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+            }
+        });
+
+        // ── Trigger immediate sync of HM-managed schedules ────────────────────
+        // POST /api/action1/schedules/sync
+        group.MapPost("sync", async (
+            Action1Client action1,
+            IOptions<Action1Options> opts,
+            CancellationToken ct) =>
+        {
+            if (!opts.Value.Enabled)
+                return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
+
+            if (!opts.Value.ScheduleSync.Enabled || opts.Value.ScheduleSync.Rules.Count == 0)
+                return Results.Problem(
+                    "Schedule sync is not configured. Set Action1:ScheduleSync:Enabled=true and add Rules.",
+                    statusCode: 400);
+
+            try
+            {
+                var existing = await action1.GetSchedulesAsync(ct);
+                var existingByName = existing.ToDictionary(s => s.Name, StringComparer.OrdinalIgnoreCase);
+
+                var created = new List<string>();
+                var updated = new List<string>();
+
+                foreach (var rule in opts.Value.ScheduleSync.Rules)
+                {
+                    if (string.IsNullOrWhiteSpace(rule.Name)) continue;
+
+                    existingByName.TryGetValue(rule.FullName, out var found);
+                    var body = Action1ScheduleSyncService.BuildScheduleBody(rule);
+
+                    if (found is null)
+                    {
+                        var id = await action1.CreateScheduleAsync(body, ct);
+                        if (id is not null) created.Add(rule.FullName);
+                    }
+                    else
+                    {
+                        await action1.UpdateScheduleAsync(found.Id, body, ct);
+                        updated.Add(rule.FullName);
+                    }
+                }
+
+                return Results.Ok(new { Created = created, Updated = updated });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+            }
+        });
+
+        // ── Update schedule settings (enable/disable/change timing) ───────────
+        group.MapPatch("{scheduleId}", async (
+            string scheduleId,
+            SchedulePatchRequest request,
+            Action1Client action1,
+            IOptions<Action1Options> opts,
+            CancellationToken ct) =>
+        {
+            if (!opts.Value.Enabled)
+                return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
+
+            try
+            {
+                var patch = new Dictionary<string, object?>();
+                if (request.Settings is not null) patch["settings"] = request.Settings;
+                if (request.Name is not null) patch["name"] = request.Name;
+
+                if (patch.Count == 0)
+                    return Results.BadRequest(new { Message = "No fields to update." });
+
+                var ok = await action1.UpdateScheduleAsync(scheduleId, patch, ct);
+                return ok ? Results.Ok() : Results.Problem("Update failed", statusCode: 502);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+            }
+        });
+
+        // ── Delete a schedule ─────────────────────────────────────────────────
+        group.MapDelete("{scheduleId}", async (
+            string scheduleId,
+            Action1Client action1,
+            IOptions<Action1Options> opts,
+            CancellationToken ct) =>
+        {
+            if (!opts.Value.Enabled)
+                return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
+
+            try
+            {
+                // Safety guard: only allow deleting HM-managed schedules from this endpoint
+                var schedules = await action1.GetSchedulesAsync(ct);
+                var target = schedules.FirstOrDefault(s =>
+                    string.Equals(s.Id, scheduleId, StringComparison.OrdinalIgnoreCase));
+
+                if (target is null)
+                    return Results.NotFound(new { Message = $"Schedule {scheduleId} not found." });
+
+                if (!target.Name.StartsWith("homeManagement: ", StringComparison.OrdinalIgnoreCase))
+                    return Results.Problem(
+                        "Only homeManagement-managed schedules (name prefix 'homeManagement: ') can be deleted via this API.",
+                        statusCode: 403);
+
+                var ok = await action1.DeleteScheduleAsync(scheduleId, ct);
+                return ok ? Results.NoContent() : Results.Problem("Delete failed", statusCode: 502);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+            }
+        });
+
+        return app;
+    }
+
+    private static ScheduleDto MapScheduleDto(Models.Action1Schedule s)
+    {
+        var ap = s.Actions is { Count: > 0 } acts ? acts[0].Params : null;
+        return new ScheduleDto(
+            Id: s.Id,
+            Name: s.Name,
+            Settings: s.Settings,
+            RetryMinutes: s.RetryMinutes,
+            LastRun: s.LastRun,
+            NextRun: s.NextRun,
+            IsSystem: s.IsSystem,
+            IsManagedByHm: s.Name.StartsWith("homeManagement: ", StringComparison.OrdinalIgnoreCase),
+            UpdateApproval: ap?.UpdateApproval,
+            DeferDays: ap?.AutomaticApprovalDelayDays ?? 0,
+            AllowReboot: string.Equals(ap?.RebootOptions?.AutoReboot, "yes", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static async Task<string?> ResolveEndpointIdAsync(
         Guid machineId,
         Action1Client action1,
@@ -329,3 +491,22 @@ public sealed record ApprovePatchesRequest(
 
 /// <summary>A patch ID + version pair for patch approval requests.</summary>
 public sealed record PatchApprovalItem(string Id, string? Version);
+
+/// <summary>DTO for a single Action1 automation schedule as returned by the broker.</summary>
+public sealed record ScheduleDto(
+    string Id,
+    string Name,
+    string? Settings,
+    string? RetryMinutes,
+    DateTime? LastRun,
+    DateTime? NextRun,
+    bool IsSystem,
+    bool IsManagedByHm,
+    string? UpdateApproval,
+    int DeferDays,
+    bool AllowReboot);
+
+/// <summary>Partial update request for a schedule (enable/disable/rename).</summary>
+public sealed record SchedulePatchRequest(
+    string? Settings,
+    string? Name);

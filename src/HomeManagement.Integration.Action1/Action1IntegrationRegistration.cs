@@ -57,6 +57,10 @@ public static class Action1IntegrationRegistration
 
         services.AddScoped<IPatchService, Action1PatchService>();
 
+        // Schedule sync: ensures HM-configured automation schedules exist in Action1 on startup
+        services.AddSingleton<Action1ScheduleSyncService>();
+        services.AddHostedService(sp => sp.GetRequiredService<Action1ScheduleSyncService>());
+
         services.AddQuartz(q =>
         {
             q.AddJob<Action1SyncJob>(opts => opts.WithIdentity(Action1SyncJob.Key).StoreDurably());

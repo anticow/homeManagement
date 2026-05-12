@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace HomeManagement.Integration.Action1.Models;
@@ -178,3 +179,62 @@ public sealed record Action1VulnerabilityUpdate(
     [property: JsonPropertyName("package_id")] string PackageId,
     [property: JsonPropertyName("version")] string? Version,
     [property: JsonPropertyName("name")] string? Name);
+
+// ── Automation Schedules ──────────────────────────────────────────────────────
+
+/// <summary>
+/// A recurring or one-time automation schedule in Action1.
+/// Source: GET /policies/schedules/{orgId}
+///
+/// The "settings" field is a control string that determines when/whether the
+/// automation runs:
+///   "DISABLED"                                    — paused, won't run
+///   "ENABLED ONCE AT:HH-mm-ss DATE:yyyy-MM-dd"   — run once at a specific time
+///   "RECURRING WEEKLY ON:{dayNum} AT:HH-mm-ss MAINTENANCE:{minutes}"
+///                                                 — recurring weekly
+/// homeManagement-managed schedules are identified by name prefix "homeManagement: ".
+/// </summary>
+public sealed record Action1Schedule(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("settings")] string? Settings,
+    [property: JsonPropertyName("retry_minutes")] string? RetryMinutes,
+    [property: JsonPropertyName("endpoints")] IReadOnlyList<Action1ScheduleEndpoint>? Endpoints,
+    [property: JsonPropertyName("actions")] IReadOnlyList<Action1ScheduleAction>? Actions,
+    [property: JsonPropertyName("last_run")]
+    [property: JsonConverter(typeof(UnixOrIsoDateTimeConverter))]
+    DateTime? LastRun,
+    [property: JsonPropertyName("next_run")]
+    [property: JsonConverter(typeof(UnixOrIsoDateTimeConverter))]
+    DateTime? NextRun,
+    [property: JsonPropertyName("system")] bool IsSystem);
+
+/// <summary>An endpoint or endpoint group targeted by a schedule.</summary>
+public sealed record Action1ScheduleEndpoint(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("type")] string Type);
+
+/// <summary>An action within a schedule (e.g., "deploy_update").</summary>
+public sealed record Action1ScheduleAction(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("template_id")] string TemplateId,
+    [property: JsonPropertyName("params")] Action1ScheduleParams? Params);
+
+/// <summary>Parameters for the deploy_update action in a schedule.</summary>
+public sealed record Action1ScheduleParams(
+    [property: JsonPropertyName("display_summary")] string? DisplaySummary,
+    [property: JsonPropertyName("update_approval")] string? UpdateApproval,
+    [property: JsonPropertyName("automatic_approval_delay_days")]
+    [property: JsonConverter(typeof(FlexibleIntConverter))]
+    int AutomaticApprovalDelayDays,
+    [property: JsonPropertyName("scope")] string? Scope,
+    [property: JsonPropertyName("packages")] JsonElement? Packages,
+    [property: JsonPropertyName("filters")] IReadOnlyList<JsonElement>? Filters,
+    [property: JsonPropertyName("reboot_options")] Action1RebootOptions? RebootOptions);
+
+/// <summary>Reboot options for a deploy_update action.</summary>
+public sealed record Action1RebootOptions(
+    [property: JsonPropertyName("auto_reboot")] string AutoReboot,
+    [property: JsonPropertyName("show_message")] string ShowMessage,
+    [property: JsonPropertyName("message_text")] string? MessageText,
+    [property: JsonPropertyName("timeout")] int Timeout);
