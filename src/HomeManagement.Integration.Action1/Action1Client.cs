@@ -189,6 +189,14 @@ public sealed class Action1Client : IDisposable
             return [];
         }
 
+        // 403 on enrichment endpoints (e.g. updates/installed) means the org plan or
+        // API role doesn't include this data — treat as empty rather than failing the caller.
+        if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            _logger.LogWarning("Action1: {Path} returned 403 — endpoint may require additional plan/permissions. Returning empty list.", path);
+            return [];
+        }
+
         resp.EnsureSuccessStatusCode();
         var page = await resp.Content.ReadFromJsonAsync<Action1PagedResponse<T>>(JsonOpts, ct);
         return page?.Items ?? [];
