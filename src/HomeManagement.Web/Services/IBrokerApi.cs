@@ -80,6 +80,10 @@ public interface IBrokerApi
     [Delete("/api/action1/schedules/{scheduleId}")]
     Task DeleteScheduleAsync(string scheduleId, CancellationToken ct = default);
 
+    // ── Action1 Clients (organizations + enrolled endpoints) ──
+    [Get("/api/action1/clients")]
+    Task<IReadOnlyList<Action1OrgDto>> GetAction1ClientsAsync(CancellationToken ct = default);
+
     // ── Jobs ──
     [Get("/api/jobs")]
     Task<PagedResult<JobSummary>> GetJobsAsync(int page = 1, int pageSize = 25, CancellationToken ct = default);
@@ -193,3 +197,44 @@ public sealed record SchedulePatchRequestDto(string? Settings, string? Name);
 public sealed record ScheduleSyncResultDto(
     IReadOnlyList<string> Created,
     IReadOnlyList<string> Updated);
+
+// ── Action1 Clients (organizations + enrolled endpoints) ─────────────────────
+
+public sealed record Action1OrgDto(
+    string OrgId,
+    string Name,
+    string? Description,
+    bool IsConfiguredOrg,
+    int EndpointCount,
+    string? Status,
+    DateTime? CreatedUtc,
+    IReadOnlyList<Action1EnrolledEndpointDto> Endpoints,
+    IReadOnlyList<Action1GroupDto> Groups);
+
+public sealed record Action1GroupDto(
+    string GroupId,
+    string Name,
+    string? Description,
+    int EndpointCount);
+
+public sealed record Action1EnrolledEndpointDto(
+    string EndpointId,
+    string Name,
+    string? AgentVersion,
+    bool IsAgentCurrent,
+    string Status,
+    string? IpAddress,
+    string? ExternalAddress,
+    string? OsName,
+    string? OsType,
+    string? LastLoggedInUser,
+    DateTime? LastSeenUtc,
+    int MissingCriticalPatches,
+    int MissingOtherPatches,
+    IReadOnlyList<Action1ClientScheduleDto> Schedules);
+
+public sealed record Action1ClientScheduleDto(
+    string ScheduleId,
+    string ScheduleName,
+    bool IsManagedByHm,
+    string? Settings);
