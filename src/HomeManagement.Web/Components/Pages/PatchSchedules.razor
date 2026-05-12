@@ -7,13 +7,26 @@
 <p style="color:#555; margin-bottom:16px;">
     Manage severity-based automated patch deployment schedules in Action1.
     Schedules marked <strong>HM-Managed</strong> are created and owned by HomeManagement.
-    Use <em>Sync Now</em> to push configuration changes to Action1.
 </p>
 
 @if (_error is not null)
 {
-    <div style="background:#fff3e0; border:1px solid #f57c00; border-radius:4px; padding:12px; margin-bottom:16px;">
+    <div style="background:#ffebee; border:1px solid #c62828; border-radius:4px; padding:12px; margin-bottom:16px;">
         <strong>⚠ Error:</strong> @_error
+    </div>
+}
+
+@if (!_loading && _list is not null && !_list.SyncConfigured)
+{
+    <div style="background:#e3f2fd; border:1px solid #1565c0; border-radius:4px; padding:12px; margin-bottom:16px;">
+        <strong>ℹ Schedule sync not configured.</strong>
+        To enable automated schedule management, add the following to your broker configuration:
+        <pre style="margin:8px 0 0; font-size:0.82rem; background:#f5f5f5; padding:8px; border-radius:3px;">Action1:ScheduleSync:Enabled=true
+Action1:ScheduleSync:Rules:0:Name=Critical patches
+Action1:ScheduleSync:Rules:0:Severities:0=Critical
+Action1:ScheduleSync:Rules:0:AutoApprove=true
+Action1:ScheduleSync:Rules:0:DeferDays=7</pre>
+        Existing Action1 schedules are shown below (read-only until sync is configured).
     </div>
 }
 
@@ -25,33 +38,48 @@
         @if (_syncResult.Created.Count > 0)
         {
             <ul style="margin:4px 0 0; padding-left:20px;">
-                @foreach (var name in _syncResult.Created)
-                {
-                    <li>@name</li>
-                }
+                @foreach (var name in _syncResult.Created) { <li>@name</li> }
             </ul>
         }
     </div>
 }
 
-<div style="margin-bottom:16px; display:flex; gap:8px;">
-    <button style="@BtnStyle("primary")" @onclick="SyncNow" disabled="@_syncing">
-        @(_syncing ? "Syncing…" : "↻ Sync Now")
-    </button>
+<div style="margin-bottom:16px; display:flex; gap:8px; align-items:center;">
+    @if (_list?.SyncConfigured == true)
+    {
+        <button style="@BtnStyle("primary")" @onclick="SyncNow" disabled="@_syncing">
+            @(_syncing ? "Syncing…" : "↻ Sync Now")
+        </button>
+    }
+    else
+    {
+        <button style="@BtnStyle("primary")" disabled title="Configure Action1:ScheduleSync first">
+            ↻ Sync Now
+        </button>
+    }
     <button style="@BtnStyle("default")" @onclick="Reload" disabled="@_loading">
         @(_loading ? "Loading…" : "⟳ Refresh")
     </button>
+    @if (_list?.SyncConfigured == true)
+    {
+        <span style="color:#388e3c; font-size:0.85rem;">@_list.RuleCount rule(s) configured</span>
+    }
 </div>
 
 @if (_loading)
 {
     <p style="color:#888;">Loading schedules…</p>
 }
-else if (_schedules is not null)
+else if (_list is not null)
 {
-    @if (_schedules.Count == 0)
+    @if (_list.Schedules.Count == 0)
     {
-        <p style="color:#888;">No schedules found. Configure <code>Action1:ScheduleSync:Rules</code> in broker settings and click <em>Sync Now</em>.</p>
+        <p style="color:#888;">No schedules found in Action1.
+            @if (_list.SyncConfigured)
+            {
+                <span>Click <em>Sync Now</em> to create HM-managed schedules.</span>
+            }
+        </p>
     }
     else
     {
@@ -68,68 +96,40 @@ else if (_schedules is not null)
                 </tr>
             </thead>
             <tbody>
-                @foreach (var s in _schedules)
+                @foreach (var s in _list.Schedules)
                 {
                     var rowBg = s.IsManagedByHm ? "#f3f8ff" : "white";
                     var isDisabled = (s.Settings ?? "").StartsWith("DISABLED", StringComparison.OrdinalIgnoreCase);
                     <tr style="border-bottom:1px solid #eee; background:@rowBg;">
-                        <td style="padding:8px 12px; font-weight:@(s.IsManagedByHm ? "600" : "normal");">
-                            @s.Name
-                        </td>
+                        <td style="padding:8px 12px; font-weight:@(s.IsManagedByHm ? "600" : "normal");">@s.Name</td>
                         <td style="padding:8px 12px;">
                             @if (s.UpdateApproval == "auto")
-                            {
-                                <span style="color:#1565c0;">● Auto</span>
-                            }
+                            { <span style="color:#1565c0;">● Auto</span> }
                             else
-                            {
-                                <span style="color:#f57c00;">● Manual</span>
-                            }
+                            { <span style="color:#f57c00;">● Manual</span> }
                         </td>
                         <td style="padding:8px 12px;">
-                            @if (s.DeferDays > 0)
-                            {
-                                <span>@s.DeferDays days</span>
-                            }
-                            else
-                            {
-                                <span style="color:#888;">—</span>
-                            }
+                            @if (s.DeferDays > 0) { <span>@s.DeferDays days</span> }
+                            else { <span style="color:#888;">—</span> }
                         </td>
                         <td style="padding:8px 12px;">
-                            @if (isDisabled)
-                            {
-                                <span style="color:#888;">⏸ Disabled</span>
-                            }
-                            else
-                            {
-                                <span style="color:#388e3c;">▶ Active</span>
-                            }
+                            @if (isDisabled) { <span style="color:#888;">⏸ Disabled</span> }
+                            else { <span style="color:#388e3c;">▶ Active</span> }
                         </td>
-                        <td style="padding:8px 12px;">
-                            @(s.AllowReboot ? "✓" : "✗")
-                        </td>
+                        <td style="padding:8px 12px;">@(s.AllowReboot ? "✓" : "✗")</td>
                         <td style="padding:8px 12px;">
                             @if (s.IsManagedByHm)
-                            {
-                                <span style="background:#1565c0; color:white; border-radius:3px; padding:2px 6px; font-size:0.75rem;">HM-Managed</span>
-                            }
+                            { <span style="background:#1565c0; color:white; border-radius:3px; padding:2px 6px; font-size:0.75rem;">HM-Managed</span> }
                             else
-                            {
-                                <span style="color:#888; font-size:0.85rem;">External</span>
-                            }
+                            { <span style="color:#888; font-size:0.85rem;">External</span> }
                         </td>
                         <td style="padding:8px 12px;">
                             @if (s.IsManagedByHm)
                             {
                                 @if (isDisabled)
-                                {
-                                    <button style="@BtnStyle("small-primary")" @onclick="() => EnableSchedule(s)">Enable</button>
-                                }
+                                { <button style="@BtnStyle("small-primary")" @onclick="() => EnableSchedule(s)">Enable</button> }
                                 else
-                                {
-                                    <button style="@BtnStyle("small-warn")" @onclick="() => DisableSchedule(s)">Disable</button>
-                                }
+                                { <button style="@BtnStyle("small-warn")" @onclick="() => DisableSchedule(s)">Disable</button> }
                                 <button style="@BtnStyle("small-danger")" @onclick="() => ConfirmDelete(s)">Delete</button>
                             }
                         </td>
@@ -155,7 +155,7 @@ else if (_schedules is not null)
 }
 
 @code {
-    private IReadOnlyList<ScheduleDto>? _schedules;
+    private ScheduleListDto? _list;
     private ScheduleSyncResultDto? _syncResult;
     private string? _error;
     private bool _loading = true;
@@ -171,7 +171,7 @@ else if (_schedules is not null)
         _syncResult = null;
         try
         {
-            _schedules = await BrokerApi.GetSchedulesAsync();
+            _list = await BrokerApi.GetSchedulesAsync();
         }
         catch (Exception ex)
         {
@@ -211,10 +211,7 @@ else if (_schedules is not null)
             await BrokerApi.PatchScheduleAsync(s.Id, new SchedulePatchRequestDto("ENABLED ONCE AT:02-00-00", null));
             await Reload();
         }
-        catch (Exception ex)
-        {
-            _error = ex.Message;
-        }
+        catch (Exception ex) { _error = ex.Message; }
     }
 
     private async Task DisableSchedule(ScheduleDto s)
@@ -225,14 +222,10 @@ else if (_schedules is not null)
             await BrokerApi.PatchScheduleAsync(s.Id, new SchedulePatchRequestDto("DISABLED", null));
             await Reload();
         }
-        catch (Exception ex)
-        {
-            _error = ex.Message;
-        }
+        catch (Exception ex) { _error = ex.Message; }
     }
 
     private void ConfirmDelete(ScheduleDto s) => _deleteTarget = s;
-
     private void CancelDelete() => _deleteTarget = null;
 
     private async Task ExecuteDelete()
@@ -246,20 +239,17 @@ else if (_schedules is not null)
             await BrokerApi.DeleteScheduleAsync(id);
             await Reload();
         }
-        catch (Exception ex)
-        {
-            _error = ex.Message;
-        }
+        catch (Exception ex) { _error = ex.Message; }
     }
 
     private static string BtnStyle(string variant) => variant switch
     {
-        "primary"      => "padding:8px 16px; background:#1565c0; color:white; border:none; border-radius:4px; cursor:pointer;",
-        "default"      => "padding:8px 16px; background:#f5f5f5; color:#333; border:1px solid #ccc; border-radius:4px; cursor:pointer;",
-        "danger"       => "padding:8px 16px; background:#c62828; color:white; border:none; border-radius:4px; cursor:pointer;",
-        "small-primary"=> "padding:4px 10px; background:#1565c0; color:white; border:none; border-radius:3px; cursor:pointer; font-size:0.8rem; margin-right:4px;",
-        "small-warn"   => "padding:4px 10px; background:#f57c00; color:white; border:none; border-radius:3px; cursor:pointer; font-size:0.8rem; margin-right:4px;",
-        "small-danger" => "padding:4px 10px; background:#c62828; color:white; border:none; border-radius:3px; cursor:pointer; font-size:0.8rem;",
-        _              => ""
+        "primary"       => "padding:8px 16px; background:#1565c0; color:white; border:none; border-radius:4px; cursor:pointer;",
+        "default"       => "padding:8px 16px; background:#f5f5f5; color:#333; border:1px solid #ccc; border-radius:4px; cursor:pointer;",
+        "danger"        => "padding:8px 16px; background:#c62828; color:white; border:none; border-radius:4px; cursor:pointer;",
+        "small-primary" => "padding:4px 10px; background:#1565c0; color:white; border:none; border-radius:3px; cursor:pointer; font-size:0.8rem; margin-right:4px;",
+        "small-warn"    => "padding:4px 10px; background:#f57c00; color:white; border:none; border-radius:3px; cursor:pointer; font-size:0.8rem; margin-right:4px;",
+        "small-danger"  => "padding:4px 10px; background:#c62828; color:white; border:none; border-radius:3px; cursor:pointer; font-size:0.8rem;",
+        _               => ""
     };
 }
