@@ -246,6 +246,93 @@ public static class Action1FleetEndpoints
             }
         });
 
+        // ── Aggregate pending patches across all enrolled machines ─────────────
+        // Fetches available patches for every machine that has missing-patch counts > 0,
+        // fanning out with limited concurrency so the broker doesn't hammer Action1.
+        group.MapGet("pending-patches", async (
+            Action1Client action1,
+            IInventoryService inventory,
+            IOptions<Action1Options> opts,
+            CancellationToken ct) =>
+        {
+            if (!opts.Value.Enabled)
+                return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
+
+            try
+            {
+                var machineQuery = new MachineQuery(IncludeDeleted: false, Page: 1, PageSize: 500);
+                var machinesTask = inventory.QueryAsync(machineQuery, ct);
+                var endpointsTask = action1.ListEndpointsAsync(ct);
+                await Task.WhenAll(machinesTask, endpointsTask);
+
+                var machines = machinesTask.Result;
+                var action1Endpoints = endpointsTask.Result;
+
+                var endpointById = action1Endpoints.ToDictionary(e => e.Id, StringComparer.OrdinalIgnoreCase);
+                var endpointByName = new Dictionary<string, Action1Endpoint>(StringComparer.OrdinalIgnoreCase);
+                foreach (var ep in action1Endpoints)
+                {
+                    endpointByName.TryAdd(ep.Name, ep);
+                    var dot = ep.Name.IndexOf('.');
+                    if (dot > 0) endpointByName.TryAdd(ep.Name[..dot], ep);
+                }
+
+                // Only fetch full patch lists for machines that are enrolled AND have pending counts.
+                var candidates = machines.Items
+                    .Select(m =>
+                    {
+                        Action1Endpoint? ep = null;
+                        if (m.Tags.TryGetValue("action1:endpoint_id", out var tagId) && !string.IsNullOrEmpty(tagId))
+                            endpointById.TryGetValue(tagId, out ep);
+                        if (ep is null) endpointByName.TryGetValue(m.Hostname.Value, out ep);
+                        if (ep is null && !string.IsNullOrEmpty(m.Fqdn)) endpointByName.TryGetValue(m.Fqdn, out ep);
+                        return (Machine: m, Endpoint: ep);
+                    })
+                    .Where(x => x.Endpoint is not null &&
+                                (x.Endpoint.MissingCriticalUpdates > 0 || x.Endpoint.MissingOtherUpdates > 0))
+                    .ToList();
+
+                // Fan-out with concurrency cap to stay under Action1 rate limits (30 req/min).
+                using var semaphore = new SemaphoreSlim(5);
+                var tasks = candidates.Select(async x =>
+                {
+                    await semaphore.WaitAsync(ct);
+                    try
+                    {
+                        var patches = await action1.GetAvailablePatchesAsync(x.Endpoint!.Id, ct);
+                        return new MachinePendingPatchesDto(
+                            MachineId: x.Machine.Id,
+                            Hostname: x.Machine.Hostname.Value,
+                            Action1EndpointId: x.Endpoint.Id,
+                            OsType: x.Endpoint.OsType,
+                            PatchRiskLevel: ComputePatchRiskLevel(x.Endpoint, null),
+                            CriticalCount: x.Endpoint.MissingCriticalUpdates,
+                            OtherCount: x.Endpoint.MissingOtherUpdates,
+                            Patches: patches);
+                    }
+                    finally
+                    {
+                        semaphore.Release();
+                    }
+                });
+
+                var results = await Task.WhenAll(tasks);
+
+                // Critical machines first, then by total pending count.
+                var ordered = results
+                    .Where(r => r.Patches.Count > 0)
+                    .OrderByDescending(r => r.CriticalCount)
+                    .ThenByDescending(r => r.OtherCount)
+                    .ToList();
+
+                return Results.Ok(ordered);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+            }
+        });
+
         return app;
     }
 
@@ -689,3 +776,17 @@ public sealed record Action1ClientScheduleDto(
     string ScheduleName,
     bool IsManagedByHm,
     string? Settings);
+
+/// <summary>
+/// Aggregate pending-patch view for one fleet machine.
+/// Returned by GET /api/action1/fleet/pending-patches.
+/// </summary>
+public sealed record MachinePendingPatchesDto(
+    Guid MachineId,
+    string Hostname,
+    string? Action1EndpointId,
+    string? OsType,
+    string PatchRiskLevel,
+    int CriticalCount,
+    int OtherCount,
+    IReadOnlyList<Models.Action1Patch> Patches);

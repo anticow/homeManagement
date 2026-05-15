@@ -84,6 +84,9 @@ public interface IBrokerApi
     [Get("/api/action1/clients")]
     Task<IReadOnlyList<Action1OrgDto>> GetAction1ClientsAsync(CancellationToken ct = default);
 
+    [Get("/api/action1/fleet/pending-patches")]
+    Task<IReadOnlyList<MachinePendingPatchesDto>> GetAllPendingPatchesAsync(CancellationToken ct = default);
+
     // ── Jobs ──
     [Get("/api/jobs")]
     Task<PagedResult<JobSummary>> GetJobsAsync(int page = 1, int pageSize = 25, CancellationToken ct = default);
@@ -238,3 +241,17 @@ public sealed record Action1ClientScheduleDto(
     string ScheduleName,
     bool IsManagedByHm,
     string? Settings);
+
+/// <summary>
+/// Aggregate pending-patch view for one fleet machine.
+/// Mirrors the broker-side MachinePendingPatchesDto serialized over HTTP.
+/// </summary>
+public sealed record MachinePendingPatchesDto(
+    Guid MachineId,
+    string Hostname,
+    string? Action1EndpointId,
+    string? OsType,
+    string PatchRiskLevel,
+    int CriticalCount,
+    int OtherCount,
+    IReadOnlyList<Action1PatchDto> Patches);
