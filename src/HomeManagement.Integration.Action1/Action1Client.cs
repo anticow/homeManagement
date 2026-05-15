@@ -315,6 +315,52 @@ public sealed class Action1Client : IDisposable
             $"Vulnerabilities/{_options.OrganizationId}?fields=*", ct);
     }
 
+    // ── Catalog-level update approval ─────────────────────────────────────────
+
+    /// <summary>
+    /// Fetch org-level catalog updates filtered by approval status.
+    ///
+    /// Real Action1 API: GET /updates/{orgId}?approval_status={status}&amp;fields=*
+    ///
+    /// Unlike GetAvailablePatchesAsync (which filters by endpoint), this returns
+    /// the org-wide update catalog view — the same list visible in the Action1
+    /// Update Approval console screen.
+    ///
+    /// Pass approvalStatus = "New" to list updates pending catalog approval.
+    /// </summary>
+    public async Task<IReadOnlyList<Action1CatalogUpdate>> GetCatalogUpdatesAsync(
+        string approvalStatus = "New", CancellationToken ct = default)
+    {
+        _logger.LogDebug("Action1: fetching catalog updates with approval_status={Status} for org {OrgId}",
+            approvalStatus, _options.OrganizationId);
+        return await GetPagedListAsync<Action1CatalogUpdate>(
+            $"updates/{_options.OrganizationId}?approval_status={Uri.EscapeDataString(approvalStatus)}&fields=*", ct);
+    }
+
+    /// <summary>
+    /// Set the catalog-level approval status for a single update.
+    ///
+    /// Real Action1 API: PATCH /updates/{orgId}/{updateId}
+    ///   Body: { "approval_status": "Approved" | "Declined" | "New" }
+    ///
+    /// Returns true on success (2xx), false if Action1 rejects the change.
+    /// </summary>
+    public async Task<bool> SetCatalogApprovalAsync(
+        string updateId, string approvalStatus, CancellationToken ct = default)
+    {
+        _logger.LogDebug("Action1: setting catalog approval_status={Status} for update {Id}", approvalStatus, updateId);
+        var body = new { approval_status = approvalStatus };
+        var resp = await PatchJsonAsync(
+            $"updates/{_options.OrganizationId}/{Uri.EscapeDataString(updateId)}", body, ct);
+
+        if (resp.IsSuccessStatusCode) return true;
+
+        var content = await resp.Content.ReadAsStringAsync(ct);
+        _logger.LogWarning("Action1: PATCH approval for {Id} returned {Status}: {Content}",
+            updateId, (int)resp.StatusCode, content);
+        return false;
+    }
+
     // ── Policy instance deployment (approve & install) ────────────────────────
 
     /// <summary>

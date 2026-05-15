@@ -87,6 +87,13 @@ public interface IBrokerApi
     [Get("/api/action1/fleet/pending-patches")]
     Task<IReadOnlyList<MachinePendingPatchesDto>> GetAllPendingPatchesAsync(CancellationToken ct = default);
 
+    // ── Action1 Catalog (org-level update approval queue) ──
+    [Get("/api/action1/catalog")]
+    Task<IReadOnlyList<CatalogUpdateDto>> GetCatalogUpdatesAsync(string approvalStatus = "New", CancellationToken ct = default);
+
+    [Post("/api/action1/catalog/approve")]
+    Task<CatalogApproveResultDto> ApproveCatalogUpdatesAsync([Body] CatalogApproveRequestDto request, CancellationToken ct = default);
+
     // ── Jobs ──
     [Get("/api/jobs")]
     Task<PagedResult<JobSummary>> GetJobsAsync(int page = 1, int pageSize = 25, CancellationToken ct = default);
@@ -255,3 +262,28 @@ public sealed record MachinePendingPatchesDto(
     int CriticalCount,
     int OtherCount,
     IReadOnlyList<Action1PatchDto> Patches);
+
+// ── Action1 Catalog DTOs ─────────────────────────────────────────────────────
+
+/// <summary>An update in the org-level Action1 update catalog with its approval status.</summary>
+public sealed record CatalogUpdateDto(
+    string Id,
+    string Name,
+    string? Version,
+    string? Description,
+    string Severity,
+    string Category,
+    string? UpdateType,
+    string ApprovalStatus,
+    bool RequiresReboot,
+    DateTime? PublishedUtc,
+    string? KbArticleId);
+
+public sealed record CatalogApproveRequestDto(
+    IReadOnlyList<string> UpdateIds,
+    string ApprovalStatus = "Approved");
+
+public sealed record CatalogApproveResultDto(
+    int Approved,
+    int Failed,
+    IReadOnlyList<string> FailedIds);

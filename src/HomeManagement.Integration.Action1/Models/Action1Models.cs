@@ -194,6 +194,35 @@ public sealed record Action1InstalledUpdate(
     [property: JsonConverter(typeof(UnixOrIsoDateTimeConverter))]
     DateTime? InstallDate);
 
+// ── Catalog updates (org-level approval queue) ────────────────────────────────
+
+/// <summary>
+/// An update in the org's update catalog with its current approval status.
+///
+/// Source: GET /updates/{orgId}?fields=*&amp;approval_status={New|Approved|Declined}
+///
+/// These are org-level catalog entries distinct from endpoint-missing-updates.
+/// Changing approval_status via PATCH /updates/{orgId}/{id} approves or declines
+/// the update for deployment by automation schedules.
+/// </summary>
+public sealed record Action1CatalogUpdate(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("version")] string? Version,
+    [property: JsonPropertyName("description")] string? Description,
+    [property: JsonPropertyName("severity")] string Severity,
+    [property: JsonPropertyName("category")] string Category,
+    [property: JsonPropertyName("update_type")] string? UpdateType,
+    [property: JsonPropertyName("approval_status")] string ApprovalStatus,
+    [property: JsonPropertyName("size_bytes")]
+    [property: JsonConverter(typeof(FlexibleIntConverter))]
+    int SizeBytes,
+    [property: JsonPropertyName("requires_reboot")] bool RequiresReboot,
+    [property: JsonPropertyName("published_date")]
+    [property: JsonConverter(typeof(UnixOrIsoDateTimeConverter))]
+    DateTime? PublishedUtc,
+    [property: JsonPropertyName("kb_article")] string? KbArticleId);
+
 // ── Vulnerabilities (CVE correlation) ─────────────────────────────────────────
 
 /// <summary>

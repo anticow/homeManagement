@@ -1,0 +1,348 @@
+@page "/action1/catalog"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using HomeManagement.Web.Services
+@inject IBrokerApi BrokerApi
+
+<h1>Update Catalog Approvals</h1>
+<p style="color:#555; margin-bottom:16px;">
+    Org-level update catalog — the same queue visible in Action1's Update Approval screen.
+    Approving here marks updates as <strong>Approved</strong> in Action1 so they are
+    deployed by your scheduled automations during the next maintenance window.
+</p>
+
+@if (_error is not null)
+{
+    <div style="background:#fff3e0; border:1px solid #f57c00; border-radius:4px; padding:12px; margin-bottom:16px;">
+        <strong>⚠ Action1 Unavailable:</strong> @_error
+    </div>
+}
+
+@if (_approveResult is not null)
+{
+    <div style="background:@(_approveResult.Failed == 0 ? "#e8f5e9" : "#fff3e0"); border:1px solid @(_approveResult.Failed == 0 ? "#388e3c" : "#f57c00"); border-radius:4px; padding:12px; margin-bottom:16px;">
+        @if (_approveResult.Failed == 0)
+        {
+            <strong style="color:#388e3c;">✔ @_approveResult.Approved update(s) approved successfully.</strong>
+        }
+        else
+        {
+            <strong>⚠ @_approveResult.Approved approved, @_approveResult.Failed failed.</strong>
+            @if (_approveResult.FailedIds.Count > 0)
+            {
+                <div style="margin-top:4px; font-size:0.85rem; color:#c62828;">Failed IDs: @string.Join(", ", _approveResult.FailedIds)</div>
+            }
+        }
+    </div>
+}
+
+@* ── Toolbar ───────────────────────────────────────────────────────────────── *@
+<div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:16px; padding:12px; background:#f5f5f5; border-radius:6px;">
+    <div style="display:flex; align-items:center; gap:6px;">
+        <strong style="font-size:0.9rem;">View:</strong>
+        <button style="@StatusBtnStyle("New")" @onclick='() => SwitchStatus("New")'>New (@(_statusCounts.GetValueOrDefault("New")))</button>
+        <button style="@StatusBtnStyle("Approved")" @onclick='() => SwitchStatus("Approved")'>Approved (@(_statusCounts.GetValueOrDefault("Approved")))</button>
+        <button style="@StatusBtnStyle("Declined")" @onclick='() => SwitchStatus("Declined")'>Declined (@(_statusCounts.GetValueOrDefault("Declined")))</button>
+    </div>
+    <div style="display:flex; align-items:center; gap:6px;">
+        <strong style="font-size:0.9rem;">Severity:</strong>
+        @foreach (var sev in new[] { "All", "Critical", "Important", "Moderate", "Low" })
+        {
+            <button style="@SeverityFilterBtnStyle(sev)" @onclick="() => _severityFilter = sev">@sev</button>
+        }
+    </div>
+    <div style="display:flex; gap:8px; margin-left:auto; align-items:center;">
+        <button style="@BtnStyle("default")" @onclick="Reload" disabled="@_loading">⟳ Refresh</button>
+        @if (_currentStatus == "New" && TotalSelectedCount > 0)
+        {
+            <button style="@BtnStyle("danger-outline")" @onclick="DeclineSelected" disabled="@_submitting">
+                ✗ Decline (@TotalSelectedCount)
+            </button>
+            <button style="@BtnStyle("primary")" @onclick="ApproveSelected" disabled="@_submitting">
+                @(_submitting ? "Approving…" : $"✔ Approve Selected ({TotalSelectedCount})")
+            </button>
+        }
+        @if (_currentStatus == "New" && VisibleUpdates.Count > 0 && TotalSelectedCount == 0)
+        {
+            <button style="@BtnStyle("primary")" @onclick="ApproveAll" disabled="@_submitting">
+                @(_submitting ? "Approving…" : $"✔ Approve All ({VisibleUpdates.Count})")
+            </button>
+        }
+    </div>
+</div>
+
+@if (_loading)
+{
+    <p style="color:#888;">Loading update catalog…</p>
+}
+else if (_updates is not null)
+{
+    @if (VisibleUpdates.Count == 0)
+    {
+        <div style="background:#e8f5e9; border:1px solid #388e3c; border-radius:4px; padding:16px; text-align:center;">
+            <strong style="color:#388e3c;">✓ No updates with status "@_currentStatus"@(_severityFilter != "All" ? $" / {_severityFilter} severity" : "").</strong>
+        </div>
+    }
+    else
+    {
+        <div style="margin-bottom:8px; font-size:0.88rem; color:#555;">
+            Showing @VisibleUpdates.Count update(s)
+            @if (TotalSelectedCount > 0) { <span> — <strong>@TotalSelectedCount selected</strong></span> }
+        </div>
+
+        <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+            <thead>
+                <tr style="background:#fafafa; border-bottom:2px solid #e0e0e0; text-align:left;">
+                    @if (_currentStatus == "New")
+                    {
+                        <th style="padding:8px 12px; width:36px;">
+                            <input type="checkbox"
+                                   checked="@AllVisibleSelected"
+                                   @onchange="e => ToggleAll((bool)(e.Value ?? false))"
+                                   title="Select all" />
+                        </th>
+                    }
+                    <th style="padding:8px 12px;">Update</th>
+                    <th style="padding:8px 12px;">Severity</th>
+                    <th style="padding:8px 12px;">Version</th>
+                    <th style="padding:8px 12px;">Type</th>
+                    <th style="padding:8px 12px;">Published</th>
+                    <th style="padding:8px 12px;">KB</th>
+                    <th style="padding:8px 12px; text-align:center;">Reboot</th>
+                    <th style="padding:8px 12px;">Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var u in VisibleUpdates)
+                {
+                    var isSelected = _selected.Contains(u.Id);
+                    <tr style="border-bottom:1px solid #f0f0f0; background:@(isSelected ? "#e8f0fe" : "white");">
+                        @if (_currentStatus == "New")
+                        {
+                            <td style="padding:8px 12px; text-align:center;">
+                                <input type="checkbox"
+                                       checked="@isSelected"
+                                       @onchange="e => ToggleOne(u.Id, (bool)(e.Value ?? false))" />
+                            </td>
+                        }
+                        <td style="padding:8px 12px; font-weight:@(IsCritical(u) ? "600" : "normal");">
+                            @u.Name
+                            @if (!string.IsNullOrEmpty(u.Description))
+                            {
+                                <div style="color:#777; font-size:0.78rem; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:400px;" title="@u.Description">
+                                    @u.Description
+                                </div>
+                            }
+                        </td>
+                        <td style="padding:8px 12px;">
+                            <span style="@SeverityBadgeStyle(u.Severity)">@u.Severity</span>
+                        </td>
+                        <td style="padding:8px 12px; color:#555; white-space:nowrap;">@(u.Version ?? "—")</td>
+                        <td style="padding:8px 12px; color:#555; white-space:nowrap; font-size:0.8rem;">@(u.UpdateType ?? u.Category)</td>
+                        <td style="padding:8px 12px; color:#555; white-space:nowrap; font-size:0.8rem;">
+                            @(u.PublishedUtc.HasValue ? u.PublishedUtc.Value.ToString("MM/dd/yyyy") : "—")
+                        </td>
+                        <td style="padding:8px 12px;">
+                            @if (!string.IsNullOrEmpty(u.KbArticleId))
+                            {
+                                <a href="https://support.microsoft.com/kb/@u.KbArticleId"
+                                   target="_blank"
+                                   style="color:#1565c0; font-size:0.82rem;">@u.KbArticleId</a>
+                            }
+                            else { <span style="color:#aaa;">—</span> }
+                        </td>
+                        <td style="padding:8px 12px; text-align:center;">
+                            @(u.RequiresReboot ? "🔄" : "—")
+                        </td>
+                        <td style="padding:8px 12px;">
+                            <span style="@ApprovalBadgeStyle(u.ApprovalStatus)">@u.ApprovalStatus</span>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private IReadOnlyList<CatalogUpdateDto>? _updates;
+    private string? _error;
+    private bool _loading = true;
+    private bool _submitting;
+    private string _currentStatus = "New";
+    private string _severityFilter = "All";
+    private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+    private CatalogApproveResultDto? _approveResult;
+
+    // Cached counts per status tab (loaded on first visit to each tab).
+    private readonly Dictionary<string, int> _statusCounts = new()
+    {
+        ["New"] = 0, ["Approved"] = 0, ["Declined"] = 0
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Reload();
+        // Kick off background count fetches for the other tabs.
+        _ = LoadStatusCountsAsync();
+    }
+
+    private async Task Reload()
+    {
+        _loading = true;
+        _error = null;
+        _selected.Clear();
+        _approveResult = null;
+        try
+        {
+            _updates = await BrokerApi.GetCatalogUpdatesAsync(_currentStatus);
+            _statusCounts[_currentStatus] = _updates.Count;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SwitchStatus(string status)
+    {
+        _currentStatus = status;
+        await Reload();
+    }
+
+    /// <summary>Fetch counts for all three status tabs in parallel to populate badges.</summary>
+    private async Task LoadStatusCountsAsync()
+    {
+        try
+        {
+            var tasks = new[] { "New", "Approved", "Declined" }
+                .Where(s => s != _currentStatus)
+                .Select(async s =>
+                {
+                    try
+                    {
+                        var list = await BrokerApi.GetCatalogUpdatesAsync(s);
+                        return (Status: s, Count: list.Count);
+                    }
+                    catch
+                    {
+                        return (Status: s, Count: 0);
+                    }
+                });
+
+            foreach (var result in await Task.WhenAll(tasks))
+                _statusCounts[result.Status] = result.Count;
+
+            StateHasChanged();
+        }
+        catch { /* background task — swallow exceptions */ }
+    }
+
+    // ── Filtering ─────────────────────────────────────────────────────────────
+
+    private IReadOnlyList<CatalogUpdateDto> VisibleUpdates =>
+        _updates is null ? []
+        : _severityFilter == "All"
+            ? _updates
+            : _updates.Where(u => string.Equals(u.Severity, _severityFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    // ── Selection ─────────────────────────────────────────────────────────────
+
+    private int TotalSelectedCount => _selected.Count;
+
+    private bool AllVisibleSelected =>
+        VisibleUpdates.Count > 0 && VisibleUpdates.All(u => _selected.Contains(u.Id));
+
+    private void ToggleOne(string id, bool value)
+    {
+        if (value) _selected.Add(id);
+        else _selected.Remove(id);
+    }
+
+    private void ToggleAll(bool value)
+    {
+        if (value) foreach (var u in VisibleUpdates) _selected.Add(u.Id);
+        else foreach (var u in VisibleUpdates) _selected.Remove(u.Id);
+    }
+
+    // ── Approvals ─────────────────────────────────────────────────────────────
+
+    private Task ApproveSelected() => BulkSetStatus("Approved");
+    private Task DeclineSelected() => BulkSetStatus("Declined");
+
+    private async Task BulkSetStatus(string status)
+    {
+        if (_selected.Count == 0) return;
+        await SubmitApproval(_selected.ToList(), status);
+    }
+
+    private async Task ApproveAll()
+    {
+        var ids = VisibleUpdates.Select(u => u.Id).ToList();
+        if (ids.Count == 0) return;
+        await SubmitApproval(ids, "Approved");
+    }
+
+    private async Task SubmitApproval(List<string> ids, string status)
+    {
+        _submitting = true;
+        _approveResult = null;
+        try
+        {
+            var request = new CatalogApproveRequestDto(ids, status);
+            _approveResult = await BrokerApi.ApproveCatalogUpdatesAsync(request);
+            await Reload();
+            _ = LoadStatusCountsAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    // ── Style helpers ─────────────────────────────────────────────────────────
+
+    private static bool IsCritical(CatalogUpdateDto u) =>
+        string.Equals(u.Severity, "Critical", StringComparison.OrdinalIgnoreCase);
+
+    private static string BtnStyle(string variant) => variant switch
+    {
+        "primary"       => "padding:8px 16px; background:#1565c0; color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.88rem;",
+        "default"       => "padding:8px 16px; background:#f5f5f5; color:#333; border:1px solid #ccc; border-radius:4px; cursor:pointer; font-size:0.88rem;",
+        "danger-outline"=> "padding:8px 16px; background:white; color:#c62828; border:1px solid #c62828; border-radius:4px; cursor:pointer; font-size:0.88rem;",
+        _               => ""
+    };
+
+    private string StatusBtnStyle(string status) =>
+        _currentStatus == status
+            ? "padding:5px 12px; background:#1565c0; color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.82rem;"
+            : "padding:5px 12px; background:white; color:#333; border:1px solid #ccc; border-radius:4px; cursor:pointer; font-size:0.82rem;";
+
+    private string SeverityFilterBtnStyle(string sev) =>
+        _severityFilter == sev
+            ? "padding:4px 10px; background:#1565c0; color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.8rem;"
+            : "padding:4px 10px; background:white; color:#333; border:1px solid #ccc; border-radius:4px; cursor:pointer; font-size:0.8rem;";
+
+    private static string SeverityBadgeStyle(string severity) => severity.ToLowerInvariant() switch
+    {
+        "critical"  => "background:#c62828; color:white; border-radius:10px; padding:2px 8px; font-size:0.78rem; font-weight:600;",
+        "important" => "background:#e65100; color:white; border-radius:10px; padding:2px 8px; font-size:0.78rem;",
+        "moderate"  => "background:#f9a825; color:#333; border-radius:10px; padding:2px 8px; font-size:0.78rem;",
+        "low"       => "background:#e0e0e0; color:#555; border-radius:10px; padding:2px 8px; font-size:0.78rem;",
+        _           => "background:#eeeeee; color:#555; border-radius:10px; padding:2px 8px; font-size:0.78rem;"
+    };
+
+    private static string ApprovalBadgeStyle(string status) => status.ToLowerInvariant() switch
+    {
+        "approved" => "color:#388e3c; font-weight:600; font-size:0.82rem;",
+        "declined" => "color:#c62828; font-weight:600; font-size:0.82rem;",
+        _          => "color:#f57c00; font-weight:600; font-size:0.82rem;" // New
+    };
+}
