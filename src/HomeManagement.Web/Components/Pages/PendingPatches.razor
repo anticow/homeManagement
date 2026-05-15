@@ -1,0 +1,337 @@
+@page "/fleet/pending-patches"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using HomeManagement.Web.Services
+@inject IBrokerApi BrokerApi
+
+<h1>Pending Patch Approvals</h1>
+<p style="color:#555; margin-bottom:16px;">
+    Available patches across all Action1-enrolled machines. Select one or more patches
+    per machine and approve them for immediate deployment.
+</p>
+
+@if (_error is not null)
+{
+    <div style="background:#fff3e0; border:1px solid #f57c00; border-radius:4px; padding:12px; margin-bottom:16px;">
+        <strong>⚠ Action1 Unavailable:</strong> @_error
+    </div>
+}
+
+@if (_loading)
+{
+    <p style="color:#888;">Loading pending patches across all enrolled machines…</p>
+}
+else if (_machines is not null)
+{
+    @* ── Toolbar ──────────────────────────────────────────────────────────── *@
+    <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:16px; padding:12px; background:#f5f5f5; border-radius:6px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+            <strong style="font-size:0.9rem;">Filter:</strong>
+            <button style="@FilterBtnStyle("All")" @onclick='() => _severityFilter = "All"'>All (@TotalPatchCount)</button>
+            <button style="@FilterBtnStyle("Critical")" @onclick='() => _severityFilter = "Critical"'>🔴 Critical (@CriticalPatchCount)</button>
+            <button style="@FilterBtnStyle("Important")" @onclick='() => _severityFilter = "Important"'>🟠 Important (@ImportantPatchCount)</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px; margin-left:auto;">
+            <label style="font-size:0.9rem; cursor:pointer;">
+                <input type="checkbox" @bind="_allowReboot" style="margin-right:4px;" />
+                Allow Reboot
+            </label>
+            <button style="@BtnStyle("default")" @onclick="Reload" disabled="@_loading">⟳ Refresh</button>
+            @if (TotalSelectedCount > 0)
+            {
+                <button style="@BtnStyle("primary")" @onclick="ApproveAllSelected" disabled="@_anyApproving">
+                    @(_anyApproving ? "Approving…" : $"✔ Approve All Selected ({TotalSelectedCount})")
+                </button>
+            }
+        </div>
+    </div>
+
+    @if (_machines.Count == 0)
+    {
+        <div style="background:#e8f5e9; border:1px solid #388e3c; border-radius:4px; padding:16px; text-align:center;">
+            <strong style="color:#388e3c;">✓ All enrolled machines are fully patched!</strong>
+        </div>
+    }
+    else
+    {
+        @* ── Per-machine cards ─────────────────────────────────────────────── *@
+        @foreach (var machine in _machines)
+        {
+            var visiblePatches = FilteredPatches(machine);
+            if (visiblePatches.Count == 0) continue;
+
+            var machineSelected = _selected.TryGetValue(machine.MachineId, out var sel) ? sel : new HashSet<string>();
+            var allVisibleSelected = visiblePatches.Count > 0 && visiblePatches.All(p => machineSelected.Contains(p.Id));
+            var approving = _approving.Contains(machine.MachineId);
+            var result = _results.TryGetValue(machine.MachineId, out var r) ? r : default;
+
+            <div style="border:1px solid #ddd; border-radius:6px; margin-bottom:20px; overflow:hidden;">
+                @* Machine header *@
+                <div style="background:@RiskHeaderBg(machine.PatchRiskLevel); padding:12px 16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                    <span style="font-weight:700; font-size:1.05rem;">@machine.Hostname</span>
+                    <span style="@RiskBadgeStyle(machine.PatchRiskLevel)">@machine.PatchRiskLevel</span>
+                    @if (machine.CriticalCount > 0)
+                    {
+                        <span style="background:#c62828; color:white; border-radius:12px; padding:2px 10px; font-size:0.8rem; font-weight:600;">
+                            🔴 @machine.CriticalCount Critical
+                        </span>
+                    }
+                    @if (machine.OtherCount > 0)
+                    {
+                        <span style="background:#f57c00; color:white; border-radius:12px; padding:2px 10px; font-size:0.8rem; font-weight:600;">
+                            🟠 @machine.OtherCount Other
+                        </span>
+                    }
+                    @if (!string.IsNullOrEmpty(machine.OsType))
+                    {
+                        <span style="color:#555; font-size:0.85rem; margin-left:4px;">@machine.OsType</span>
+                    }
+                    <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+                        @if (result.HasValue)
+                        {
+                            @if (result.Value.Success)
+                            {
+                                <span style="color:#388e3c; font-size:0.85rem; font-weight:600;">✔ Approved (id: @result.Value.DeploymentId)</span>
+                            }
+                            else
+                            {
+                                <span style="color:#c62828; font-size:0.85rem;">✗ @result.Value.Error</span>
+                            }
+                        }
+                        @if (machineSelected.Count > 0 && !approving)
+                        {
+                            <button style="@BtnStyle("small-primary")" @onclick="() => ApproveMachine(machine)">
+                                ✔ Approve Selected (@machineSelected.Count)
+                            </button>
+                        }
+                        @if (approving)
+                        {
+                            <span style="color:#555; font-size:0.85rem;">Approving…</span>
+                        }
+                    </div>
+                </div>
+
+                @* Patch table *@
+                <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+                    <thead>
+                        <tr style="background:#fafafa; border-bottom:2px solid #e0e0e0;">
+                            <th style="padding:8px 12px; width:36px;">
+                                <input type="checkbox"
+                                       checked="@allVisibleSelected"
+                                       @onchange="e => ToggleAllMachine(machine, visiblePatches, (bool)(e.Value ?? false))"
+                                       title="Select all visible patches for @machine.Hostname" />
+                            </th>
+                            <th style="padding:8px 12px; text-align:left;">Patch</th>
+                            <th style="padding:8px 12px; text-align:left;">Severity</th>
+                            <th style="padding:8px 12px; text-align:left;">Version</th>
+                            <th style="padding:8px 12px; text-align:left;">Category</th>
+                            <th style="padding:8px 12px; text-align:left;">KB</th>
+                            <th style="padding:8px 12px; text-align:center;">Reboot</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var patch in visiblePatches)
+                        {
+                            var isSelected = machineSelected.Contains(patch.Id);
+                            <tr style="border-bottom:1px solid #f0f0f0; background:@(isSelected ? "#e8f0fe" : "white");">
+                                <td style="padding:8px 12px; text-align:center;">
+                                    <input type="checkbox"
+                                           checked="@isSelected"
+                                           @onchange="e => TogglePatch(machine.MachineId, patch.Id, (bool)(e.Value ?? false))" />
+                                </td>
+                                <td style="padding:8px 12px; font-weight:@(string.Equals(patch.Severity, "Critical", StringComparison.OrdinalIgnoreCase) ? "600" : "normal");">
+                                    @patch.Name
+                                    @if (!string.IsNullOrEmpty(patch.Description))
+                                    {
+                                        <div style="color:#777; font-size:0.78rem; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:360px;" title="@patch.Description">
+                                            @patch.Description
+                                        </div>
+                                    }
+                                </td>
+                                <td style="padding:8px 12px;">
+                                    <span style="@SeverityBadgeStyle(patch.Severity)">@patch.Severity</span>
+                                </td>
+                                <td style="padding:8px 12px; color:#555;">@(patch.Version ?? "—")</td>
+                                <td style="padding:8px 12px; color:#555;">@patch.Category</td>
+                                <td style="padding:8px 12px;">
+                                    @if (!string.IsNullOrEmpty(patch.KbArticleId))
+                                    {
+                                        <a href="https://support.microsoft.com/kb/@patch.KbArticleId"
+                                           target="_blank"
+                                           style="color:#1565c0; font-size:0.82rem;">@patch.KbArticleId</a>
+                                    }
+                                    else { <span style="color:#aaa;">—</span> }
+                                </td>
+                                <td style="padding:8px 12px; text-align:center;">
+                                    @if (patch.RequiresReboot) { <span title="Requires reboot">🔄</span> }
+                                    else { <span style="color:#aaa;">—</span> }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+}
+
+@code {
+    private IReadOnlyList<MachinePendingPatchesDto>? _machines;
+    private string? _error;
+    private bool _loading = true;
+    private bool _allowReboot;
+    private string _severityFilter = "All";
+
+    // machineId → set of selected patch IDs
+    private readonly Dictionary<Guid, HashSet<string>> _selected = new();
+    // machineId → currently approving
+    private readonly HashSet<Guid> _approving = new();
+    // machineId → approval result (nullable so HasValue works correctly)
+    private readonly Dictionary<Guid, (bool Success, string? DeploymentId, string? Error)?> _results = new();
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    private async Task Reload()
+    {
+        _loading = true;
+        _error = null;
+        _selected.Clear();
+        _approving.Clear();
+        _results.Clear();
+        try
+        {
+            _machines = await BrokerApi.GetAllPendingPatchesAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // ── Selection helpers ─────────────────────────────────────────────────────
+
+    private void TogglePatch(Guid machineId, string patchId, bool value)
+    {
+        if (!_selected.TryGetValue(machineId, out var set))
+        {
+            set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            _selected[machineId] = set;
+        }
+        if (value) set.Add(patchId);
+        else set.Remove(patchId);
+    }
+
+    private void ToggleAllMachine(MachinePendingPatchesDto machine, IReadOnlyList<Action1PatchDto> visible, bool value)
+    {
+        if (!_selected.TryGetValue(machine.MachineId, out var set))
+        {
+            set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            _selected[machine.MachineId] = set;
+        }
+        if (value) foreach (var p in visible) set.Add(p.Id);
+        else foreach (var p in visible) set.Remove(p.Id);
+    }
+
+    // ── Computed counts ───────────────────────────────────────────────────────
+
+    private int TotalPatchCount => _machines?.Sum(m => m.Patches.Count) ?? 0;
+    private int CriticalPatchCount => _machines?.Sum(m => m.Patches.Count(p => string.Equals(p.Severity, "Critical", StringComparison.OrdinalIgnoreCase))) ?? 0;
+    private int ImportantPatchCount => _machines?.Sum(m => m.Patches.Count(p => string.Equals(p.Severity, "Important", StringComparison.OrdinalIgnoreCase))) ?? 0;
+    private int TotalSelectedCount => _selected.Values.Sum(s => s.Count);
+    private bool _anyApproving => _approving.Count > 0;
+
+    private IReadOnlyList<Action1PatchDto> FilteredPatches(MachinePendingPatchesDto machine) =>
+        _severityFilter == "All"
+            ? machine.Patches
+            : machine.Patches
+                .Where(p => string.Equals(p.Severity, _severityFilter, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+    // ── Approval ──────────────────────────────────────────────────────────────
+
+    private async Task ApproveMachine(MachinePendingPatchesDto machine)
+    {
+        if (!_selected.TryGetValue(machine.MachineId, out var patchIds) || patchIds.Count == 0) return;
+
+        var items = machine.Patches
+            .Where(p => patchIds.Contains(p.Id))
+            .Select(p => new Action1PatchItemDto(p.Id, p.Version))
+            .ToList();
+
+        await SubmitApproval(machine.MachineId, items);
+    }
+
+    private async Task ApproveAllSelected()
+    {
+        if (_machines is null) return;
+        var tasks = _machines
+            .Where(m => _selected.TryGetValue(m.MachineId, out var s) && s.Count > 0)
+            .Select(ApproveMachine);
+        await Task.WhenAll(tasks);
+    }
+
+    private async Task SubmitApproval(Guid machineId, List<Action1PatchItemDto> items)
+    {
+        _approving.Add(machineId);
+        _results.Remove(machineId);
+        StateHasChanged();
+        try
+        {
+            var request = new Action1DeployRequestDto(items, _allowReboot);
+            var result = await BrokerApi.ApprovePatchesAsync(machineId, request);
+            _results[machineId] = (true, result.DeploymentId, null);
+            // Clear selection for this machine on success
+            _selected.Remove(machineId);
+        }
+        catch (Exception ex)
+        {
+            _results[machineId] = (false, null, ex.Message);
+        }
+        finally
+        {
+            _approving.Remove(machineId);
+            StateHasChanged();
+        }
+    }
+
+    // ── Styles ────────────────────────────────────────────────────────────────
+
+    private static string BtnStyle(string variant) => variant switch
+    {
+        "primary"       => "padding:8px 16px; background:#1565c0; color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.88rem;",
+        "default"       => "padding:8px 16px; background:#f5f5f5; color:#333; border:1px solid #ccc; border-radius:4px; cursor:pointer; font-size:0.88rem;",
+        "small-primary" => "padding:5px 12px; background:#1565c0; color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.82rem;",
+        _               => ""
+    };
+
+    private string FilterBtnStyle(string variant) =>
+        _severityFilter == variant
+            ? "padding:5px 12px; background:#1565c0; color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.82rem;"
+            : "padding:5px 12px; background:white; color:#333; border:1px solid #ccc; border-radius:4px; cursor:pointer; font-size:0.82rem;";
+
+    private static string SeverityBadgeStyle(string severity) => severity.ToLowerInvariant() switch
+    {
+        "critical"  => "background:#c62828; color:white; border-radius:10px; padding:2px 8px; font-size:0.78rem; font-weight:600;",
+        "important" => "background:#e65100; color:white; border-radius:10px; padding:2px 8px; font-size:0.78rem;",
+        "moderate"  => "background:#f9a825; color:#333; border-radius:10px; padding:2px 8px; font-size:0.78rem;",
+        "low"       => "background:#e0e0e0; color:#555; border-radius:10px; padding:2px 8px; font-size:0.78rem;",
+        _           => "background:#eeeeee; color:#555; border-radius:10px; padding:2px 8px; font-size:0.78rem;"
+    };
+
+    private static string RiskHeaderBg(string risk) => risk switch
+    {
+        "Overdue" => "#ffebee",
+        "Warning" => "#fff8e1",
+        _         => "#f5f5f5"
+    };
+
+    private static string RiskBadgeStyle(string risk) => risk switch
+    {
+        "Overdue" => "background:#c62828; color:white; border-radius:4px; padding:2px 8px; font-size:0.78rem; font-weight:600;",
+        "Warning" => "background:#f9a825; color:#333; border-radius:4px; padding:2px 8px; font-size:0.78rem; font-weight:600;",
+        _         => "background:#388e3c; color:white; border-radius:4px; padding:2px 8px; font-size:0.78rem;"
+    };
+}
