@@ -113,6 +113,12 @@ public sealed class BrokerApiClient : IBrokerApi, IDisposable
     public Task<IReadOnlyList<MachinePendingPatchesDto>> GetAllPendingPatchesAsync(CancellationToken ct = default)
         => ExecuteAsync(api => api.GetAllPendingPatchesAsync(ct), ct);
 
+    public Task<IReadOnlyList<CatalogUpdateDto>> GetCatalogUpdatesAsync(string approvalStatus = "New", CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetCatalogUpdatesAsync(approvalStatus, ct), ct);
+
+    public Task<CatalogApproveResultDto> ApproveCatalogUpdatesAsync(CatalogApproveRequestDto request, CancellationToken ct = default)
+        => ExecuteAsync(api => api.ApproveCatalogUpdatesAsync(request, ct), ct);
+
     private async Task<T> ExecuteAsync<T>(Func<IBrokerApi, Task<T>> action, CancellationToken ct)
     {
         try
