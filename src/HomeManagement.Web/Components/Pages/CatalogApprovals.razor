@@ -197,16 +197,26 @@ else if (_updates is not null)
         ["New"] = 0, ["Approved"] = 0, ["Declined"] = 0
     };
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
-        await Reload();
+        // Return immediately so the page renders interactive right away.
+        // The actual data load runs in the background; InvokeAsync(StateHasChanged)
+        // triggers a re-render when it completes (or times out).
+        _ = InitialLoadAsync();
+        return Task.CompletedTask;
     }
 
-    protected override void OnAfterRender(bool firstRender)
+    private async Task InitialLoadAsync()
     {
-        if (firstRender)
-            // Fire after the page is visible; keeps first load snappy.
+        try
+        {
+            await Reload();
             _ = LoadStatusCountsAsync(_componentCts.Token);
+            if (!_componentCts.IsCancellationRequested)
+                await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) { /* component disposed — normal */ }
+        catch { /* swallow — background init errors are surfaced via _error in Reload() */ }
     }
 
     public void Dispose()
@@ -300,7 +310,7 @@ else if (_updates is not null)
 
             // Guard: don't touch the component after it has been disposed.
             if (!ct.IsCancellationRequested)
-                StateHasChanged();
+                await InvokeAsync(StateHasChanged);
         }
         catch (OperationCanceledException) { /* component navigated away — normal */ }
         catch { /* background task — swallow other exceptions */ }

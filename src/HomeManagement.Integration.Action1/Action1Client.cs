@@ -333,15 +333,16 @@ public sealed class Action1Client : IDisposable
     {
         _logger.LogDebug("Action1: fetching catalog updates with approval_status={Status} for org {OrgId}",
             approvalStatus, _options.OrganizationId);
-        // limit=200   — matches PSAction1's default; without a limit Action1 returns every update
-        //               it has ever seen across all endpoints (thousands of records → timeout).
+        // limit=50    — matches what Action1's own console uses; a limit=200 query with
+        //               only_latest=yes forces server-side deduplication across all endpoints
+        //               which can time out on large orgs.
         // only_latest=yes — deduplicates so each KB appears once rather than once-per-version.
         // from=0       — explicit start offset; required alongside limit for stable pagination.
         // Omit fields=* — for org-wide queries Action1 may include per-endpoint deployment
         // history for every update, producing a very large slow response. The default field
         // set contains all the metadata we need (name, severity, approval_status, etc.).
         return await GetPagedListAsync<Action1CatalogUpdate>(
-            $"updates/{_options.OrganizationId}?approval_status={Uri.EscapeDataString(approvalStatus)}&limit=200&only_latest=yes&from=0", ct);
+            $"updates/{_options.OrganizationId}?approval_status={Uri.EscapeDataString(approvalStatus)}&limit=50&only_latest=yes&from=0", ct);
     }
 
     /// <summary>
