@@ -333,8 +333,12 @@ public sealed class Action1Client : IDisposable
     {
         _logger.LogDebug("Action1: fetching catalog updates with approval_status={Status} for org {OrgId}",
             approvalStatus, _options.OrganizationId);
+        // limit=200   — matches PSAction1's default; without a limit Action1 returns every update
+        //               it has ever seen across all endpoints (thousands of records → timeout).
+        // only_latest=yes — deduplicates so each KB appears once rather than once-per-version.
+        // from=0       — explicit start offset; required alongside limit for stable pagination.
         return await GetPagedListAsync<Action1CatalogUpdate>(
-            $"updates/{_options.OrganizationId}?approval_status={Uri.EscapeDataString(approvalStatus)}&fields=*", ct);
+            $"updates/{_options.OrganizationId}?approval_status={Uri.EscapeDataString(approvalStatus)}&fields=*&limit=200&only_latest=yes&from=0", ct);
     }
 
     /// <summary>
