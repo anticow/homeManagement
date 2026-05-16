@@ -4,6 +4,7 @@ WORKDIR /app
 EXPOSE 8080
 
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+ARG VERSION=0.0.0
 WORKDIR /src
 COPY Directory.Build.props Directory.Packages.props ./
 COPY src/HomeManagement.Abstractions/HomeManagement.Abstractions.csproj src/HomeManagement.Abstractions/
@@ -15,7 +16,7 @@ RUN dotnet restore src/HomeManagement.Web/HomeManagement.Web.csproj
 
 COPY src/ src/
 RUN dotnet publish src/HomeManagement.Web/HomeManagement.Web.csproj \
-    -c Release -o /app/publish --no-restore
+    -c Release -o /app/publish --no-restore -p:Version=$VERSION
 
 FROM base AS final
 RUN adduser --disabled-password --gecos "" appuser && \
