@@ -40,7 +40,12 @@ builder.Services
     .ConfigureHttpClient(c => c.BaseAddress = new Uri(authBaseUrl));
 
 builder.Services.AddHttpClient(BrokerApiClient.HttpClientName, c =>
-    c.BaseAddress = new Uri(brokerBaseUrl));
+{
+    c.BaseAddress = new Uri(brokerBaseUrl);
+    // 60s covers the worst-case broker fan-out (e.g. pending-patches across many machines)
+    // while still surfacing errors rather than leaving the UI in perpetual "Loading…" state.
+    c.Timeout = TimeSpan.FromSeconds(60);
+});
 builder.Services.AddScoped<IBrokerApi, BrokerApiClient>();
 
 builder.Services.AddHttpClient(AdminApiClient.HttpClientName, c =>

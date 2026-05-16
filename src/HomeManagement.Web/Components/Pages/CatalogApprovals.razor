@@ -199,8 +199,13 @@ else if (_updates is not null)
         _approveResult = null;
         try
         {
-            _updates = await BrokerApi.GetCatalogUpdatesAsync(_currentStatus);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+            _updates = await BrokerApi.GetCatalogUpdatesAsync(_currentStatus, cts.Token);
             _statusCounts[_currentStatus] = _updates.Count;
+        }
+        catch (OperationCanceledException)
+        {
+            _error = "Request timed out. The Action1 API did not respond in time — try again or check broker logs.";
         }
         catch (Exception ex)
         {
