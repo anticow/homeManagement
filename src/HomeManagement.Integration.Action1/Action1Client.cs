@@ -337,8 +337,11 @@ public sealed class Action1Client : IDisposable
         //               it has ever seen across all endpoints (thousands of records → timeout).
         // only_latest=yes — deduplicates so each KB appears once rather than once-per-version.
         // from=0       — explicit start offset; required alongside limit for stable pagination.
+        // Omit fields=* — for org-wide queries Action1 may include per-endpoint deployment
+        // history for every update, producing a very large slow response. The default field
+        // set contains all the metadata we need (name, severity, approval_status, etc.).
         return await GetPagedListAsync<Action1CatalogUpdate>(
-            $"updates/{_options.OrganizationId}?approval_status={Uri.EscapeDataString(approvalStatus)}&fields=*&limit=200&only_latest=yes&from=0", ct);
+            $"updates/{_options.OrganizationId}?approval_status={Uri.EscapeDataString(approvalStatus)}&limit=200&only_latest=yes&from=0", ct);
     }
 
     /// <summary>
