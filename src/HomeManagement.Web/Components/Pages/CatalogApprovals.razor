@@ -1,6 +1,7 @@
 @page "/action1/catalog"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using HomeManagement.Web.Services
+@implements IDisposable
 @inject IBrokerApi BrokerApi
 
 <h1>Update Catalog Approvals</h1>
@@ -173,6 +174,10 @@ else if (_updates is not null)
     private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
     private CatalogApproveResultDto? _approveResult;
 
+    // Component-scoped CTS: cancelled in Dispose() so fire-and-forget background tasks
+    // don't call StateHasChanged() on a disposed component (which kills the Blazor circuit).
+    private readonly CancellationTokenSource _componentCts = new();
+
     // Cached counts per status tab (loaded on first visit to each tab).
     private readonly Dictionary<string, int> _statusCounts = new()
     {
@@ -188,7 +193,13 @@ else if (_updates is not null)
     {
         if (firstRender)
             // Fire after the page is visible; keeps first load snappy.
-            _ = LoadStatusCountsAsync();
+            _ = LoadStatusCountsAsync(_componentCts.Token);
+    }
+
+    public void Dispose()
+    {
+        _componentCts.Cancel();
+        _componentCts.Dispose();
     }
 
     private async Task Reload()
@@ -224,7 +235,7 @@ else if (_updates is not null)
     }
 
     /// <summary>Fetch counts for all three status tabs in parallel to populate badges.</summary>
-    private async Task LoadStatusCountsAsync()
+    private async Task LoadStatusCountsAsync(CancellationToken ct = default)
     {
         try
         {
@@ -234,7 +245,7 @@ else if (_updates is not null)
                 {
                     try
                     {
-                        var list = await BrokerApi.GetCatalogUpdatesAsync(s);
+                        var list = await BrokerApi.GetCatalogUpdatesAsync(s, ct);
                         return (Status: s, Count: list.Count);
                     }
                     catch
@@ -246,9 +257,12 @@ else if (_updates is not null)
             foreach (var result in await Task.WhenAll(tasks))
                 _statusCounts[result.Status] = result.Count;
 
-            StateHasChanged();
+            // Guard: don't touch the component after it has been disposed.
+            if (!ct.IsCancellationRequested)
+                StateHasChanged();
         }
-        catch { /* background task — swallow exceptions */ }
+        catch (OperationCanceledException) { /* component navigated away — normal */ }
+        catch { /* background task — swallow other exceptions */ }
     }
 
     // ── Filtering ─────────────────────────────────────────────────────────────
@@ -305,7 +319,7 @@ else if (_updates is not null)
             var request = new CatalogApproveRequestDto(ids, status);
             _approveResult = await BrokerApi.ApproveCatalogUpdatesAsync(request);
             await Reload();
-            _ = LoadStatusCountsAsync();
+            _ = LoadStatusCountsAsync(_componentCts.Token);
         }
         catch (Exception ex)
         {

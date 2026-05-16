@@ -1,3 +1,5 @@
+@using System.Reflection
+
 <nav>
     <ul>
         <li><a href="/">Dashboard</a></li>
@@ -15,4 +17,12 @@
         <li><a href="/admin/users">Admin</a></li>
         <li><a href="/logout">Sign Out</a></li>
     </ul>
+    <div style="font-size:0.72rem; color:#aaa; padding:10px 16px; border-top:1px solid #e0e0e0; margin-top:8px;">
+        v@(_version)
+    </div>
 </nav>
+
+@code {
+    private static readonly string _version =
+        typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "?";
+}
