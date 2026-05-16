@@ -182,8 +182,13 @@ else if (_updates is not null)
     protected override async Task OnInitializedAsync()
     {
         await Reload();
-        // Kick off background count fetches for the other tabs.
-        _ = LoadStatusCountsAsync();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            // Fire after the page is visible; keeps first load snappy.
+            _ = LoadStatusCountsAsync();
     }
 
     private async Task Reload()

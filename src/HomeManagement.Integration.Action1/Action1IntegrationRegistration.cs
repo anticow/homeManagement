@@ -44,7 +44,10 @@ public static class Action1IntegrationRegistration
         {
             var opts = sp.GetRequiredService<IOptions<Action1Options>>().Value;
             client.BaseAddress = new Uri(opts.BaseUrl.TrimEnd('/') + "/");
-            // Auth header is set per-request by Action1Client via OAuth2 token flow
+            // Auth header is set per-request by Action1Client via OAuth2 token flow.
+            // 30s is generous for the Action1 API; prevents the UI from hanging indefinitely
+            // if Action1 is unreachable or a path is wrong.
+            client.Timeout = TimeSpan.FromSeconds(30);
         });
 
         var options = ReadOptions<Action1Options>(configuration, Action1Options.Section);
