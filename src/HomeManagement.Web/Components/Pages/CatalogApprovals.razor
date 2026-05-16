@@ -53,7 +53,7 @@
     </div>
     <div style="display:flex; gap:8px; margin-left:auto; align-items:center;">
         <button style="@BtnStyle("default")" @onclick="Reload" disabled="@_loading">⟳ Refresh</button>
-        <button style="@BtnStyle("default")" @onclick="TestConnection" disabled="@(_testing || _loading)">
+        <button style="@BtnStyle("default")" @onclick="TestConnection" disabled="@_testing">
             🔬 Test API
         </button>
         @if (_testResult is not null)
@@ -223,13 +223,22 @@ else if (_updates is not null)
         _approveResult = null;
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            _updates = await BrokerApi.GetCatalogUpdatesAsync(_currentStatus, cts.Token);
+            // Link the 15s timeout with the component lifetime so that navigating away
+            // immediately cancels the in-flight request (prevents circuit crash on disposal).
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+                timeoutCts.Token, _componentCts.Token);
+            _updates = await BrokerApi.GetCatalogUpdatesAsync(_currentStatus, linked.Token);
             _statusCounts[_currentStatus] = _updates.Count;
+        }
+        catch (OperationCanceledException) when (_componentCts.IsCancellationRequested)
+        {
+            // Component navigated away — don't update error state on a disposing component.
+            return;
         }
         catch (OperationCanceledException)
         {
-            _error = "Request timed out. The Action1 API did not respond in time — try again or check broker logs.";
+            _error = "Request timed out (15s). The Action1 API did not respond in time — try again or check broker logs.";
         }
         catch (Exception ex)
         {
