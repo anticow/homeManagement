@@ -2,6 +2,7 @@ using HomeManagement.Integration.Action1.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace HomeManagement.Integration.Action1;
@@ -33,19 +34,28 @@ public static class Action1CatalogEndpoints
         group.MapGet("", async (
             Action1Client action1,
             IOptions<Action1Options> opts,
+            ILoggerFactory loggerFactory,
             string approvalStatus = "New",
             CancellationToken ct = default) =>
         {
+            var logger = loggerFactory.CreateLogger("Broker.Action1.Catalog");
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            logger.LogInformation("CatalogFetch started: approvalStatus={Status}", approvalStatus);
             try
             {
                 var updates = await action1.GetCatalogUpdatesAsync(approvalStatus, ct);
+                sw.Stop();
+                logger.LogInformation("CatalogFetch completed: {Count} updates in {ElapsedMs}ms, approvalStatus={Status}",
+                    updates.Count, sw.ElapsedMilliseconds, approvalStatus);
                 return Results.Ok(updates.Select(MapCatalogDto).ToList());
             }
             catch (Exception ex)
             {
+                sw.Stop();
+                logger.LogError(ex, "CatalogFetch failed after {ElapsedMs}ms: {Error}", sw.ElapsedMilliseconds, ex.Message);
                 return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
             }
         });

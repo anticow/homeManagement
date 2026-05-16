@@ -182,6 +182,7 @@ public sealed class Action1Client : IDisposable
     private async Task<IReadOnlyList<T>> GetPagedListAsync<T>(string path, CancellationToken ct)
     {
         var resp = await GetAsync(path, ct);
+        _logger.LogDebug("Action1: GET {Path} → {Status}", path, (int)resp.StatusCode);
 
         if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
@@ -341,8 +342,14 @@ public sealed class Action1Client : IDisposable
         // Omit fields=* — for org-wide queries Action1 may include per-endpoint deployment
         // history for every update, producing a very large slow response. The default field
         // set contains all the metadata we need (name, severity, approval_status, etc.).
-        return await GetPagedListAsync<Action1CatalogUpdate>(
+        _logger.LogInformation("Action1: starting catalog fetch orgId={OrgId} approvalStatus={Status}",
+            _options.OrganizationId, approvalStatus);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var result = await GetPagedListAsync<Action1CatalogUpdate>(
             $"updates/{_options.OrganizationId}?approval_status={Uri.EscapeDataString(approvalStatus)}&limit=50&only_latest=yes&from=0", ct);
+        sw.Stop();
+        _logger.LogInformation("Action1: catalog fetch done: {Count} items in {ElapsedMs}ms", result.Count, sw.ElapsedMilliseconds);
+        return result;
     }
 
     /// <summary>

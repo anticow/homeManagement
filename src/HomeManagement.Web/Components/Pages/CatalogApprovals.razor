@@ -1,4 +1,13 @@
 @page "/action1/catalog"
+@* Disable SSR pre-rendering for this page.
+   The global [StreamRendering] attribute (applied via _Imports.razor) causes the pre-render
+   HTTP response to be held open while the fire-and-forget InitialLoadAsync makes its broker
+   call. Since the Action1 catalog API can take several seconds, blazor.web.js (at the end
+   of <body> in App.razor) is not delivered until the streaming completes — so the Blazor
+   circuit never bootstraps and the page is permanently non-interactive. Disabling pre-render
+   sends the full HTML shell (including blazor.web.js) immediately; the component then runs
+   entirely in the established interactive circuit where the timeout/error flow works correctly. *@
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using HomeManagement.Web.Services
 @implements IDisposable
