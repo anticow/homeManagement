@@ -119,6 +119,9 @@ public sealed class BrokerApiClient : IBrokerApi, IDisposable
     public Task<CatalogApproveResultDto> ApproveCatalogUpdatesAsync(CatalogApproveRequestDto request, CancellationToken ct = default)
         => ExecuteAsync(api => api.ApproveCatalogUpdatesAsync(request, ct), ct);
 
+    public Task<CatalogTestResultDto> TestCatalogConnectionAsync(CancellationToken ct = default)
+        => ExecuteAsync(api => api.TestCatalogConnectionAsync(ct), ct);
+
     private async Task<T> ExecuteAsync<T>(Func<IBrokerApi, Task<T>> action, CancellationToken ct)
     {
         try

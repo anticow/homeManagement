@@ -50,6 +50,38 @@ public static class Action1CatalogEndpoints
             }
         });
 
+        // ── Diagnostic test endpoint ──────────────────────────────────────────────
+        // GET /api/action1/catalog/test
+        // Returns timing info and error details. Always produces a JSON body. No auth bypass.
+        group.MapGet("test", async (
+            Action1Client action1,
+            IOptions<Action1Options> opts,
+            CancellationToken ct = default) =>
+        {
+            if (!opts.Value.Enabled)
+                return Results.Ok(new { success = false, enabled = false, itemCount = 0, elapsedMs = 0, error = "Action1 integration is not enabled (Action1__Enabled=false in config)" });
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(20));
+            try
+            {
+                var updates = await action1.GetCatalogUpdatesAsync("New", cts.Token);
+                sw.Stop();
+                return Results.Ok(new { success = true, enabled = true, itemCount = updates.Count, elapsedMs = sw.ElapsedMilliseconds, error = (string?)null });
+            }
+            catch (OperationCanceledException)
+            {
+                sw.Stop();
+                return Results.Ok(new { success = false, enabled = true, itemCount = 0, elapsedMs = sw.ElapsedMilliseconds, error = $"Action1 API did not respond within 20s (elapsed: {sw.ElapsedMilliseconds}ms)" });
+            }
+            catch (Exception ex)
+            {
+                sw.Stop();
+                return Results.Ok(new { success = false, enabled = true, itemCount = 0, elapsedMs = sw.ElapsedMilliseconds, error = ex.Message });
+            }
+        });
+
         // ── Bulk approve / decline catalog updates ────────────────────────────
         // POST /api/action1/catalog/approve
         // Body: { UpdateIds: ["id1","id2"], ApprovalStatus: "Approved" }

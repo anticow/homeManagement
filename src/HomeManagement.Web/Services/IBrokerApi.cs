@@ -91,6 +91,9 @@ public interface IBrokerApi
     [Get("/api/action1/catalog")]
     Task<IReadOnlyList<CatalogUpdateDto>> GetCatalogUpdatesAsync(string approvalStatus = "New", CancellationToken ct = default);
 
+    [Get("/api/action1/catalog/test")]
+    Task<CatalogTestResultDto> TestCatalogConnectionAsync(CancellationToken ct = default);
+
     [Post("/api/action1/catalog/approve")]
     Task<CatalogApproveResultDto> ApproveCatalogUpdatesAsync([Body] CatalogApproveRequestDto request, CancellationToken ct = default);
 
@@ -287,3 +290,10 @@ public sealed record CatalogApproveResultDto(
     int Approved,
     int Failed,
     IReadOnlyList<string> FailedIds);
+
+public sealed record CatalogTestResultDto(
+    bool Success,
+    bool Enabled,
+    int ItemCount,
+    long ElapsedMs,
+    string? Error);

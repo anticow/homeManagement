@@ -53,6 +53,17 @@
     </div>
     <div style="display:flex; gap:8px; margin-left:auto; align-items:center;">
         <button style="@BtnStyle("default")" @onclick="Reload" disabled="@_loading">⟳ Refresh</button>
+        <button style="@BtnStyle("default")" @onclick="TestConnection" disabled="@(_testing || _loading)">
+            🔬 Test API
+        </button>
+        @if (_testResult is not null)
+        {
+            <span style="font-size:0.8rem; color:@(_testResult.Success ? "#388e3c" : "#c62828"); margin-left:8px;">
+                @(_testResult.Success
+                    ? $"✔ OK ({_testResult.ItemCount} items, {_testResult.ElapsedMs}ms)"
+                    : $"✗ {_testResult.Error}")
+            </span>
+        }
         @if (_currentStatus == "New" && TotalSelectedCount > 0)
         {
             <button style="@BtnStyle("danger-outline")" @onclick="DeclineSelected" disabled="@_submitting">
@@ -169,10 +180,12 @@ else if (_updates is not null)
     private string? _error;
     private bool _loading = true;
     private bool _submitting;
+    private bool _testing;
     private string _currentStatus = "New";
     private string _severityFilter = "All";
     private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
     private CatalogApproveResultDto? _approveResult;
+    private CatalogTestResultDto? _testResult;
 
     // Component-scoped CTS: cancelled in Dispose() so fire-and-forget background tasks
     // don't call StateHasChanged() on a disposed component (which kills the Blazor circuit).
@@ -210,7 +223,7 @@ else if (_updates is not null)
         _approveResult = null;
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             _updates = await BrokerApi.GetCatalogUpdatesAsync(_currentStatus, cts.Token);
             _statusCounts[_currentStatus] = _updates.Count;
         }
@@ -232,6 +245,25 @@ else if (_updates is not null)
     {
         _currentStatus = status;
         await Reload();
+    }
+
+    private async Task TestConnection()
+    {
+        _testing = true;
+        _testResult = null;
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+            _testResult = await BrokerApi.TestCatalogConnectionAsync(cts.Token);
+        }
+        catch (Exception ex)
+        {
+            _testResult = new CatalogTestResultDto(false, false, 0, 0, ex.Message);
+        }
+        finally
+        {
+            _testing = false;
+        }
     }
 
     /// <summary>Fetch counts for all three status tabs in parallel to populate badges.</summary>
