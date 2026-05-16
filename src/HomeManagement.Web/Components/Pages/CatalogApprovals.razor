@@ -1,16 +1,12 @@
 @page "/action1/catalog"
 @* Disable SSR pre-rendering for this page.
    The global [StreamRendering] attribute (applied via _Imports.razor) causes the pre-render
-   HTTP response to be held open while the fire-and-forget InitialLoadAsync makes its broker
-   call. Since the Action1 catalog API can take several seconds, blazor.web.js (at the end
-   of <body> in App.razor) is not delivered until the streaming completes — so the Blazor
-   circuit never bootstraps and the page is permanently non-interactive. Disabling pre-render
-   sends the full HTML shell (including blazor.web.js) immediately; the component then runs
-   entirely in the established interactive circuit where the timeout/error flow works correctly. *@
+   HTTP response to be held open while the broker/Action1 API call is in flight. Disabling
+   pre-render sends the full HTML shell (including blazor.web.js) immediately; the component
+   then runs entirely in the established interactive circuit. *@
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using HomeManagement.Web.Services
-@implements IDisposable
 @inject IBrokerApi BrokerApi
 
 <h1>Update Catalog Approvals</h1>
@@ -196,43 +192,16 @@ else if (_updates is not null)
     private CatalogApproveResultDto? _approveResult;
     private CatalogTestResultDto? _testResult;
 
-    // Component-scoped CTS: cancelled in Dispose() so fire-and-forget background tasks
-    // don't call StateHasChanged() on a disposed component (which kills the Blazor circuit).
-    private readonly CancellationTokenSource _componentCts = new();
-
-    // Cached counts per status tab (loaded on first visit to each tab).
+    // Cached counts per status tab
     private readonly Dictionary<string, int> _statusCounts = new()
     {
         ["New"] = 0, ["Approved"] = 0, ["Declined"] = 0
     };
 
-    protected override Task OnInitializedAsync()
-    {
-        // Return immediately so the page renders interactive right away.
-        // The actual data load runs in the background; InvokeAsync(StateHasChanged)
-        // triggers a re-render when it completes (or times out).
-        _ = InitialLoadAsync();
-        return Task.CompletedTask;
-    }
-
-    private async Task InitialLoadAsync()
-    {
-        try
-        {
-            await Reload();
-            _ = LoadStatusCountsAsync(_componentCts.Token);
-            if (!_componentCts.IsCancellationRequested)
-                await InvokeAsync(StateHasChanged);
-        }
-        catch (OperationCanceledException) { /* component disposed — normal */ }
-        catch { /* swallow — background init errors are surfaced via _error in Reload() */ }
-    }
-
-    public void Dispose()
-    {
-        _componentCts.Cancel();
-        _componentCts.Dispose();
-    }
+    // Use the same direct-await pattern as all other working Action1 pages (PendingPatches,
+    // PatchSchedules, FleetPatches). Blazor Server is fully interactive while OnInitializedAsync
+    // awaits — the 15s CTS inside Reload() ensures a timeout error is surfaced quickly.
+    protected override async Task OnInitializedAsync() => await Reload();
 
     private async Task Reload()
     {
@@ -242,22 +211,13 @@ else if (_updates is not null)
         _approveResult = null;
         try
         {
-            // Link the 15s timeout with the component lifetime so that navigating away
-            // immediately cancels the in-flight request (prevents circuit crash on disposal).
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(
-                timeoutCts.Token, _componentCts.Token);
-            _updates = await BrokerApi.GetCatalogUpdatesAsync(_currentStatus, linked.Token);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            _updates = await BrokerApi.GetCatalogUpdatesAsync(_currentStatus, cts.Token);
             _statusCounts[_currentStatus] = _updates.Count;
-        }
-        catch (OperationCanceledException) when (_componentCts.IsCancellationRequested)
-        {
-            // Component navigated away — don't update error state on a disposing component.
-            return;
         }
         catch (OperationCanceledException)
         {
-            _error = "Request timed out (15s). The Action1 API did not respond in time — try again or check broker logs.";
+            _error = "Request timed out (15s). The Action1 API did not respond — try again or check broker logs at https://seq.cowgomu.net";
         }
         catch (Exception ex)
         {
@@ -266,6 +226,7 @@ else if (_updates is not null)
         finally
         {
             _loading = false;
+            StateHasChanged();
         }
     }
 
@@ -295,34 +256,28 @@ else if (_updates is not null)
     }
 
     /// <summary>Fetch counts for all three status tabs in parallel to populate badges.</summary>
-    private async Task LoadStatusCountsAsync(CancellationToken ct = default)
+    private async Task LoadStatusCountsAsync()
     {
-        try
-        {
-            var tasks = new[] { "New", "Approved", "Declined" }
-                .Where(s => s != _currentStatus)
-                .Select(async s =>
+        var tasks = new[] { "New", "Approved", "Declined" }
+            .Where(s => s != _currentStatus)
+            .Select(async s =>
+            {
+                try
                 {
-                    try
-                    {
-                        var list = await BrokerApi.GetCatalogUpdatesAsync(s, ct);
-                        return (Status: s, Count: list.Count);
-                    }
-                    catch
-                    {
-                        return (Status: s, Count: 0);
-                    }
-                });
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                    var list = await BrokerApi.GetCatalogUpdatesAsync(s, cts.Token);
+                    return (Status: s, Count: list.Count);
+                }
+                catch
+                {
+                    return (Status: s, Count: 0);
+                }
+            });
 
-            foreach (var result in await Task.WhenAll(tasks))
-                _statusCounts[result.Status] = result.Count;
+        foreach (var result in await Task.WhenAll(tasks))
+            _statusCounts[result.Status] = result.Count;
 
-            // Guard: don't touch the component after it has been disposed.
-            if (!ct.IsCancellationRequested)
-                await InvokeAsync(StateHasChanged);
-        }
-        catch (OperationCanceledException) { /* component navigated away — normal */ }
-        catch { /* background task — swallow other exceptions */ }
+        StateHasChanged();
     }
 
     // ── Filtering ─────────────────────────────────────────────────────────────
@@ -379,7 +334,7 @@ else if (_updates is not null)
             var request = new CatalogApproveRequestDto(ids, status);
             _approveResult = await BrokerApi.ApproveCatalogUpdatesAsync(request);
             await Reload();
-            _ = LoadStatusCountsAsync(_componentCts.Token);
+            _ = LoadStatusCountsAsync();
         }
         catch (Exception ex)
         {
