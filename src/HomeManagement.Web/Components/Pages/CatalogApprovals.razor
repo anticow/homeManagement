@@ -1,10 +1,4 @@
 @page "/action1/catalog"
-@* Disable SSR pre-rendering for this page.
-   The global [StreamRendering] attribute (applied via _Imports.razor) causes the pre-render
-   HTTP response to be held open while the broker/Action1 API call is in flight. Disabling
-   pre-render sends the full HTML shell (including blazor.web.js) immediately; the component
-   then runs entirely in the established interactive circuit. *@
-@rendermode @(new InteractiveServerRenderMode(prerender: false))
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using HomeManagement.Web.Services
 @inject IBrokerApi BrokerApi
@@ -198,10 +192,17 @@ else if (_updates is not null)
         ["New"] = 0, ["Approved"] = 0, ["Declined"] = 0
     };
 
-    // Use the same direct-await pattern as all other working Action1 pages (PendingPatches,
-    // PatchSchedules, FleetPatches). Blazor Server is fully interactive while OnInitializedAsync
-    // awaits — the 15s CTS inside Reload() ensures a timeout error is surfaced quickly.
-    protected override async Task OnInitializedAsync() => await Reload();
+    // OnAfterRenderAsync(firstRender) is NOT called during SSR prerender — only in the
+    // interactive circuit after the browser has connected. This prevents the streaming SSR
+    // response from being held open while the Action1 catalog API call is in flight,
+    // which was causing the Blazor circuit to never bootstrap on initial load.
+    // All other working pages use OnInitializedAsync because their broker calls complete
+    // quickly; the catalog endpoint can be slow, making this safer.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await Reload();
+    }
 
     private async Task Reload()
     {
