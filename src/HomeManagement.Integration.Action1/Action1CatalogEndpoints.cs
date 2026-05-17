@@ -42,6 +42,10 @@ public static class Action1CatalogEndpoints
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
+            var validStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Approved", "Declined", "New" };
+            if (!validStatuses.Contains(approvalStatus))
+                return Results.BadRequest(new { Message = $"Invalid approvalStatus '{approvalStatus}'. Must be Approved, Declined, or New." });
+
             var sw = System.Diagnostics.Stopwatch.StartNew();
             logger.LogInformation("CatalogFetch started: approvalStatus={Status}", approvalStatus);
             try
@@ -56,7 +60,7 @@ public static class Action1CatalogEndpoints
             {
                 sw.Stop();
                 logger.LogError(ex, "CatalogFetch failed after {ElapsedMs}ms: {Error}", sw.ElapsedMilliseconds, ex.Message);
-                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+                return Results.Problem("Action1 catalog fetch failed. Check broker logs for details.", statusCode: 502, title: "Action1 API Error");
             }
         });
 
@@ -106,6 +110,14 @@ public static class Action1CatalogEndpoints
         {
             if (!opts.Value.Enabled)
                 return Results.Ok(new { success = false, error = "Action1 not enabled" });
+
+            var validScopes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Organization", "Enterprise" };
+            if (!validScopes.Contains(request.Scope))
+                return Results.BadRequest(new { error = $"Invalid scope '{request.Scope}'. Must be Organization or Enterprise." });
+
+            var validStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Approved", "Declined", "New" };
+            if (!validStatuses.Contains(request.ApprovalStatus))
+                return Results.BadRequest(new { error = $"Invalid approvalStatus '{request.ApprovalStatus}'. Must be Approved, Declined, or New." });
 
             var logger = loggerFactory.CreateLogger("Broker.Action1.ProbeApprove");
             logger.LogInformation("Probe: PATCH approval test for updateId={Id} status={Status} scope={Scope}",
@@ -168,9 +180,9 @@ public static class Action1CatalogEndpoints
                     FailedIds = failed
                 });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+                return Results.Problem("Action1 approval request failed. Check broker logs for details.", statusCode: 502, title: "Action1 API Error");
             }
         });
 

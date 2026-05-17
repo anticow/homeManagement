@@ -37,7 +37,7 @@ public static class Action1WebhookEndpoints
         })
         .WithTags("Action1")
         .WithName("Action1Webhook")
-        .AllowAnonymous();
+        .RequireAuthorization();
 
         return app;
     }

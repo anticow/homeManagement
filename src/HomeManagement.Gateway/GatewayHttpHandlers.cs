@@ -69,11 +69,14 @@ internal static class GatewayHttpHandlers
         {
             return new X509Certificate2(path);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Malformed or unreadable CA cert — fall back to system trust silently.
-            // A startup log warning would be noise in environments where the cert path
-            // exists but isn't yet populated (e.g., during init-container setup).
+            // Malformed or unreadable CA cert — fall back to system trust.
+            // Write to stderr so the degradation is visible in container logs even before
+            // the application logger is fully initialised.
+            Console.Error.WriteLine(
+                $"[GatewayHttpHandlers] WARNING: Failed to load K8s CA cert from '{path}': {ex.Message}. " +
+                "Falling back to system trust store — TLS validation may accept unexpected certificates.");
             return null;
         }
     }
