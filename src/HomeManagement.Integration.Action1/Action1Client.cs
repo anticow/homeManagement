@@ -361,27 +361,32 @@ public sealed class Action1Client : IDisposable
     /// <summary>
     /// Set the catalog-level approval status for a single update.
     ///
-    /// Action1 has two separate PATCH endpoints with different body shapes:
+    /// Action1 has two catalog update types that require different endpoints:
     ///
-    ///   Built-in catalog updates (updateId ends with "_builtin"):
-    ///     PATCH /software-repository/all/{updateId}/versions/{updateId}
-    ///     Body: { "approval_status": "Approved" | "Declined" | "New" }
-    ///     NOTE: "scope" field is NOT accepted — the API returns 400 if included.
-    ///     These are packages from Action1's global software repository.
+    ///   1. Software delivery packages (named IDs: Vendor_Product_Timestamp_builtin)
+    ///      PATCH /software-repository/all/{updateId}/versions/{updateId}
+    ///      Body: { "approval_status": "Approved|Declined|New" }
+    ///      No scope field — the API returns 400 if scope is included.
     ///
-    ///   Org-specific updates (custom/uploaded packages):
-    ///     PATCH /updates/{orgId}/{updateId}
-    ///     Body: { "approval_status": "Approved" | "Declined" | "New", "scope": "Organization" | "Enterprise" }
-    ///     Scope is required — omitting it causes the API to return 403 Forbidden.
+    ///   2. Security / Windows updates (UUID IDs: xxxxxxxx-..._builtin, or no suffix)
+    ///      PATCH /updates/{orgId}/{updateId}
+    ///      Body: { "approval_status": "Approved|Declined|New", "scope": "Organization|Enterprise" }
+    ///      Scope is required — omitting it returns 403.
     ///
-    /// Returns true on success (2xx), false if Action1 rejects the change.
+    /// Detection heuristic: named packages have a human-readable Vendor_Product prefix;
+    /// UUID packages start with a GUID. A 500 from the software-repository endpoint
+    /// triggers an automatic fallback to the org-updates endpoint (handles misclassified IDs).
     /// </summary>
     public async Task<ApprovalOutcome> SetCatalogApprovalAsync(
         string updateId, string approvalStatus, string scope = "Organization", CancellationToken ct = default)
     {
-        // Built-in catalog updates use the software-repository endpoint (no scope field).
-        // Org-specific (custom) updates use the org-scoped updates endpoint (scope required).
         var isBuiltin = updateId.EndsWith("_builtin", StringComparison.OrdinalIgnoreCase);
+
+        // Heuristic: UUID-prefixed IDs (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx_builtin) are
+        // security/Windows updates. Named IDs (Vendor_Product_Timestamp_builtin) are software
+        // delivery packages. Start with the software-repository path for named _builtin IDs;
+        // fall back to the org-updates path if the software-repository returns 500.
+        var isNamedPackage = isBuiltin && !IsUuidPrefixed(updateId);
 
         const int maxRetries = 3;
         var retryDelays = new[] { TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30) };
@@ -389,16 +394,31 @@ public sealed class Action1Client : IDisposable
         for (var attempt = 0; attempt < maxRetries; attempt++)
         {
             HttpResponseMessage resp;
-            if (isBuiltin)
+            string relPath;
+
+            if (isNamedPackage)
             {
-                var relPath = $"software-repository/all/{Uri.EscapeDataString(updateId)}/versions/{Uri.EscapeDataString(updateId)}";
-                _logger.LogDebug("Action1: PATCH {Path} approval_status={Status} (builtin, attempt {Attempt})",
+                relPath = $"software-repository/all/{Uri.EscapeDataString(updateId)}/versions/{Uri.EscapeDataString(updateId)}";
+                _logger.LogDebug("Action1: PATCH {Path} approval_status={Status} (software-delivery, attempt {Attempt})",
                     relPath, approvalStatus, attempt + 1);
                 resp = await PatchJsonAsync(relPath, new { approval_status = approvalStatus }, ct);
+
+                // Action1 returns 500 when the update is not in the software-repository catalog
+                // (e.g., it's actually a security update despite the named ID pattern).
+                // Fall back to the org-updates endpoint automatically.
+                if (resp.StatusCode == System.Net.HttpStatusCode.InternalServerError)
+                {
+                    var errContent = await resp.Content.ReadAsStringAsync(ct);
+                    _logger.LogWarning(
+                        "Action1: software-repository PATCH for {Id} returned 500 — falling back to org-updates endpoint. Body: {Body}",
+                        updateId, errContent);
+                    isNamedPackage = false; // switch to org-updates path for remaining attempts
+                    continue;
+                }
             }
             else
             {
-                var relPath = $"updates/{_options.OrganizationId}/{Uri.EscapeDataString(updateId)}";
+                relPath = $"updates/{_options.OrganizationId}/{Uri.EscapeDataString(updateId)}";
                 _logger.LogDebug("Action1: PATCH {Path} approval_status={Status} scope={Scope} (attempt {Attempt})",
                     relPath, approvalStatus, scope, attempt + 1);
                 resp = await PatchJsonAsync(relPath, new { approval_status = approvalStatus, scope }, ct);
@@ -439,6 +459,10 @@ public sealed class Action1Client : IDisposable
 
         return ApprovalOutcome.RateLimitExhausted;
     }
+
+    /// <summary>Returns true if the updateId starts with a standard UUID (xxxxxxxx-xxxx-...).</summary>
+    private static bool IsUuidPrefixed(string updateId) =>
+        updateId.Length >= 36 && updateId[8] == '-' && updateId[13] == '-' && updateId[18] == '-';
 
     // ── Policy instance deployment (approve & install) ────────────────────────
 
