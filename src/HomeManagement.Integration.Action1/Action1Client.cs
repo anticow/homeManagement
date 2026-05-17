@@ -361,37 +361,41 @@ public sealed class Action1Client : IDisposable
     /// <summary>
     /// Set the catalog-level approval status for a single update.
     ///
-    /// Action1 has two separate PATCH endpoints depending on the update's origin:
+    /// Action1 has two separate PATCH endpoints with different body shapes:
     ///
     ///   Built-in catalog updates (updateId ends with "_builtin"):
     ///     PATCH /software-repository/all/{updateId}/versions/{updateId}
-    ///     Body: { "approval_status": "Approved" | "Declined" | "New", "scope": "Organization" | "Enterprise" }
-    ///     These are packages from Action1's global software repository. The Action1 console
-    ///     makes this call (confirmed from network capture of browser traffic).
+    ///     Body: { "approval_status": "Approved" | "Declined" | "New" }
+    ///     NOTE: "scope" field is NOT accepted — the API returns 400 if included.
+    ///     These are packages from Action1's global software repository.
     ///
     ///   Org-specific updates (custom/uploaded packages):
     ///     PATCH /updates/{orgId}/{updateId}
     ///     Body: { "approval_status": "Approved" | "Declined" | "New", "scope": "Organization" | "Enterprise" }
-    ///
-    /// Scope is required — omitting it causes the API to return 403 Forbidden.
-    /// Default to "Organization" (change affects current org only).
+    ///     Scope is required — omitting it causes the API to return 403 Forbidden.
     ///
     /// Returns true on success (2xx), false if Action1 rejects the change.
     /// </summary>
     public async Task<bool> SetCatalogApprovalAsync(
         string updateId, string approvalStatus, string scope = "Organization", CancellationToken ct = default)
     {
-        // Built-in catalog updates use the software-repository endpoint.
-        // Org-specific (custom) updates use the org-scoped updates endpoint.
+        // Built-in catalog updates use the software-repository endpoint (no scope field).
+        // Org-specific (custom) updates use the org-scoped updates endpoint (scope required).
         var isBuiltin = updateId.EndsWith("_builtin", StringComparison.OrdinalIgnoreCase);
-        var relPath = isBuiltin
-            ? $"software-repository/all/{Uri.EscapeDataString(updateId)}/versions/{Uri.EscapeDataString(updateId)}"
-            : $"updates/{_options.OrganizationId}/{Uri.EscapeDataString(updateId)}";
 
-        _logger.LogDebug("Action1: PATCH {Path} approval_status={Status} scope={Scope} (builtin={IsBuiltin})",
-            relPath, approvalStatus, scope, isBuiltin);
-        var body = new { approval_status = approvalStatus, scope };
-        var resp = await PatchJsonAsync(relPath, body, ct);
+        HttpResponseMessage resp;
+        if (isBuiltin)
+        {
+            var relPath = $"software-repository/all/{Uri.EscapeDataString(updateId)}/versions/{Uri.EscapeDataString(updateId)}";
+            _logger.LogDebug("Action1: PATCH {Path} approval_status={Status} (builtin)", relPath, approvalStatus);
+            resp = await PatchJsonAsync(relPath, new { approval_status = approvalStatus }, ct);
+        }
+        else
+        {
+            var relPath = $"updates/{_options.OrganizationId}/{Uri.EscapeDataString(updateId)}";
+            _logger.LogDebug("Action1: PATCH {Path} approval_status={Status} scope={Scope}", relPath, approvalStatus, scope);
+            resp = await PatchJsonAsync(relPath, new { approval_status = approvalStatus, scope }, ct);
+        }
 
         if (resp.IsSuccessStatusCode) return true;
 
@@ -399,15 +403,14 @@ public sealed class Action1Client : IDisposable
         if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
         {
             _logger.LogError(
-                "Action1: PATCH {Path} returned 403 Forbidden (scope={Scope}, builtin={IsBuiltin}). " +
-                "Check API credential role in Action1 console → Configuration → Users & API Credentials. " +
-                "Body sent: approval_status={ApprovalStatus}, scope={Scope}",
-                relPath, scope, isBuiltin, approvalStatus, scope);
+                "Action1: PATCH approval for {Id} returned 403 Forbidden. " +
+                "Check API credential role in Action1 console → Configuration → Users & API Credentials.",
+                updateId);
         }
         else
         {
-            _logger.LogWarning("Action1: PATCH {Path} returned {Status}: {Content}",
-                relPath, (int)resp.StatusCode, content);
+            _logger.LogWarning("Action1: PATCH approval for {Id} returned {Status}: {Content}",
+                updateId, (int)resp.StatusCode, content);
         }
         return false;
     }
