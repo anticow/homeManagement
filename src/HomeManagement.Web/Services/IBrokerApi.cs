@@ -285,7 +285,7 @@ public sealed record CatalogUpdateDto(
 public sealed record CatalogApproveRequestDto(
     IReadOnlyList<string> UpdateIds,
     string ApprovalStatus = "Approved",
-    string Scope = "Organization");
+    string? Scope = null);
 
 public sealed record CatalogApproveResultDto(
     int Approved,

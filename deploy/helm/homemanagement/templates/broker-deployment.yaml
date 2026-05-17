@@ -64,6 +64,8 @@ spec:
               value: {{ .Values.action1.baseUrl | quote }}
             - name: Action1__SyncIntervalMinutes
               value: {{ .Values.action1.syncIntervalMinutes | quote }}
+            - name: Action1__ApprovalScope
+              value: {{ .Values.action1.approvalScope | default "Organization" | quote }}
             {{- if .Values.action1.enabled }}
             - name: Action1__ClientId
               valueFrom:

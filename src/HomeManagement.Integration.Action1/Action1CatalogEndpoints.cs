@@ -112,8 +112,9 @@ public static class Action1CatalogEndpoints
                 return Results.Ok(new { success = false, error = "Action1 not enabled" });
 
             var validScopes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Organization", "Enterprise" };
-            if (!validScopes.Contains(request.Scope))
-                return Results.BadRequest(new { error = $"Invalid scope '{request.Scope}'. Must be Organization or Enterprise." });
+            var resolvedScope = request.Scope ?? opts.Value.ApprovalScope;
+            if (!validScopes.Contains(resolvedScope))
+                return Results.BadRequest(new { error = $"Invalid scope '{resolvedScope}'. Must be Organization or Enterprise." });
 
             var validStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Approved", "Declined", "New" };
             if (!validStatuses.Contains(request.ApprovalStatus))
@@ -121,10 +122,10 @@ public static class Action1CatalogEndpoints
 
             var logger = loggerFactory.CreateLogger("Broker.Action1.ProbeApprove");
             logger.LogInformation("Probe: PATCH approval test for updateId={Id} status={Status} scope={Scope}",
-                request.UpdateId, request.ApprovalStatus, request.Scope);
+                request.UpdateId, request.ApprovalStatus, resolvedScope);
 
-            var ok = await action1.SetCatalogApprovalAsync(request.UpdateId, request.ApprovalStatus, request.Scope, ct);
-            return Results.Ok(new { success = ok, updateId = request.UpdateId, approvalStatus = request.ApprovalStatus, scope = request.Scope });
+            var ok = await action1.SetCatalogApprovalAsync(request.UpdateId, request.ApprovalStatus, resolvedScope, ct);
+            return Results.Ok(new { success = ok, updateId = request.UpdateId, approvalStatus = request.ApprovalStatus, scope = resolvedScope });
         });
 
         // ── Bulk approve / decline catalog updates ────────────────────────────
@@ -144,6 +145,8 @@ public static class Action1CatalogEndpoints
             if (request.UpdateIds is null || request.UpdateIds.Count == 0)
                 return Results.BadRequest(new { Message = "At least one update ID is required." });
 
+            var resolvedScope = request.Scope ?? opts.Value.ApprovalScope;
+
             var validStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 { "Approved", "Declined", "New" };
 
@@ -162,7 +165,7 @@ public static class Action1CatalogEndpoints
                     await semaphore.WaitAsync(ct);
                     try
                     {
-                        var ok = await action1.SetCatalogApprovalAsync(id, request.ApprovalStatus, request.Scope, ct);
+                        var ok = await action1.SetCatalogApprovalAsync(id, request.ApprovalStatus, resolvedScope, ct);
                         return (Id: id, Success: ok);
                     }
                     finally
@@ -207,13 +210,13 @@ public static class Action1CatalogEndpoints
 }
 
 /// <summary>Single-update approval probe request for endpoint testing.</summary>
-public sealed record ProbeApproveRequest(string UpdateId, string ApprovalStatus = "Approved", string Scope = "Organization");
+public sealed record ProbeApproveRequest(string UpdateId, string ApprovalStatus = "Approved", string? Scope = null);
 
 /// <summary>Bulk catalog approval/decline request.</summary>
 public sealed record CatalogApproveRequest(
     IReadOnlyList<string> UpdateIds,
     string ApprovalStatus = "Approved",
-    string Scope = "Organization");
+    string? Scope = null);
 
 /// <summary>Broker-side DTO for a catalog update item.</summary>
 public sealed record CatalogUpdateDto(

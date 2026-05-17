@@ -170,6 +170,9 @@ action1:
   organizationId: ""  # GUID from ?org= in Action1 console URL
   baseUrl: "https://app.action1.com/api/3.0/"
   syncIntervalMinutes: 15
+  # Scope sent in catalog update approval PATCH requests.
+  # Use "Enterprise" for Enterprise Admin API credentials; "Organization" for org-scoped credentials.
+  approvalScope: "Organization"
 
 # -- Prometheus endpoint state integration
 prometheus:

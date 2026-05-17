@@ -47,6 +47,16 @@ public sealed class Action1Options
     public int SyncIntervalMinutes { get; set; } = 15;
 
     /// <summary>
+    /// Scope sent in catalog update approval PATCH requests.
+    /// Valid values: "Organization" | "Enterprise"
+    ///
+    /// Use "Enterprise" when your API credential has an Enterprise Admin role.
+    /// Enterprise-level credentials return 403 if "Organization" is sent.
+    /// Use "Organization" (default) for org-scoped API credentials.
+    /// </summary>
+    public string ApprovalScope { get; set; } = "Organization";
+
+    /// <summary>
     /// Configuration for HM-managed Action1 automation schedules.
     /// When enabled, the broker ensures these schedules exist in Action1 on startup.
     /// </summary>
