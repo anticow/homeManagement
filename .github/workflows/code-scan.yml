@@ -1,4 +1,4 @@
-name: Code Scanning
+name: Dependency Audit
 
 on:
   push:
@@ -11,38 +11,13 @@ on:
 
 permissions:
   contents: read
-  security-events: write
-  actions: read
+
+# Note: CodeQL SAST is handled by GitHub's default setup (repository Security settings).
+# Adding a custom CodeQL job here conflicts with default setup and fails with:
+#   "CodeQL analyses from advanced configurations cannot be processed when the default setup is enabled"
+# The NuGet vulnerability audit below fills the gap for dependency CVE scanning.
 
 jobs:
-  codeql:
-    name: CodeQL (.NET)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.x'
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: csharp
-          queries: security-and-quality
-
-      - name: Build (CodeQL instrumented)
-        run: dotnet build homeManagement.sln -c Release
-
-      - name: Analyze
-        uses: github/codeql-action/analyze@v3
-        with:
-          category: /language:csharp
-
   dependency-audit:
     name: NuGet Vulnerability Audit
     runs-on: ubuntu-latest
