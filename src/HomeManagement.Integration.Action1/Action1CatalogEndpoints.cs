@@ -134,8 +134,10 @@ public static class Action1CatalogEndpoints
             CatalogApproveRequest request,
             Action1Client action1,
             IOptions<Action1Options> opts,
+            ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
+            var logger = loggerFactory.CreateLogger("Broker.Action1.Catalog");
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
@@ -180,8 +182,9 @@ public static class Action1CatalogEndpoints
                     FailedIds = failed
                 });
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                logger.LogError(ex, "Action1: {Operation} failed: {Error}", "bulk catalog approval", ex.Message);
                 return Results.Problem("Action1 approval request failed. Check broker logs for details.", statusCode: 502, title: "Action1 API Error");
             }
         });
