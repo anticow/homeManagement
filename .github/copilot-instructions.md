@@ -134,3 +134,63 @@ Abstractions ← Core ← Domain Modules ← Platform Services ← GUI/Web
 4. Helm lint (`deploy/helm/homemanagement/`)
 5. Docker image builds for all six services
 6. Platform smoke tests (full Docker Compose stack, `Category=Platform`)
+
+## Feature Development Pipeline
+
+All non-trivial changes (new features, bug fixes touching > 1 file, security fixes) **must** follow this pipeline. It is enforced by the PR template.
+
+```
+Phase 0 (optional) → Phase 1 → Phase 2 → Phase 3 (parallel) → Deploy
+  Research             Code      Build+Test   Audit              Tag + push
+  explore agent        feature-  task agent   security-auditor   vX.X.Y
+  (background)         author    (sync)       code-reviewer
+                       (background)           (both background,
+                                              same response turn)
+```
+
+### Phase 0 — Research (run before coding any external/undocumented API)
+```
+Launch: agent_type=explore, mode=background
+Prompt: "Investigate [API/pattern]. Answer:
+  1. What does [thing] actually do?
+  2. What request body fields are required?
+  3. What pattern does this repo use for similar calls?
+  Do NOT make changes."
+```
+> Skip this phase only for internal changes where the contract is already fully known.
+> **Lesson:** The Action1 approval 403 bug (v1.3.38→v1.3.39) persisted across 3 commits because Phase 0 was skipped.
+
+### Phase 1 — Coding
+```
+Launch: agent_type=general-purpose (or invoke @feature-author), mode=background
+Prompt: "Implement [feature] in [files].
+  - Follow patterns in [reference files]
+  - Do NOT commit — list changed files in your response
+  - Flag ambiguity rather than guess
+  Context: [Phase 0 output]"
+```
+
+### Phase 2 — Build + Test (gate — must be green before Phase 3)
+```
+Launch: agent_type=task, mode=sync
+Command: dotnet build homeManagement.sln -c Release && dotnet test homeManagement.sln -c Release --no-build
+```
+
+### Phase 3 — Parallel Audit (launch both in the SAME response turn)
+```
+Agent A: @security-auditor — focus on OWASP, secrets, auth, HTTP client safety
+Agent B: @code-reviewer — focus on null safety, API contracts, Blazor lifecycle, layer violations
+```
+
+### Phase 4 — Triage + Deploy
+- 🔴 CRITICAL findings → fix before commit (loop to Phase 1)
+- 🟠 HIGH findings → fix or document as accepted risk
+- 🟡 MEDIUM/LOW → log as backlog todos
+- If clean: `git add → commit → git tag vX.X.Y → git push origin vX.X.Y`
+
+### Rules
+1. **Coding agents never commit** — the human owns git history
+2. **Phase 2 is a hard gate** — broken builds block Phase 3
+3. **Phase 3 is always parallel** — security + code review are independent
+4. **Context forwarding is required** — paste Phase 1's changed-files summary into Phase 3 prompts (agents are stateless)
+5. **CRITICAL audit findings block deploy** — HIGH requires an explicit human decision to proceed

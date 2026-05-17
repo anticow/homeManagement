@@ -1,0 +1,72 @@
+name: Code Scanning
+
+on:
+  push:
+    branches: [master, main, develop]
+  pull_request:
+    branches: [master, main, develop]
+  schedule:
+    # Full scan every Sunday at 02:00 UTC
+    - cron: '0 2 * * 0'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  codeql:
+    name: CodeQL (.NET)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: csharp
+          queries: security-and-quality
+
+      - name: Build (CodeQL instrumented)
+        run: dotnet build homeManagement.sln -c Release
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:csharp
+
+  dependency-audit:
+    name: NuGet Vulnerability Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      - name: Restore
+        run: dotnet restore homeManagement.sln
+
+      - name: Audit vulnerable packages
+        run: |
+          dotnet list homeManagement.sln package --vulnerable --include-transitive 2>&1 | tee vuln-report.txt
+          # Fail if any vulnerable packages are found
+          if grep -q "has the following vulnerable packages" vuln-report.txt; then
+            echo "::error::Vulnerable NuGet packages detected — see vuln-report.txt"
+            cat vuln-report.txt
+            exit 1
+          fi
+          echo "No vulnerable packages found."
