@@ -383,35 +383,58 @@ public sealed class Action1Client : IDisposable
         // Org-specific (custom) updates use the org-scoped updates endpoint (scope required).
         var isBuiltin = updateId.EndsWith("_builtin", StringComparison.OrdinalIgnoreCase);
 
-        HttpResponseMessage resp;
-        if (isBuiltin)
+        const int maxRetries = 3;
+        var retryDelays = new[] { TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30) };
+
+        for (var attempt = 0; attempt < maxRetries; attempt++)
         {
-            var relPath = $"software-repository/all/{Uri.EscapeDataString(updateId)}/versions/{Uri.EscapeDataString(updateId)}";
-            _logger.LogDebug("Action1: PATCH {Path} approval_status={Status} (builtin)", relPath, approvalStatus);
-            resp = await PatchJsonAsync(relPath, new { approval_status = approvalStatus }, ct);
-        }
-        else
-        {
-            var relPath = $"updates/{_options.OrganizationId}/{Uri.EscapeDataString(updateId)}";
-            _logger.LogDebug("Action1: PATCH {Path} approval_status={Status} scope={Scope}", relPath, approvalStatus, scope);
-            resp = await PatchJsonAsync(relPath, new { approval_status = approvalStatus, scope }, ct);
+            HttpResponseMessage resp;
+            if (isBuiltin)
+            {
+                var relPath = $"software-repository/all/{Uri.EscapeDataString(updateId)}/versions/{Uri.EscapeDataString(updateId)}";
+                _logger.LogDebug("Action1: PATCH {Path} approval_status={Status} (builtin, attempt {Attempt})",
+                    relPath, approvalStatus, attempt + 1);
+                resp = await PatchJsonAsync(relPath, new { approval_status = approvalStatus }, ct);
+            }
+            else
+            {
+                var relPath = $"updates/{_options.OrganizationId}/{Uri.EscapeDataString(updateId)}";
+                _logger.LogDebug("Action1: PATCH {Path} approval_status={Status} scope={Scope} (attempt {Attempt})",
+                    relPath, approvalStatus, scope, attempt + 1);
+                resp = await PatchJsonAsync(relPath, new { approval_status = approvalStatus, scope }, ct);
+            }
+
+            if (resp.IsSuccessStatusCode) return true;
+
+            var content = await resp.Content.ReadAsStringAsync(ct);
+
+            if (resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+            {
+                if (attempt < maxRetries - 1)
+                {
+                    _logger.LogWarning(
+                        "Action1: PATCH approval for {Id} rate-limited (429). Waiting {Delay}s before retry {Next}/{Max}.",
+                        updateId, retryDelays[attempt].TotalSeconds, attempt + 2, maxRetries);
+                    await Task.Delay(retryDelays[attempt], ct);
+                    continue;
+                }
+                _logger.LogError("Action1: PATCH approval for {Id} rate-limited after {Max} attempts.", updateId, maxRetries);
+            }
+            else if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                _logger.LogError(
+                    "Action1: PATCH approval for {Id} returned 403 Forbidden. " +
+                    "Check API credential role in Action1 console → Configuration → Users & API Credentials.",
+                    updateId);
+            }
+            else
+            {
+                _logger.LogWarning("Action1: PATCH approval for {Id} returned {Status}: {Content}",
+                    updateId, (int)resp.StatusCode, content);
+            }
+            return false;
         }
 
-        if (resp.IsSuccessStatusCode) return true;
-
-        var content = await resp.Content.ReadAsStringAsync(ct);
-        if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
-        {
-            _logger.LogError(
-                "Action1: PATCH approval for {Id} returned 403 Forbidden. " +
-                "Check API credential role in Action1 console → Configuration → Users & API Credentials.",
-                updateId);
-        }
-        else
-        {
-            _logger.LogWarning("Action1: PATCH approval for {Id} returned {Status}: {Content}",
-                updateId, (int)resp.StatusCode, content);
-        }
         return false;
     }
 
