@@ -94,8 +94,13 @@ public interface IBrokerApi
     [Get("/api/action1/catalog/test")]
     Task<CatalogTestResultDto> TestCatalogConnectionAsync(CancellationToken ct = default);
 
+    /// <summary>Start a background bulk-approval job. Returns immediately with a jobId to poll.</summary>
     [Post("/api/action1/catalog/approve")]
-    Task<CatalogApproveResultDto> ApproveCatalogUpdatesAsync([Body] CatalogApproveRequestDto request, CancellationToken ct = default);
+    Task<ApprovalJobStartedDto> StartApprovalJobAsync([Body] CatalogApproveRequestDto request, CancellationToken ct = default);
+
+    /// <summary>Poll the status of a running or completed approval job.</summary>
+    [Get("/api/action1/catalog/approve/{jobId}")]
+    Task<ApprovalJobStatusDto> GetApprovalJobStatusAsync(string jobId, CancellationToken ct = default);
 
     // ── Jobs ──
     [Get("/api/jobs")]
@@ -287,9 +292,17 @@ public sealed record CatalogApproveRequestDto(
     string ApprovalStatus = "Approved",
     string? Scope = null);
 
-public sealed record CatalogApproveResultDto(
-    int Approved,
+/// <summary>Returned by POST /api/action1/catalog/approve — poll jobId for progress.</summary>
+public sealed record ApprovalJobStartedDto(string JobId);
+
+/// <summary>Returned by GET /api/action1/catalog/approve/{jobId}.</summary>
+public sealed record ApprovalJobStatusDto(
+    string JobId,
+    int Total,
+    int Processed,
+    int Succeeded,
     int Failed,
+    bool IsComplete,
     IReadOnlyList<string> FailedIds);
 
 public sealed record CatalogTestResultDto(

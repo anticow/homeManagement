@@ -38,6 +38,7 @@ builder.Services.AddHomeManagementAuthRepositories();
 builder.Services.AddHomeManagement(dataDirectory);
 builder.Services.AddHomeManagementLogging(dataDirectory);
 builder.Services.AddAction1Integration(builder.Configuration);
+builder.Services.AddApprovalJobStore();
 builder.Services.AddPrometheusIntegration(builder.Configuration);
 builder.Services.AddHomeManagementAuth(builder.Configuration);
 builder.Services

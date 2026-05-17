@@ -22,16 +22,36 @@
     <div style="background:@(_approveResult.Failed == 0 ? "#e8f5e9" : "#fff3e0"); border:1px solid @(_approveResult.Failed == 0 ? "#388e3c" : "#f57c00"); border-radius:4px; padding:12px; margin-bottom:16px;">
         @if (_approveResult.Failed == 0)
         {
-            <strong style="color:#388e3c;">✔ @_approveResult.Approved update(s) approved successfully.</strong>
+            <strong style="color:#388e3c;">✔ @_approveResult.Succeeded update(s) approved successfully.</strong>
         }
         else
         {
-            <strong>⚠ @_approveResult.Approved approved, @_approveResult.Failed failed.</strong>
+            <strong>⚠ @_approveResult.Succeeded approved, @_approveResult.Failed failed.</strong>
             @if (_approveResult.FailedIds.Count > 0)
             {
                 <div style="margin-top:4px; font-size:0.85rem; color:#c62828;">Failed IDs: @string.Join(", ", _approveResult.FailedIds)</div>
             }
         }
+    </div>
+}
+
+@* Progress bar — visible while a job is running *@
+@if (_jobProgress is not null && !_jobProgress.IsComplete)
+{
+    var pct = _jobProgress.Total > 0 ? (int)(_jobProgress.Processed * 100.0 / _jobProgress.Total) : 0;
+    <div style="margin-bottom:16px; background:#e3f2fd; border:1px solid #1976d2; border-radius:6px; padding:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span style="font-size:0.88rem; font-weight:600; color:#1565c0;">
+                Approving… @_jobProgress.Processed / @_jobProgress.Total
+            </span>
+            <span style="font-size:0.82rem; color:#555;">
+                ✔ @_jobProgress.Succeeded succeeded&nbsp; @if (_jobProgress.Failed > 0) { <span style="color:#c62828;">✗ @_jobProgress.Failed failed</span> }
+            </span>
+        </div>
+        <div style="background:#bbdefb; border-radius:4px; height:8px; overflow:hidden;">
+            <div style="background:#1976d2; width:@(pct)%; height:100%; border-radius:4px; transition:width 0.4s ease;"></div>
+        </div>
+        <div style="margin-top:4px; font-size:0.78rem; color:#555;">@pct% — items with 429 rate limits will retry automatically after a 60s cool-down</div>
     </div>
 }
 
@@ -183,7 +203,8 @@ else if (_updates is not null)
     private string _currentStatus = "New";
     private string _severityFilter = "All";
     private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
-    private CatalogApproveResultDto? _approveResult;
+    private ApprovalJobStatusDto? _approveResult;
+    private ApprovalJobStatusDto? _jobProgress;
     private CatalogTestResultDto? _testResult;
 
     // Cached counts per status tab
@@ -330,10 +351,31 @@ else if (_updates is not null)
     {
         _submitting = true;
         _approveResult = null;
+        _jobProgress = null;
         try
         {
-            var request = new CatalogApproveRequestDto(ids, status);
-            _approveResult = await BrokerApi.ApproveCatalogUpdatesAsync(request);
+            // Start the background job — returns immediately with a jobId.
+            var started = await BrokerApi.StartApprovalJobAsync(new CatalogApproveRequestDto(ids, status));
+            var jobId = started.JobId;
+
+            // Poll for progress every 2 seconds until the job completes.
+            while (true)
+            {
+                await Task.Delay(2000);
+                try
+                {
+                    _jobProgress = await BrokerApi.GetApprovalJobStatusAsync(jobId);
+                    StateHasChanged();
+                    if (_jobProgress.IsComplete) break;
+                }
+                catch
+                {
+                    // Swallow transient poll errors — the job is still running server-side.
+                }
+            }
+
+            _approveResult = _jobProgress;
+            _jobProgress = null;
             await Reload();
             _ = LoadStatusCountsAsync();
         }
@@ -344,6 +386,7 @@ else if (_updates is not null)
         finally
         {
             _submitting = false;
+            StateHasChanged();
         }
     }
 
