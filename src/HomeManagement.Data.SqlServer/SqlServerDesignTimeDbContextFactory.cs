@@ -14,7 +14,7 @@ public sealed class SqlServerDesignTimeDbContextFactory : IDesignTimeDbContextFa
     {
         var options = new DbContextOptionsBuilder<HomeManagementDbContext>()
             .UseSqlServer(
-                "Server=localhost;Database=HomeManagement;Trusted_Connection=True;TrustServerCertificate=True;",
+                "Server=localhost;Database=HomeManagement;Trusted_Connection=True;TrustServerCertificate=True;", // Design-time localhost only — MUST NOT be copied as a production connection string template.
                 sql => sql.MigrationsAssembly(typeof(SqlServerDesignTimeDbContextFactory).Assembly.FullName))
             .Options;
 

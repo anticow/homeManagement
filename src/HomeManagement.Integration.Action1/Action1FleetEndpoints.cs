@@ -4,6 +4,7 @@ using HomeManagement.Integration.Action1.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace HomeManagement.Integration.Action1;
@@ -30,8 +31,10 @@ public static class Action1FleetEndpoints
             Action1Client action1,
             IInventoryService inventory,
             IOptions<Action1Options> opts,
+            ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
+            var logger = loggerFactory.CreateLogger("Broker.Action1.Fleet");
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
@@ -103,7 +106,8 @@ public static class Action1FleetEndpoints
             }
             catch (Exception ex)
             {
-                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+                logger.LogError(ex, "Action1: {Operation} failed: {Error}", "listing fleet status", ex.Message);
+                return Results.Problem("Action1 API request failed. Check broker logs.", statusCode: 502, title: "Action1 API Error");
             }
         });
 
@@ -111,8 +115,10 @@ public static class Action1FleetEndpoints
             Action1Client action1,
             IInventoryService inventory,
             IOptions<Action1Options> opts,
+            ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
+            var logger = loggerFactory.CreateLogger("Broker.Action1.Fleet");
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
@@ -154,7 +160,8 @@ public static class Action1FleetEndpoints
             }
             catch (Exception ex)
             {
-                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+                logger.LogError(ex, "Action1: {Operation} failed: {Error}", "building fleet patch summary", ex.Message);
+                return Results.Problem("Action1 API request failed. Check broker logs.", statusCode: 502, title: "Action1 API Error");
             }
         });
 
@@ -163,8 +170,10 @@ public static class Action1FleetEndpoints
             Action1Client action1,
             IInventoryService inventory,
             IOptions<Action1Options> opts,
+            ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
+            var logger = loggerFactory.CreateLogger("Broker.Action1.Fleet");
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
@@ -179,7 +188,8 @@ public static class Action1FleetEndpoints
             }
             catch (Exception ex)
             {
-                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+                logger.LogError(ex, "Action1: {Operation} failed: {Error}", "fetching machine patches", ex.Message);
+                return Results.Problem("Action1 API request failed. Check broker logs.", statusCode: 502, title: "Action1 API Error");
             }
         });
 
@@ -189,8 +199,10 @@ public static class Action1FleetEndpoints
             Action1Client action1,
             IInventoryService inventory,
             IOptions<Action1Options> opts,
+            ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
+            var logger = loggerFactory.CreateLogger("Broker.Action1.Fleet");
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
@@ -221,7 +233,8 @@ public static class Action1FleetEndpoints
             }
             catch (Exception ex)
             {
-                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+                logger.LogError(ex, "Action1: {Operation} failed: {Error}", "approving patches for machine", ex.Message);
+                return Results.Problem("Action1 API request failed. Check broker logs.", statusCode: 502, title: "Action1 API Error");
             }
         });
 
@@ -230,8 +243,10 @@ public static class Action1FleetEndpoints
         group.MapGet("vulnerabilities", async (
             Action1Client action1,
             IOptions<Action1Options> opts,
+            ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
+            var logger = loggerFactory.CreateLogger("Broker.Action1.Fleet");
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
@@ -242,7 +257,8 @@ public static class Action1FleetEndpoints
             }
             catch (Exception ex)
             {
-                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+                logger.LogError(ex, "Action1: {Operation} failed: {Error}", "fetching fleet vulnerabilities", ex.Message);
+                return Results.Problem("Action1 API request failed. Check broker logs.", statusCode: 502, title: "Action1 API Error");
             }
         });
 
@@ -253,8 +269,10 @@ public static class Action1FleetEndpoints
             Action1Client action1,
             IInventoryService inventory,
             IOptions<Action1Options> opts,
+            ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
+            var logger = loggerFactory.CreateLogger("Broker.Action1.Fleet");
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
@@ -329,7 +347,8 @@ public static class Action1FleetEndpoints
             }
             catch (Exception ex)
             {
-                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+                logger.LogError(ex, "Action1: {Operation} failed: {Error}", "loading pending patches", ex.Message);
+                return Results.Problem("Action1 API request failed. Check broker logs.", statusCode: 502, title: "Action1 API Error");
             }
         });
 
@@ -349,8 +368,10 @@ public static class Action1FleetEndpoints
         group.MapGet("", async (
             Action1Client action1,
             IOptions<Action1Options> opts,
+            ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
+            var logger = loggerFactory.CreateLogger("Broker.Action1.Fleet");
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
@@ -367,7 +388,8 @@ public static class Action1FleetEndpoints
             }
             catch (Exception ex)
             {
-                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+                logger.LogError(ex, "Action1: {Operation} failed: {Error}", "listing schedules", ex.Message);
+                return Results.Problem("Action1 API request failed. Check broker logs.", statusCode: 502, title: "Action1 API Error");
             }
         });
 
@@ -376,8 +398,10 @@ public static class Action1FleetEndpoints
         group.MapPost("sync", async (
             Action1Client action1,
             IOptions<Action1Options> opts,
+            ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
+            var logger = loggerFactory.CreateLogger("Broker.Action1.Fleet");
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
@@ -417,7 +441,8 @@ public static class Action1FleetEndpoints
             }
             catch (Exception ex)
             {
-                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+                logger.LogError(ex, "Action1: {Operation} failed: {Error}", "syncing schedules", ex.Message);
+                return Results.Problem("Action1 API request failed. Check broker logs.", statusCode: 502, title: "Action1 API Error");
             }
         });
 
@@ -427,8 +452,10 @@ public static class Action1FleetEndpoints
             SchedulePatchRequest request,
             Action1Client action1,
             IOptions<Action1Options> opts,
+            ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
+            var logger = loggerFactory.CreateLogger("Broker.Action1.Fleet");
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
@@ -446,7 +473,8 @@ public static class Action1FleetEndpoints
             }
             catch (Exception ex)
             {
-                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+                logger.LogError(ex, "Action1: {Operation} failed: {Error}", "updating schedule", ex.Message);
+                return Results.Problem("Action1 API request failed. Check broker logs.", statusCode: 502, title: "Action1 API Error");
             }
         });
 
@@ -455,8 +483,10 @@ public static class Action1FleetEndpoints
             string scheduleId,
             Action1Client action1,
             IOptions<Action1Options> opts,
+            ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
+            var logger = loggerFactory.CreateLogger("Broker.Action1.Fleet");
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
@@ -480,7 +510,8 @@ public static class Action1FleetEndpoints
             }
             catch (Exception ex)
             {
-                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+                logger.LogError(ex, "Action1: {Operation} failed: {Error}", "deleting schedule", ex.Message);
+                return Results.Problem("Action1 API request failed. Check broker logs.", statusCode: 502, title: "Action1 API Error");
             }
         });
 
@@ -565,8 +596,10 @@ public static class Action1FleetEndpoints
         group.MapGet("", async (
             Action1Client action1,
             IOptions<Action1Options> opts,
+            ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
+            var logger = loggerFactory.CreateLogger("Broker.Action1.Fleet");
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
@@ -670,7 +703,8 @@ public static class Action1FleetEndpoints
             }
             catch (Exception ex)
             {
-                return Results.Problem(ex.Message, statusCode: 502, title: "Action1 API Error");
+                logger.LogError(ex, "Action1: {Operation} failed: {Error}", "listing Action1 clients", ex.Message);
+                return Results.Problem("Action1 API request failed. Check broker logs.", statusCode: 502, title: "Action1 API Error");
             }
         });
 
