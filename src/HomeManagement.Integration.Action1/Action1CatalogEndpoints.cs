@@ -94,7 +94,7 @@ public static class Action1CatalogEndpoints
 
         // ── Probe approval endpoint ──────────────────────────────────────────────
         // POST /api/action1/catalog/probe-approve
-        // Body: { "updateId": "<id>", "approvalStatus": "Approved" }
+        // Body: { "updateId": "<id>", "approvalStatus": "Approved", "scope": "Organization" }
         // Calls SetCatalogApprovalAsync for a single update and returns detailed status.
         // Use this to test the actual Action1 API response without triggering bulk approval.
         group.MapPost("probe-approve", async (
@@ -108,11 +108,11 @@ public static class Action1CatalogEndpoints
                 return Results.Ok(new { success = false, error = "Action1 not enabled" });
 
             var logger = loggerFactory.CreateLogger("Broker.Action1.ProbeApprove");
-            logger.LogInformation("Probe: PATCH approval test for updateId={Id} status={Status}",
-                request.UpdateId, request.ApprovalStatus);
+            logger.LogInformation("Probe: PATCH approval test for updateId={Id} status={Status} scope={Scope}",
+                request.UpdateId, request.ApprovalStatus, request.Scope);
 
-            var ok = await action1.SetCatalogApprovalAsync(request.UpdateId, request.ApprovalStatus, ct);
-            return Results.Ok(new { success = ok, updateId = request.UpdateId, approvalStatus = request.ApprovalStatus });
+            var ok = await action1.SetCatalogApprovalAsync(request.UpdateId, request.ApprovalStatus, request.Scope, ct);
+            return Results.Ok(new { success = ok, updateId = request.UpdateId, approvalStatus = request.ApprovalStatus, scope = request.Scope });
         });
 
         // ── Bulk approve / decline catalog updates ────────────────────────────
@@ -148,7 +148,7 @@ public static class Action1CatalogEndpoints
                     await semaphore.WaitAsync(ct);
                     try
                     {
-                        var ok = await action1.SetCatalogApprovalAsync(id, request.ApprovalStatus, ct);
+                        var ok = await action1.SetCatalogApprovalAsync(id, request.ApprovalStatus, request.Scope, ct);
                         return (Id: id, Success: ok);
                     }
                     finally
@@ -192,12 +192,13 @@ public static class Action1CatalogEndpoints
 }
 
 /// <summary>Single-update approval probe request for endpoint testing.</summary>
-public sealed record ProbeApproveRequest(string UpdateId, string ApprovalStatus = "Approved");
+public sealed record ProbeApproveRequest(string UpdateId, string ApprovalStatus = "Approved", string Scope = "Organization");
 
 /// <summary>Bulk catalog approval/decline request.</summary>
 public sealed record CatalogApproveRequest(
     IReadOnlyList<string> UpdateIds,
-    string ApprovalStatus = "Approved");
+    string ApprovalStatus = "Approved",
+    string Scope = "Organization");
 
 /// <summary>Broker-side DTO for a catalog update item.</summary>
 public sealed record CatalogUpdateDto(
