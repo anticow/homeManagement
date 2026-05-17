@@ -131,8 +131,8 @@ public static class Action1CatalogEndpoints
             logger.LogInformation("Probe: PATCH approval test for updateId={Id} status={Status} scope={Scope}",
                 request.UpdateId, request.ApprovalStatus, resolvedScope);
 
-            var ok = await action1.SetCatalogApprovalAsync(request.UpdateId, request.ApprovalStatus, resolvedScope, ct);
-            return Results.Ok(new { success = ok, updateId = request.UpdateId, approvalStatus = request.ApprovalStatus, scope = resolvedScope });
+            var outcome = await action1.SetCatalogApprovalAsync(request.UpdateId, request.ApprovalStatus, resolvedScope, ct);
+            return Results.Ok(new { success = outcome == ApprovalOutcome.Success, outcome = outcome.ToString(), updateId = request.UpdateId, approvalStatus = request.ApprovalStatus, scope = resolvedScope });
         });
 
         // ── Bulk approve / decline — start background job, return job ID immediately ──
@@ -141,7 +141,6 @@ public static class Action1CatalogEndpoints
         // Returns: { jobId: "abc123" } — poll GET /api/action1/catalog/approve/{jobId} for progress
         group.MapPost("approve", (
             CatalogApproveRequest request,
-            Action1Client action1,
             ApprovalJobStore jobStore,
             IOptions<Action1Options> opts,
             ILoggerFactory loggerFactory,
@@ -167,9 +166,10 @@ public static class Action1CatalogEndpoints
             var jobId = jobStore.CreateJob(ids.Count);
             var logger = loggerFactory.CreateLogger("Broker.Action1.Catalog");
 
-            // Fire-and-forget — process items in the background so the HTTP response returns immediately.
+            // Fire-and-forget with a dedicated DI scope so Action1Client (typed HTTP client,
+            // scoped lifetime) is NOT disposed when the HTTP request scope ends at 202 return.
             _ = Task.Run(() => RunApprovalJobAsync(jobId, ids, request.ApprovalStatus, resolvedScope,
-                action1, jobStore, logger));
+                scopeFactory, jobStore, logger));
 
             return Results.Accepted($"/api/action1/catalog/approve/{jobId}", new { jobId });
         });
@@ -191,16 +191,23 @@ public static class Action1CatalogEndpoints
     /// Background worker: sequential approval with 300ms inter-request delay.
     /// Items that exhaust their per-item 429 retries are collected and re-attempted
     /// in a second pass after a 60-second cool-down.
+    ///
+    /// Owns its own DI scope so Action1Client (typed HTTP client, scoped lifetime)
+    /// is not disposed when the originating HTTP request scope ends.
     /// </summary>
     private static async Task RunApprovalJobAsync(
         string jobId,
         IReadOnlyList<string> ids,
         string approvalStatus,
         string scope,
-        Action1Client action1,
+        IServiceScopeFactory scopeFactory,
         ApprovalJobStore jobStore,
         ILogger logger)
     {
+        // Create a dedicated scope that lives for the duration of the background job.
+        await using var jobScope = scopeFactory.CreateAsyncScope();
+        var action1 = jobScope.ServiceProvider.GetRequiredService<Action1Client>();
+
         var rateLimited = new List<string>();
 
         // ── First pass ────────────────────────────────────────────────────────
