@@ -210,10 +210,10 @@ public sealed record Action1CatalogUpdate(
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("version")] string? Version,
     [property: JsonPropertyName("description")] string? Description,
-    [property: JsonPropertyName("severity")] string Severity,
-    [property: JsonPropertyName("category")] string Category,
+    [property: JsonPropertyName("severity")] string? Severity,
+    [property: JsonPropertyName("category")] string? Category,
     [property: JsonPropertyName("update_type")] string? UpdateType,
-    [property: JsonPropertyName("approval_status")] string ApprovalStatus,
+    [property: JsonPropertyName("approval_status")] string? ApprovalStatus,
     [property: JsonPropertyName("size_bytes")]
     [property: JsonConverter(typeof(FlexibleIntConverter))]
     int SizeBytes,

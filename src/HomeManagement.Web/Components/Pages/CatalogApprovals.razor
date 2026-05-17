@@ -145,10 +145,10 @@ else if (_updates is not null)
                             }
                         </td>
                         <td style="padding:8px 12px;">
-                            <span style="@SeverityBadgeStyle(u.Severity)">@u.Severity</span>
+                            <span style="@SeverityBadgeStyle(u.Severity)">@(u.Severity ?? "—")</span>
                         </td>
                         <td style="padding:8px 12px; color:#555; white-space:nowrap;">@(u.Version ?? "—")</td>
-                        <td style="padding:8px 12px; color:#555; white-space:nowrap; font-size:0.8rem;">@(u.UpdateType ?? u.Category)</td>
+                        <td style="padding:8px 12px; color:#555; white-space:nowrap; font-size:0.8rem;">@(u.UpdateType ?? u.Category ?? "—")</td>
                         <td style="padding:8px 12px; color:#555; white-space:nowrap; font-size:0.8rem;">
                             @(u.PublishedUtc.HasValue ? u.PublishedUtc.Value.ToString("MM/dd/yyyy") : "—")
                         </td>
@@ -165,7 +165,7 @@ else if (_updates is not null)
                             @(u.RequiresReboot ? "🔄" : "—")
                         </td>
                         <td style="padding:8px 12px;">
-                            <span style="@ApprovalBadgeStyle(u.ApprovalStatus)">@u.ApprovalStatus</span>
+                            <span style="@ApprovalBadgeStyle(u.ApprovalStatus)">@(u.ApprovalStatus ?? "—")</span>
                         </td>
                     </tr>
                 }
@@ -370,7 +370,7 @@ else if (_updates is not null)
             ? "padding:4px 10px; background:#1565c0; color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.8rem;"
             : "padding:4px 10px; background:white; color:#333; border:1px solid #ccc; border-radius:4px; cursor:pointer; font-size:0.8rem;";
 
-    private static string SeverityBadgeStyle(string severity) => severity.ToLowerInvariant() switch
+    private static string SeverityBadgeStyle(string? severity) => (severity ?? "").ToLowerInvariant() switch
     {
         "critical"  => "background:#c62828; color:white; border-radius:10px; padding:2px 8px; font-size:0.78rem; font-weight:600;",
         "important" => "background:#e65100; color:white; border-radius:10px; padding:2px 8px; font-size:0.78rem;",
@@ -379,7 +379,7 @@ else if (_updates is not null)
         _           => "background:#eeeeee; color:#555; border-radius:10px; padding:2px 8px; font-size:0.78rem;"
     };
 
-    private static string ApprovalBadgeStyle(string status) => status.ToLowerInvariant() switch
+    private static string ApprovalBadgeStyle(string? status) => (status ?? "").ToLowerInvariant() switch
     {
         "approved" => "color:#388e3c; font-weight:600; font-size:0.82rem;",
         "declined" => "color:#c62828; font-weight:600; font-size:0.82rem;",

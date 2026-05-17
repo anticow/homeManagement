@@ -179,10 +179,10 @@ public sealed record CatalogUpdateDto(
     string Name,
     string? Version,
     string? Description,
-    string Severity,
-    string Category,
+    string? Severity,
+    string? Category,
     string? UpdateType,
-    string ApprovalStatus,
+    string? ApprovalStatus,
     bool RequiresReboot,
     DateTime? PublishedUtc,
     string? KbArticleId);
