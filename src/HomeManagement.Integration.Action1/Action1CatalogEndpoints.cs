@@ -158,25 +158,19 @@ public static class Action1CatalogEndpoints
 
             try
             {
-                // Fan out with limited concurrency — stay under Action1 rate limit.
-                using var semaphore = new SemaphoreSlim(5);
-                var tasks = request.UpdateIds.Select(async id =>
-                {
-                    await semaphore.WaitAsync(ct);
-                    try
-                    {
-                        var ok = await action1.SetCatalogApprovalAsync(id, request.ApprovalStatus, resolvedScope, ct);
-                        return (Id: id, Success: ok);
-                    }
-                    finally
-                    {
-                        semaphore.Release();
-                    }
-                });
+                // Sequential execution with inter-request delay to respect Action1 rate limits.
+                // Parallel requests consistently trigger 429 — the API has a low per-credential rate limit.
+                var succeeded = new List<string>();
+                var failed = new List<string>();
 
-                var results = await Task.WhenAll(tasks);
-                var succeeded = results.Where(r => r.Success).Select(r => r.Id).ToList();
-                var failed = results.Where(r => !r.Success).Select(r => r.Id).ToList();
+                foreach (var id in request.UpdateIds)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var ok = await action1.SetCatalogApprovalAsync(id, request.ApprovalStatus, resolvedScope, ct);
+                    (ok ? succeeded : failed).Add(id);
+                    // Brief pause between requests to avoid hitting the Action1 rate limit.
+                    await Task.Delay(300, ct);
+                }
 
                 return Results.Ok(new
                 {
