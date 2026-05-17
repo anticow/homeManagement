@@ -116,8 +116,11 @@ public sealed class BrokerApiClient : IBrokerApi, IDisposable
     public Task<IReadOnlyList<CatalogUpdateDto>> GetCatalogUpdatesAsync(string approvalStatus = "New", CancellationToken ct = default)
         => ExecuteAsync(api => api.GetCatalogUpdatesAsync(approvalStatus, ct), ct);
 
-    public Task<CatalogApproveResultDto> ApproveCatalogUpdatesAsync(CatalogApproveRequestDto request, CancellationToken ct = default)
-        => ExecuteAsync(api => api.ApproveCatalogUpdatesAsync(request, ct), ct);
+    public Task<ApprovalJobStartedDto> StartApprovalJobAsync(CatalogApproveRequestDto request, CancellationToken ct = default)
+        => ExecuteAsync(api => api.StartApprovalJobAsync(request, ct), ct);
+
+    public Task<ApprovalJobStatusDto> GetApprovalJobStatusAsync(string jobId, CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetApprovalJobStatusAsync(jobId, ct), ct);
 
     public Task<CatalogTestResultDto> TestCatalogConnectionAsync(CancellationToken ct = default)
         => ExecuteAsync(api => api.TestCatalogConnectionAsync(ct), ct);

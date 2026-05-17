@@ -2,6 +2,7 @@ using HomeManagement.Integration.Action1.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -11,8 +12,10 @@ namespace HomeManagement.Integration.Action1;
 /// Broker REST endpoints for managing the Action1 org-level update catalog.
 ///
 /// Routes:
-///   GET  /api/action1/catalog          — List catalog updates (filtered by approval_status)
-///   POST /api/action1/catalog/approve  — Bulk set approval status on selected update IDs
+///   GET  /api/action1/catalog                    — List catalog updates (filtered by approval_status)
+///   POST /api/action1/catalog/approve             — Start a background bulk-approval job; returns { jobId }
+///   GET  /api/action1/catalog/approve/{jobId}     — Poll job progress
+///   POST /api/action1/catalog/probe-approve       — Single-update test endpoint
 ///
 /// Background:
 ///   Action1 maintains an org-level "update catalog" — a list of discovered updates
@@ -23,6 +26,10 @@ namespace HomeManagement.Integration.Action1;
 /// </summary>
 public static class Action1CatalogEndpoints
 {
+    /// <summary>Register the ApprovalJobStore singleton. Call from Program.cs / DI setup.</summary>
+    public static IServiceCollection AddApprovalJobStore(this IServiceCollection services) =>
+        services.AddSingleton<ApprovalJobStore>();
+
     public static IEndpointRouteBuilder MapAction1CatalogEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/action1/catalog")
@@ -128,24 +135,23 @@ public static class Action1CatalogEndpoints
             return Results.Ok(new { success = ok, updateId = request.UpdateId, approvalStatus = request.ApprovalStatus, scope = resolvedScope });
         });
 
-        // ── Bulk approve / decline catalog updates ────────────────────────────
+        // ── Bulk approve / decline — start background job, return job ID immediately ──
         // POST /api/action1/catalog/approve
         // Body: { UpdateIds: ["id1","id2"], ApprovalStatus: "Approved" }
-        group.MapPost("approve", async (
+        // Returns: { jobId: "abc123" } — poll GET /api/action1/catalog/approve/{jobId} for progress
+        group.MapPost("approve", (
             CatalogApproveRequest request,
             Action1Client action1,
+            ApprovalJobStore jobStore,
             IOptions<Action1Options> opts,
             ILoggerFactory loggerFactory,
-            CancellationToken ct) =>
+            IServiceScopeFactory scopeFactory) =>
         {
-            var logger = loggerFactory.CreateLogger("Broker.Action1.Catalog");
             if (!opts.Value.Enabled)
                 return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
 
             if (request.UpdateIds is null || request.UpdateIds.Count == 0)
                 return Results.BadRequest(new { Message = "At least one update ID is required." });
-
-            var resolvedScope = request.Scope ?? opts.Value.ApprovalScope;
 
             var validStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
                 { "Approved", "Declined", "New" };
@@ -156,37 +162,102 @@ public static class Action1CatalogEndpoints
                     Message = $"Invalid ApprovalStatus '{request.ApprovalStatus}'. Must be Approved, Declined, or New."
                 });
 
-            try
-            {
-                // Sequential execution with inter-request delay to respect Action1 rate limits.
-                // Parallel requests consistently trigger 429 — the API has a low per-credential rate limit.
-                var succeeded = new List<string>();
-                var failed = new List<string>();
+            var resolvedScope = request.Scope ?? opts.Value.ApprovalScope;
+            var ids = request.UpdateIds.ToList();
+            var jobId = jobStore.CreateJob(ids.Count);
+            var logger = loggerFactory.CreateLogger("Broker.Action1.Catalog");
 
-                foreach (var id in request.UpdateIds)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    var ok = await action1.SetCatalogApprovalAsync(id, request.ApprovalStatus, resolvedScope, ct);
-                    (ok ? succeeded : failed).Add(id);
-                    // Brief pause between requests to avoid hitting the Action1 rate limit.
-                    await Task.Delay(300, ct);
-                }
+            // Fire-and-forget — process items in the background so the HTTP response returns immediately.
+            _ = Task.Run(() => RunApprovalJobAsync(jobId, ids, request.ApprovalStatus, resolvedScope,
+                action1, jobStore, logger));
 
-                return Results.Ok(new
-                {
-                    Approved = succeeded.Count,
-                    Failed = failed.Count,
-                    FailedIds = failed
-                });
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Action1: {Operation} failed: {Error}", "bulk catalog approval", ex.Message);
-                return Results.Problem("Action1 approval request failed. Check broker logs for details.", statusCode: 502, title: "Action1 API Error");
-            }
+            return Results.Accepted($"/api/action1/catalog/approve/{jobId}", new { jobId });
+        });
+
+        // ── Poll job progress ─────────────────────────────────────────────────
+        // GET /api/action1/catalog/approve/{jobId}
+        group.MapGet("approve/{jobId}", (string jobId, ApprovalJobStore jobStore) =>
+        {
+            var status = jobStore.GetStatus(jobId);
+            return status is null
+                ? Results.NotFound(new { Message = $"Job '{jobId}' not found or has expired." })
+                : Results.Ok(status);
         });
 
         return app;
+    }
+
+    /// <summary>
+    /// Background worker: sequential approval with 300ms inter-request delay.
+    /// Items that exhaust their per-item 429 retries are collected and re-attempted
+    /// in a second pass after a 60-second cool-down.
+    /// </summary>
+    private static async Task RunApprovalJobAsync(
+        string jobId,
+        IReadOnlyList<string> ids,
+        string approvalStatus,
+        string scope,
+        Action1Client action1,
+        ApprovalJobStore jobStore,
+        ILogger logger)
+    {
+        var rateLimited = new List<string>();
+
+        // ── First pass ────────────────────────────────────────────────────────
+        foreach (var id in ids)
+        {
+            try
+            {
+                var outcome = await action1.SetCatalogApprovalAsync(id, approvalStatus, scope);
+                if (outcome == ApprovalOutcome.Success)
+                    jobStore.RecordSuccess(jobId);
+                else if (outcome == ApprovalOutcome.RateLimitExhausted)
+                    rateLimited.Add(id);         // retry in second pass
+                else
+                    jobStore.RecordFailure(jobId, id);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Action1: unhandled error approving {Id}", id);
+                jobStore.RecordFailure(jobId, id);
+            }
+
+            await Task.Delay(300);
+        }
+
+        // ── Second pass (rate-limited items only) ─────────────────────────────
+        if (rateLimited.Count > 0)
+        {
+            logger.LogInformation(
+                "Action1: job {JobId} — {Count} item(s) were rate-limited; retrying after 60s cool-down.",
+                jobId, rateLimited.Count);
+            await Task.Delay(TimeSpan.FromSeconds(60));
+
+            foreach (var id in rateLimited)
+            {
+                try
+                {
+                    var outcome = await action1.SetCatalogApprovalAsync(id, approvalStatus, scope);
+                    if (outcome == ApprovalOutcome.Success)
+                        jobStore.RecordSuccess(jobId);
+                    else
+                        jobStore.RecordFailure(jobId, id);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Action1: unhandled error on retry for {Id}", id);
+                    jobStore.RecordFailure(jobId, id);
+                }
+
+                await Task.Delay(500); // slightly more conservative on second pass
+            }
+        }
+
+        jobStore.Complete(jobId);
+        var final = jobStore.GetStatus(jobId);
+        logger.LogInformation(
+            "Action1: job {JobId} complete — {Succeeded} succeeded, {Failed} failed of {Total}.",
+            jobId, final?.Succeeded, final?.Failed, final?.Total);
     }
 
     private static CatalogUpdateDto MapCatalogDto(Action1CatalogUpdate u) => new(

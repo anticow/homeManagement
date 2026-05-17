@@ -376,7 +376,7 @@ public sealed class Action1Client : IDisposable
     ///
     /// Returns true on success (2xx), false if Action1 rejects the change.
     /// </summary>
-    public async Task<bool> SetCatalogApprovalAsync(
+    public async Task<ApprovalOutcome> SetCatalogApprovalAsync(
         string updateId, string approvalStatus, string scope = "Organization", CancellationToken ct = default)
     {
         // Built-in catalog updates use the software-repository endpoint (no scope field).
@@ -404,7 +404,7 @@ public sealed class Action1Client : IDisposable
                 resp = await PatchJsonAsync(relPath, new { approval_status = approvalStatus, scope }, ct);
             }
 
-            if (resp.IsSuccessStatusCode) return true;
+            if (resp.IsSuccessStatusCode) return ApprovalOutcome.Success;
 
             var content = await resp.Content.ReadAsStringAsync(ct);
 
@@ -418,7 +418,8 @@ public sealed class Action1Client : IDisposable
                     await Task.Delay(retryDelays[attempt], ct);
                     continue;
                 }
-                _logger.LogError("Action1: PATCH approval for {Id} rate-limited after {Max} attempts.", updateId, maxRetries);
+                _logger.LogError("Action1: PATCH approval for {Id} rate-limited after {Max} attempts — will retry in second pass.", updateId, maxRetries);
+                return ApprovalOutcome.RateLimitExhausted;
             }
             else if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
             {
@@ -426,16 +427,17 @@ public sealed class Action1Client : IDisposable
                     "Action1: PATCH approval for {Id} returned 403 Forbidden. " +
                     "Check API credential role in Action1 console → Configuration → Users & API Credentials.",
                     updateId);
+                return ApprovalOutcome.Forbidden;
             }
             else
             {
                 _logger.LogWarning("Action1: PATCH approval for {Id} returned {Status}: {Content}",
                     updateId, (int)resp.StatusCode, content);
+                return ApprovalOutcome.Error;
             }
-            return false;
         }
 
-        return false;
+        return ApprovalOutcome.RateLimitExhausted;
     }
 
     // ── Policy instance deployment (approve & install) ────────────────────────
