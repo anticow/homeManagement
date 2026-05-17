@@ -92,6 +92,29 @@ public static class Action1CatalogEndpoints
             }
         });
 
+        // ── Probe approval endpoint ──────────────────────────────────────────────
+        // POST /api/action1/catalog/probe-approve
+        // Body: { "updateId": "<id>", "approvalStatus": "Approved" }
+        // Calls SetCatalogApprovalAsync for a single update and returns detailed status.
+        // Use this to test the actual Action1 API response without triggering bulk approval.
+        group.MapPost("probe-approve", async (
+            ProbeApproveRequest request,
+            Action1Client action1,
+            IOptions<Action1Options> opts,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct = default) =>
+        {
+            if (!opts.Value.Enabled)
+                return Results.Ok(new { success = false, error = "Action1 not enabled" });
+
+            var logger = loggerFactory.CreateLogger("Broker.Action1.ProbeApprove");
+            logger.LogInformation("Probe: PATCH approval test for updateId={Id} status={Status}",
+                request.UpdateId, request.ApprovalStatus);
+
+            var ok = await action1.SetCatalogApprovalAsync(request.UpdateId, request.ApprovalStatus, ct);
+            return Results.Ok(new { success = ok, updateId = request.UpdateId, approvalStatus = request.ApprovalStatus });
+        });
+
         // ── Bulk approve / decline catalog updates ────────────────────────────
         // POST /api/action1/catalog/approve
         // Body: { UpdateIds: ["id1","id2"], ApprovalStatus: "Approved" }
@@ -167,6 +190,9 @@ public static class Action1CatalogEndpoints
         PublishedUtc: u.PublishedUtc,
         KbArticleId: u.KbArticleId);
 }
+
+/// <summary>Single-update approval probe request for endpoint testing.</summary>
+public sealed record ProbeApproveRequest(string UpdateId, string ApprovalStatus = "Approved");
 
 /// <summary>Bulk catalog approval/decline request.</summary>
 public sealed record CatalogApproveRequest(

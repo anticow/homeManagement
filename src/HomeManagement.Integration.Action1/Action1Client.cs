@@ -361,7 +361,12 @@ public sealed class Action1Client : IDisposable
     /// <summary>
     /// Set the catalog-level approval status for a single update.
     ///
-    /// Real Action1 API: PATCH /updates/{orgId}/{updateId}
+    /// IMPORTANT: The exact Action1 API endpoint for update approval is not publicly documented.
+    /// The endpoint below was based on REST convention inference. If you receive 403 errors
+    /// despite having the correct role, inspect browser DevTools (F12 → Network → Fetch/XHR)
+    /// while approving an update manually in the Action1 console to confirm the actual URL.
+    ///
+    /// Current assumption: PATCH /updates/{orgId}/{updateId}
     ///   Body: { "approval_status": "Approved" | "Declined" | "New" }
     ///
     /// Returns true on success (2xx), false if Action1 rejects the change.
@@ -369,10 +374,10 @@ public sealed class Action1Client : IDisposable
     public async Task<bool> SetCatalogApprovalAsync(
         string updateId, string approvalStatus, CancellationToken ct = default)
     {
-        _logger.LogDebug("Action1: setting catalog approval_status={Status} for update {Id}", approvalStatus, updateId);
+        var relPath = $"updates/{_options.OrganizationId}/{Uri.EscapeDataString(updateId)}";
+        _logger.LogDebug("Action1: PATCH {Path} approval_status={Status}", relPath, approvalStatus);
         var body = new { approval_status = approvalStatus };
-        var resp = await PatchJsonAsync(
-            $"updates/{_options.OrganizationId}/{Uri.EscapeDataString(updateId)}", body, ct);
+        var resp = await PatchJsonAsync(relPath, body, ct);
 
         if (resp.IsSuccessStatusCode) return true;
 
@@ -380,15 +385,18 @@ public sealed class Action1Client : IDisposable
         if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
         {
             _logger.LogError(
-                "Action1: PATCH approval for {Id} returned 403 Forbidden. " +
-                "The API credential role does not have Update Catalog write permissions. " +
-                "Fix: Action1 console → Configuration → Users & API Credentials → assign Administrator or a role with Update Approval permission.",
-                updateId);
+                "Action1: PATCH {Path} returned 403 Forbidden. " +
+                "Possible causes: (1) API credential role lacks Update Catalog write permission " +
+                "(Action1 console → Configuration → Users & API Credentials), or " +
+                "(2) the endpoint URL is incorrect for this update type ('{UpdateId}'). " +
+                "If the role is Enterprise Admin and 403 persists, inspect browser DevTools in " +
+                "the Action1 console Update Approval view to find the actual API endpoint.",
+                relPath, updateId);
         }
         else
         {
-            _logger.LogWarning("Action1: PATCH approval for {Id} returned {Status}: {Content}",
-                updateId, (int)resp.StatusCode, content);
+            _logger.LogWarning("Action1: PATCH {Path} returned {Status}: {Content}",
+                relPath, (int)resp.StatusCode, content);
         }
         return false;
     }
