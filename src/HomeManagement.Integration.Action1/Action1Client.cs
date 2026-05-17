@@ -119,9 +119,11 @@ public sealed class Action1Client : IDisposable
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         var resp = await _http.SendAsync(req, ct);
 
-        if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        // Only retry on 401 (token expired). 403 = permission denied — refreshing the token
+        // will not help and will only double the API call noise.
+        if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized)
         {
-            _logger.LogWarning("Action1: {Status} on GET {Path} — forcing token refresh and retrying once.", resp.StatusCode, relativePath);
+            _logger.LogWarning("Action1: 401 on GET {Path} — forcing token refresh and retrying once.", relativePath);
             resp.Dispose();
             InvalidateToken();
             var freshToken = await GetAccessTokenAsync(ct);
@@ -141,9 +143,11 @@ public sealed class Action1Client : IDisposable
         req.Content = JsonContent.Create(body, options: JsonOpts);
         var resp = await _http.SendAsync(req, ct);
 
-        if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        // Only retry on 401 (token expired). 403 = permission denied — refreshing the token
+        // will not help and will only double the API call noise.
+        if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized)
         {
-            _logger.LogWarning("Action1: {Status} on POST {Path} — forcing token refresh and retrying once.", resp.StatusCode, relativePath);
+            _logger.LogWarning("Action1: 401 on POST {Path} — forcing token refresh and retrying once.", relativePath);
             resp.Dispose();
             InvalidateToken();
             var freshToken = await GetAccessTokenAsync(ct);
@@ -164,9 +168,11 @@ public sealed class Action1Client : IDisposable
         req.Content = JsonContent.Create(body, options: JsonOpts);
         var resp = await _http.SendAsync(req, ct);
 
-        if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        // Only retry on 401 (token expired). 403 = permission denied — refreshing the token
+        // will not help and will only double the API call noise.
+        if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized)
         {
-            _logger.LogWarning("Action1: {Status} on PATCH {Path} — forcing token refresh and retrying once.", resp.StatusCode, relativePath);
+            _logger.LogWarning("Action1: 401 on PATCH {Path} — forcing token refresh and retrying once.", relativePath);
             resp.Dispose();
             InvalidateToken();
             var freshToken = await GetAccessTokenAsync(ct);
@@ -371,8 +377,19 @@ public sealed class Action1Client : IDisposable
         if (resp.IsSuccessStatusCode) return true;
 
         var content = await resp.Content.ReadAsStringAsync(ct);
-        _logger.LogWarning("Action1: PATCH approval for {Id} returned {Status}: {Content}",
-            updateId, (int)resp.StatusCode, content);
+        if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+        {
+            _logger.LogError(
+                "Action1: PATCH approval for {Id} returned 403 Forbidden. " +
+                "The API credential role does not have Update Catalog write permissions. " +
+                "Fix: Action1 console → Configuration → Users & API Credentials → assign Administrator or a role with Update Approval permission.",
+                updateId);
+        }
+        else
+        {
+            _logger.LogWarning("Action1: PATCH approval for {Id} returned {Status}: {Content}",
+                updateId, (int)resp.StatusCode, content);
+        }
         return false;
     }
 
