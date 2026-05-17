@@ -113,12 +113,27 @@ public interface IBrokerApi
     [Get("/api/credentials")]
     Task<IReadOnlyList<CredentialEntry>> GetCredentialsAsync(CancellationToken ct = default);
 
+    // ── AWX ──
+    [Get("/api/awx/templates")]
+    Task<IReadOnlyList<AwxJobTemplateDto>> GetAwxTemplatesAsync(CancellationToken ct = default);
+
+    [Get("/api/awx/jobs")]
+    Task<IReadOnlyList<AwxJobDto>> GetAwxJobsAsync(int limit = 50, CancellationToken ct = default);
+
+    [Post("/api/awx/templates/{id}/launch")]
+    Task<AwxLaunchResultDto> LaunchAwxTemplateAsync(int id, CancellationToken ct = default);
+
     // ── Audit ──
     [Get("/api/audit")]
     Task<PagedResult<AuditEvent>> GetAuditEventsAsync(int page = 1, int pageSize = 50, CancellationToken ct = default);
 }
 
 public sealed record PatchScanRequest(Guid MachineId);
+
+// ── AWX DTOs ──
+public sealed record AwxJobTemplateDto(int Id, string Name, string Description, string PlaybookName, string Status);
+public sealed record AwxJobDto(int Id, string Name, string Status, string JobType, DateTime? Started, DateTime? Finished, bool Failed, string LaunchedBy);
+public sealed record AwxLaunchResultDto(int JobId);
 
 // ── Action1 DTOs (web-layer copies; broker serialises from HomeManagement.Integration.Action1.Models) ──
 

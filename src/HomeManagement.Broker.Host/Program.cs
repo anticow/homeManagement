@@ -4,6 +4,7 @@ using HomeManagement.AI.Abstractions.Configuration;
 using HomeManagement.Auditing;
 using HomeManagement.Broker.Host.Endpoints;
 using HomeManagement.Broker.Host.Hubs;
+using HomeManagement.Broker.Host.Services;
 using HomeManagement.Core;
 using HomeManagement.Data;
 using HomeManagement.Data.SqlServer;
@@ -38,6 +39,20 @@ builder.Services.AddHomeManagementAuthRepositories();
 builder.Services.AddHomeManagement(dataDirectory);
 builder.Services.AddHomeManagementLogging(dataDirectory);
 builder.Services.AddAction1Integration(builder.Configuration);
+
+// AWX integration (optional — only registered when Awx:Enabled=true)
+var awxOpts = builder.Configuration.GetSection(AwxOptions.Section).Get<AwxOptions>();
+if (awxOpts?.Enabled == true && !string.IsNullOrWhiteSpace(awxOpts.BaseUrl))
+{
+    builder.Services.AddHttpClient<AwxClient>(c =>
+    {
+        c.BaseAddress = new Uri(awxOpts.BaseUrl.TrimEnd('/') + "/");
+        var encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{awxOpts.Username}:{awxOpts.Password}"));
+        c.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", encoded);
+        c.Timeout = TimeSpan.FromSeconds(30);
+    });
+}
+
 builder.Services.AddApprovalJobStore();
 builder.Services.AddPrometheusIntegration(builder.Configuration);
 builder.Services.AddHomeManagementAuth(builder.Configuration);
@@ -158,6 +173,7 @@ app.MapJobEndpoints();
 app.MapCredentialEndpoints();
 app.MapAuditEndpoints();
 app.MapAutomationEndpoints();
+app.MapAwxEndpoints();
 app.MapAction1WebhookEndpoints();
 app.MapAction1BrokerEndpoints();
 app.MapAction1FleetEndpoints();

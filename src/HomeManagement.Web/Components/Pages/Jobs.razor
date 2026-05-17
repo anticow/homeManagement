@@ -1,65 +1,208 @@
 @page "/jobs"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using HomeManagement.Abstractions.Models
-@inject HomeManagement.Web.Services.IBrokerApi BrokerApi
+@using HomeManagement.Web.Services
+@inject IBrokerApi BrokerApi
 @inject NavigationManager Navigation
 
 <h1>Jobs</h1>
 
-@if (_loading)
+<div style="display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid #ddd;">
+    <button style="@TabStyle(HmJobsTab)" @onclick='() => SwitchTab(HmJobsTab)'>HM Jobs</button>
+    <button style="@TabStyle(AwxTab)" @onclick='() => SwitchTab(AwxTab)'>AWX Executions</button>
+</div>
+
+@if (_activeTab == HmJobsTab)
 {
-    <p>Loading jobs...</p>
-}
-else if (_errorMessage is not null)
-{
-    <p>@_errorMessage</p>
-}
-else if (_jobs is not null)
-{
-    @if (_jobs.Items.Count == 0)
+    @if (_jobsLoading)
     {
-        <p>No jobs found.</p>
+        <p>Loading jobs...</p>
+    }
+    else if (_jobsErrorMessage is not null)
+    {
+        <p>@_jobsErrorMessage</p>
+    }
+    else if (_jobs is not null)
+    {
+        @if (_jobs.Items.Count == 0)
+        {
+            <p>No jobs found.</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>State</th>
+                        <th>Submitted</th>
+                        <th>Completed</th>
+                        <th>Targets</th>
+                        <th>Success</th>
+                        <th>Failed</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var job in _jobs.Items)
+                    {
+                        <tr>
+                            <td>@job.Name</td>
+                            <td>@job.Type</td>
+                            <td>@job.State</td>
+                            <td>@job.SubmittedUtc.ToString("g")</td>
+                            <td>@(job.CompletedUtc?.ToString("g") ?? "—")</td>
+                            <td>@job.TotalTargets</td>
+                            <td>@job.SuccessCount</td>
+                            <td>@job.FailCount</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+}
+else
+{
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
+        <div>
+            <h2 style="margin:0 0 4px;">AWX Executions</h2>
+            <p style="margin:0; color:#555;">Launch AWX job templates and review recent execution history.</p>
+        </div>
+        <button style="padding:8px 16px; background:#f5f5f5; color:#333; border:1px solid #ccc; border-radius:4px; cursor:pointer;" @onclick="ReloadAwxAsync" disabled="@_awxLoading">
+            @(_awxLoading ? "Loading…" : "⟳ Refresh")
+        </button>
+    </div>
+
+    @if (_awxMessage is not null)
+    {
+        <div style="background:#e8f5e9; border:1px solid #388e3c; border-radius:4px; padding:12px; margin-bottom:16px; color:#333;">
+            @_awxMessage
+        </div>
+    }
+
+    @if (_awxErrorMessage is not null)
+    {
+        <div style="background:#ffebee; border:1px solid #c62828; border-radius:4px; padding:12px; margin-bottom:16px; color:#333;">
+            <strong>⚠ AWX Error:</strong> @_awxErrorMessage
+        </div>
+    }
+
+    @if (_awxLoading)
+    {
+        <p style="color:#888;">Loading AWX data…</p>
     }
     else
     {
-        <table>
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Type</th>
-                    <th>State</th>
-                    <th>Submitted</th>
-                    <th>Completed</th>
-                    <th>Targets</th>
-                    <th>Success</th>
-                    <th>Failed</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var job in _jobs.Items)
-                {
-                    <tr>
-                        <td>@job.Name</td>
-                        <td>@job.Type</td>
-                        <td>@job.State</td>
-                        <td>@job.SubmittedUtc.ToString("g")</td>
-                        <td>@(job.CompletedUtc?.ToString("g") ?? "—")</td>
-                        <td>@job.TotalTargets</td>
-                        <td>@job.SuccessCount</td>
-                        <td>@job.FailCount</td>
+        @if ((_awxTemplates?.Count ?? 0) == 0 && (_awxJobs?.Count ?? 0) == 0)
+        {
+            <div style="background:#e3f2fd; border:1px solid #1565c0; border-radius:4px; padding:12px; margin-bottom:16px; color:#333;">
+                AWX not connected — configure <code>Awx:Enabled=true</code>, <code>Awx:BaseUrl</code>, <code>Awx:Username</code>, <code>Awx:Password</code> in broker settings.
+            </div>
+        }
+
+        <h3>Job Templates</h3>
+        @if ((_awxTemplates?.Count ?? 0) == 0)
+        {
+            <p style="color:#888;">No AWX job templates returned.</p>
+        }
+        else
+        {
+            <table style="width:100%; border-collapse:collapse; font-size:0.88rem; margin-bottom:24px;">
+                <thead>
+                    <tr style="background:#fafafa; border-bottom:2px solid #ddd; text-align:left;">
+                        <th style="padding:8px 12px;">Name</th>
+                        <th style="padding:8px 12px;">Playbook</th>
+                        <th style="padding:8px 12px;">Description</th>
+                        <th style="padding:8px 12px;">Status</th>
+                        <th style="padding:8px 12px;">Launch</th>
                     </tr>
-                }
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    @foreach (var template in _awxTemplates!)
+                    {
+                        <tr style="border-bottom:1px solid #eee;">
+                            <td style="padding:8px 12px; font-weight:600;">@template.Name</td>
+                            <td style="padding:8px 12px; color:#555;">@(string.IsNullOrWhiteSpace(template.PlaybookName) ? "—" : template.PlaybookName)</td>
+                            <td style="padding:8px 12px; color:#555;">@(string.IsNullOrWhiteSpace(template.Description) ? "—" : template.Description)</td>
+                            <td style="padding:8px 12px;"><span style="@AwxStatusStyle(template.Status)">@template.Status</span></td>
+                            <td style="padding:8px 12px;">
+                                <button style="padding:6px 12px; background:#1565c0; color:white; border:none; border-radius:4px; cursor:pointer;"
+                                        @onclick="() => LaunchTemplateAsync(template.Id)"
+                                        disabled="@(_launchingTemplateId == template.Id)">
+                                    @(_launchingTemplateId == template.Id ? "Launching…" : "Launch")
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        <h3>Recent Executions</h3>
+        @if ((_awxJobs?.Count ?? 0) == 0)
+        {
+            <p style="color:#888;">No AWX executions returned.</p>
+        }
+        else
+        {
+            <table style="width:100%; border-collapse:collapse; font-size:0.88rem;">
+                <thead>
+                    <tr style="background:#fafafa; border-bottom:2px solid #ddd; text-align:left;">
+                        <th style="padding:8px 12px;">Job #</th>
+                        <th style="padding:8px 12px;">Name</th>
+                        <th style="padding:8px 12px;">Status</th>
+                        <th style="padding:8px 12px;">Type</th>
+                        <th style="padding:8px 12px;">Started</th>
+                        <th style="padding:8px 12px;">Finished</th>
+                        <th style="padding:8px 12px;">Duration</th>
+                        <th style="padding:8px 12px;">Launched By</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var job in _awxJobs!)
+                    {
+                        <tr style="border-bottom:1px solid #eee;">
+                            <td style="padding:8px 12px; font-family:monospace;">@job.Id</td>
+                            <td style="padding:8px 12px; font-weight:500;">@job.Name</td>
+                            <td style="padding:8px 12px;"><span style="@AwxStatusStyle(job.Status)">@job.Status</span></td>
+                            <td style="padding:8px 12px; color:#555;">@job.JobType</td>
+                            <td style="padding:8px 12px; color:#555;">@FormatAwxTime(job.Started)</td>
+                            <td style="padding:8px 12px; color:#555;">@FormatAwxTime(job.Finished)</td>
+                            <td style="padding:8px 12px; color:#555;">@FormatDuration(job.Started, job.Finished)</td>
+                            <td style="padding:8px 12px; color:#555;">@(string.IsNullOrWhiteSpace(job.LaunchedBy) ? "—" : job.LaunchedBy)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
     }
 }
 
 @code {
-    private bool _loading = true;
+    private const string HmJobsTab = "hm";
+    private const string AwxTab = "awx";
+
+    private string _activeTab = HmJobsTab;
+    private bool _jobsLoading = true;
     private PagedResult<JobSummary>? _jobs;
-    private string? _errorMessage;
+    private string? _jobsErrorMessage;
+
+    private bool _awxLoading = true;
+    private IReadOnlyList<AwxJobTemplateDto>? _awxTemplates;
+    private IReadOnlyList<AwxJobDto>? _awxJobs;
+    private string? _awxErrorMessage;
+    private string? _awxMessage;
+    private int? _launchingTemplateId;
 
     protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(LoadHmJobsAsync(), LoadAwxAsync());
+    }
+
+    private void SwitchTab(string tab) => _activeTab = tab;
+
+    private async Task LoadHmJobsAsync()
     {
         try
         {
@@ -71,11 +214,106 @@ else if (_jobs is not null)
         }
         catch (Exception ex)
         {
-            _errorMessage = $"Unable to load jobs: {ex.Message}";
+            _jobsErrorMessage = $"Unable to load jobs: {ex.Message}";
         }
         finally
         {
-            _loading = false;
+            _jobsLoading = false;
         }
+    }
+
+    private Task ReloadAwxAsync() => LoadAwxAsync(clearMessage: false);
+
+    private async Task LoadAwxAsync(bool clearMessage = true)
+    {
+        _awxLoading = true;
+        _awxErrorMessage = null;
+        if (clearMessage)
+        {
+            _awxMessage = null;
+        }
+
+        try
+        {
+            var templatesTask = BrokerApi.GetAwxTemplatesAsync();
+            var jobsTask = BrokerApi.GetAwxJobsAsync();
+            await Task.WhenAll(templatesTask, jobsTask);
+            _awxTemplates = templatesTask.Result;
+            _awxJobs = jobsTask.Result;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            _awxTemplates = [];
+            _awxJobs = [];
+            _awxErrorMessage = ex.Message;
+        }
+        finally
+        {
+            _awxLoading = false;
+        }
+    }
+
+    private async Task LaunchTemplateAsync(int id)
+    {
+        _launchingTemplateId = id;
+        _awxErrorMessage = null;
+        _awxMessage = null;
+        try
+        {
+            var result = await BrokerApi.LaunchAwxTemplateAsync(id);
+            _awxMessage = $"AWX job {result.JobId} launched successfully.";
+            await LoadAwxAsync(clearMessage: false);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            _awxErrorMessage = ex.Message;
+        }
+        finally
+        {
+            _launchingTemplateId = null;
+        }
+    }
+
+    private string TabStyle(string tab) => _activeTab == tab
+        ? "background:#1565c0; color:white; border:none; border-radius:4px 4px 0 0; padding:8px 16px; cursor:pointer;"
+        : "background:#f5f5f5; color:#333; border:1px solid #ddd; border-radius:4px 4px 0 0; padding:8px 16px; cursor:pointer;";
+
+    private static string AwxStatusStyle(string? status) => (status ?? string.Empty).ToLowerInvariant() switch
+    {
+        "successful" => "background:#388e3c; color:white; border-radius:12px; padding:2px 8px; font-size:0.78rem;",
+        "failed" => "background:#c62828; color:white; border-radius:12px; padding:2px 8px; font-size:0.78rem;",
+        "running" => "background:#1565c0; color:white; border-radius:12px; padding:2px 8px; font-size:0.78rem;",
+        _ => "background:#888; color:white; border-radius:12px; padding:2px 8px; font-size:0.78rem;"
+    };
+
+    private static string FormatAwxTime(DateTime? value) => value?.ToLocalTime().ToString("g") ?? "—";
+
+    private static string FormatDuration(DateTime? started, DateTime? finished)
+    {
+        if (!started.HasValue || !finished.HasValue)
+        {
+            return "—";
+        }
+
+        var duration = finished.Value - started.Value;
+        if (duration.TotalHours >= 1)
+        {
+            return $"{(int)duration.TotalHours}h {duration.Minutes}m";
+        }
+
+        if (duration.TotalMinutes >= 1)
+        {
+            return $"{(int)duration.TotalMinutes}m {duration.Seconds}s";
+        }
+
+        return $"{Math.Max(0, (int)duration.TotalSeconds)}s";
     }
 }

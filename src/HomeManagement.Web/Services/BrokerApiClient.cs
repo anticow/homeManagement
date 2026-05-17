@@ -125,6 +125,15 @@ public sealed class BrokerApiClient : IBrokerApi, IDisposable
     public Task<CatalogTestResultDto> TestCatalogConnectionAsync(CancellationToken ct = default)
         => ExecuteAsync(api => api.TestCatalogConnectionAsync(ct), ct);
 
+    public Task<IReadOnlyList<AwxJobTemplateDto>> GetAwxTemplatesAsync(CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetAwxTemplatesAsync(ct), ct);
+
+    public Task<IReadOnlyList<AwxJobDto>> GetAwxJobsAsync(int limit = 50, CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetAwxJobsAsync(limit, ct), ct);
+
+    public Task<AwxLaunchResultDto> LaunchAwxTemplateAsync(int id, CancellationToken ct = default)
+        => ExecuteAsync(api => api.LaunchAwxTemplateAsync(id, ct), ct);
+
     private async Task<T> ExecuteAsync<T>(Func<IBrokerApi, Task<T>> action, CancellationToken ct)
     {
         try
