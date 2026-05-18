@@ -364,9 +364,18 @@ public sealed class Action1Client : IDisposable
     /// Action1 has two catalog update types that require different endpoints:
     ///
     ///   1. Software delivery packages (named IDs: Vendor_Product_Timestamp_builtin)
-    ///      PATCH /software-repository/all/{updateId}/versions/{updateId}
+    ///      PATCH /software-repository/all/{packageId}/versions/{versionId}
     ///      Body: { "approval_status": "Approved|Declined|New" }
     ///      No scope field — the API returns 400 if scope is included.
+    ///
+    ///      The packageId and versionId are NOT the same value:
+    ///        versionId = full update ID (e.g. Google_Chrome_1570243626751_builtin)
+    ///        packageId = versionId with the trailing timestamp segment stripped
+    ///                    (e.g. Google_Chrome)
+    ///      If the timestamp-stripped URL also returns 500, the package cannot be
+    ///      approved via software-repository — it is logged and returned as Error.
+    ///      We do NOT fall back to the org-updates endpoint because that will always
+    ///      return 403 for global-catalog packages, creating confusing log noise.
     ///
     ///   2. Security / Windows updates (UUID IDs: xxxxxxxx-..._builtin, or no suffix)
     ///      PATCH /updates/{orgId}/{updateId}
@@ -374,55 +383,32 @@ public sealed class Action1Client : IDisposable
     ///      Scope is required — omitting it returns 403.
     ///
     /// Detection heuristic: named packages have a human-readable Vendor_Product prefix;
-    /// UUID packages start with a GUID. A 500 from the software-repository endpoint
-    /// triggers an automatic fallback to the org-updates endpoint (handles misclassified IDs).
+    /// UUID packages start with a GUID.
     /// </summary>
     public async Task<ApprovalOutcome> SetCatalogApprovalAsync(
         string updateId, string approvalStatus, string scope = "Organization", CancellationToken ct = default)
     {
         var isBuiltin = updateId.EndsWith("_builtin", StringComparison.OrdinalIgnoreCase);
 
-        // Heuristic: UUID-prefixed IDs (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx_builtin) are
-        // security/Windows updates. Named IDs (Vendor_Product_Timestamp_builtin) are software
-        // delivery packages. Start with the software-repository path for named _builtin IDs;
-        // fall back to the org-updates path if the software-repository returns 500.
+        // UUID-prefixed IDs are security/Windows updates → org-updates endpoint.
+        // Named IDs are software delivery packages → software-repository endpoint only.
+        // IMPORTANT: Never fall back named packages to org-updates — that endpoint will
+        // always return 403 for global catalog items and creates misleading log noise.
         var isNamedPackage = isBuiltin && !IsUuidPrefixed(updateId);
 
         const int maxRetries = 3;
         var retryDelays = new[] { TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30) };
 
+        if (isNamedPackage)
+            return await ApproveNamedPackageAsync(updateId, approvalStatus, maxRetries, ct);
+
+        // ── Security / Windows updates via org-updates endpoint ───────────────
         for (var attempt = 0; attempt < maxRetries; attempt++)
         {
-            HttpResponseMessage resp;
-            string relPath;
-
-            if (isNamedPackage)
-            {
-                relPath = $"software-repository/all/{Uri.EscapeDataString(updateId)}/versions/{Uri.EscapeDataString(updateId)}";
-                _logger.LogDebug("Action1: PATCH {Path} approval_status={Status} (software-delivery, attempt {Attempt})",
-                    relPath, approvalStatus, attempt + 1);
-                resp = await PatchJsonAsync(relPath, new { approval_status = approvalStatus }, ct);
-
-                // Action1 returns 500 when the update is not in the software-repository catalog
-                // (e.g., it's actually a security update despite the named ID pattern).
-                // Fall back to the org-updates endpoint automatically.
-                if (resp.StatusCode == System.Net.HttpStatusCode.InternalServerError)
-                {
-                    var errContent = await resp.Content.ReadAsStringAsync(ct);
-                    _logger.LogWarning(
-                        "Action1: software-repository PATCH for {Id} returned 500 — falling back to org-updates endpoint. Body: {Body}",
-                        updateId, errContent);
-                    isNamedPackage = false; // switch to org-updates path for remaining attempts
-                    continue;
-                }
-            }
-            else
-            {
-                relPath = $"updates/{_options.OrganizationId}/{Uri.EscapeDataString(updateId)}";
-                _logger.LogDebug("Action1: PATCH {Path} approval_status={Status} scope={Scope} (attempt {Attempt})",
-                    relPath, approvalStatus, scope, attempt + 1);
-                resp = await PatchJsonAsync(relPath, new { approval_status = approvalStatus, scope }, ct);
-            }
+            var relPath = $"updates/{_options.OrganizationId}/{Uri.EscapeDataString(updateId)}";
+            _logger.LogDebug("Action1: PATCH {Path} approval_status={Status} scope={Scope} (attempt {Attempt})",
+                relPath, approvalStatus, scope, attempt + 1);
+            var resp = await PatchJsonAsync(relPath, new { approval_status = approvalStatus, scope }, ct);
 
             if (resp.IsSuccessStatusCode) return ApprovalOutcome.Success;
 
@@ -458,6 +444,127 @@ public sealed class Action1Client : IDisposable
         }
 
         return ApprovalOutcome.RateLimitExhausted;
+    }
+
+    /// <summary>
+    /// Approves a named software delivery package via the software-repository endpoint.
+    ///
+    /// Action1's software-repository API separates packageId and versionId:
+    ///   PATCH /software-repository/all/{packageId}/versions/{versionId}
+    ///
+    /// We try two URL shapes:
+    ///   1. packageId = versionId = full update ID (same value, works for UUID-based packages)
+    ///   2. packageId = timestamp-stripped ID (e.g. "Google_Chrome" from "Google_Chrome_1234_builtin")
+    ///      versionId = full update ID
+    ///
+    /// If both return 500, the package cannot be approved via API. Log it and return Error.
+    /// Do NOT fall back to org-updates — that will always 403 for global catalog items.
+    /// </summary>
+    private async Task<ApprovalOutcome> ApproveNamedPackageAsync(
+        string updateId, string approvalStatus, int maxRetries, CancellationToken ct)
+    {
+        var retryDelays = new[] { TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30) };
+
+        // Two candidate URL shapes for the software-repository endpoint.
+        // Shape 1: both packageId and versionId = full ID (works when Action1 indexes by full ID)
+        // Shape 2: packageId = timestamp-stripped name, versionId = full ID
+        //          (Action1 seems to use this for named packages where timestamp = version discriminator)
+        var packageIdCandidates = new[]
+        {
+            updateId,                            // shape 1: full ID as both segments
+            StripTimestampSuffix(updateId),      // shape 2: name-only as packageId
+        };
+
+        foreach (var packageId in packageIdCandidates)
+        {
+            for (var attempt = 0; attempt < maxRetries; attempt++)
+            {
+                var relPath = $"software-repository/all/{Uri.EscapeDataString(packageId)}/versions/{Uri.EscapeDataString(updateId)}";
+                _logger.LogDebug("Action1: PATCH {Path} approval_status={Status} (software-delivery, packageId={PkgId}, attempt {Attempt})",
+                    relPath, approvalStatus, packageId, attempt + 1);
+
+                var resp = await PatchJsonAsync(relPath, new { approval_status = approvalStatus }, ct);
+
+                if (resp.IsSuccessStatusCode)
+                {
+                    _logger.LogDebug("Action1: software-repository PATCH succeeded for {Id} using packageId={PkgId}", updateId, packageId);
+                    return ApprovalOutcome.Success;
+                }
+
+                var content = await resp.Content.ReadAsStringAsync(ct);
+
+                // 500 from this shape → break inner loop and try next packageId candidate.
+                // Do NOT retry on 500 (it won't change; it means the URL is wrong).
+                if (resp.StatusCode == System.Net.HttpStatusCode.InternalServerError)
+                {
+                    _logger.LogDebug(
+                        "Action1: software-repository PATCH for {Id} (packageId={PkgId}) returned 500 — trying next URL shape. Body: {Body}",
+                        updateId, packageId, content);
+                    break; // try next packageId candidate
+                }
+
+                if (resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                {
+                    if (attempt < maxRetries - 1)
+                    {
+                        _logger.LogWarning(
+                            "Action1: PATCH approval for {Id} rate-limited (429). Waiting {Delay}s before retry {Next}/{Max}.",
+                            updateId, retryDelays[attempt].TotalSeconds, attempt + 2, maxRetries);
+                        await Task.Delay(retryDelays[attempt], ct);
+                        continue;
+                    }
+                    _logger.LogError("Action1: PATCH approval for {Id} rate-limited after {Max} attempts — will retry in second pass.", updateId, maxRetries);
+                    return ApprovalOutcome.RateLimitExhausted;
+                }
+                else if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    _logger.LogError(
+                        "Action1: PATCH approval for {Id} returned 403 Forbidden. " +
+                        "Check API credential role in Action1 console → Configuration → Users & API Credentials.",
+                        updateId);
+                    return ApprovalOutcome.Forbidden;
+                }
+                else
+                {
+                    _logger.LogWarning("Action1: PATCH approval for {Id} returned {Status}: {Content}",
+                        updateId, (int)resp.StatusCode, content);
+                    return ApprovalOutcome.Error;
+                }
+            }
+        }
+
+        // Both URL shapes returned 500 — Action1 cannot approve this package via API.
+        _logger.LogError(
+            "Action1: unable to approve software delivery package {Id} — " +
+            "both software-repository URL shapes returned 500. " +
+            "This package may require manual approval in the Action1 console " +
+            "(Software Repository → {Id} → Approve).",
+            updateId, StripTimestampSuffix(updateId));
+        return ApprovalOutcome.Error;
+    }
+
+    /// <summary>
+    /// Strips the trailing numeric timestamp segment from a named builtin package ID.
+    /// "Google_Chrome_1570243626751_builtin" → "Google_Chrome"
+    /// "Microsoft_Corp_NET_SDK_1773391867068_builtin" → "Microsoft_Corp_NET_SDK"
+    /// Returns the input unchanged if no timestamp segment is found.
+    /// </summary>
+    private static string StripTimestampSuffix(string updateId)
+    {
+        // Strip the _builtin suffix first, then find and remove the trailing numeric segment.
+        const string builtinSuffix = "_builtin";
+        var withoutBuiltin = updateId.EndsWith(builtinSuffix, StringComparison.OrdinalIgnoreCase)
+            ? updateId[..^builtinSuffix.Length]
+            : updateId;
+
+        var lastUnderscore = withoutBuiltin.LastIndexOf('_');
+        if (lastUnderscore < 0) return updateId;
+
+        var lastSegment = withoutBuiltin[(lastUnderscore + 1)..];
+        // A timestamp is a long all-digit string, typically 13 digits (ms since epoch).
+        return lastSegment.Length >= 10 && lastSegment.All(char.IsAsciiDigit)
+            ? withoutBuiltin[..lastUnderscore]
+            : updateId; // not a timestamp — return full ID unchanged
     }
 
     /// <summary>Returns true if the updateId starts with a standard UUID (xxxxxxxx-xxxx-...).</summary>
