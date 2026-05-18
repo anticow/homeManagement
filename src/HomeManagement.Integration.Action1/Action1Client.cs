@@ -607,13 +607,16 @@ public sealed class Action1Client : IDisposable
         }
 
         // All paths exhausted.
-        _logger.LogError(
-            "Action1: all approval paths failed for {Id} — " +
-            "software-repository (all shapes: 500/400) and org-updates (403 on all scopes). " +
-            "Check 'Approve Updates: Enterprise, no exclusions' in Action1 console → " +
-            "Configuration → Users & API Credentials.",
-            updateId);
-        return ApprovalOutcome.Forbidden;
+        // Based on PSAction1 module research: named software delivery _builtin packages
+        // (Docker Desktop, VMware Tools, Chrome, etc.) are NOT approvable via the Action1
+        // REST API. The official PowerShell module has no approval endpoint for these packages.
+        // Approve them manually in the Action1 console: Software Delivery → Approve.
+        _logger.LogWarning(
+            "Action1: unable to approve software delivery package {Id} — " +
+            "all software-repository URL shapes failed. " +
+            "Approve manually in the Action1 console: Software Delivery → {ShortId}.",
+            updateId, withoutBuiltin);
+        return ApprovalOutcome.NotSupported;
     }
 
     /// <summary>

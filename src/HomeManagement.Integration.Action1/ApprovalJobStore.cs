@@ -6,9 +6,10 @@ namespace HomeManagement.Integration.Action1;
 public enum ApprovalOutcome
 {
     Success,
-    Forbidden,         // 403 — permission problem, do not retry
+    Forbidden,          // 403 — permission problem, do not retry
     RateLimitExhausted, // 429 exhausted all retries — eligible for second-pass retry
-    Error              // non-retriable server/network error
+    Error,              // non-retriable server/network error
+    NotSupported        // API does not support this operation for this package type (e.g. named _builtin software delivery packages)
 }
 
 /// <summary>Snapshot of a running or completed bulk approval job.</summary>
@@ -18,8 +19,10 @@ public sealed record ApprovalJobStatus(
     int Processed,
     int Succeeded,
     int Failed,
+    int Skipped,
     bool IsComplete,
-    IReadOnlyList<string> FailedIds);
+    IReadOnlyList<string> FailedIds,
+    IReadOnlyList<string> SkippedIds);
 
 /// <summary>
 /// Thread-safe in-memory store for background bulk-approval jobs.
@@ -34,8 +37,10 @@ public sealed class ApprovalJobStore
         public int Processed;
         public int Succeeded;
         public int Failed;
+        public int Skipped;
         public bool IsComplete;
         public readonly ConcurrentBag<string> FailedIds = [];
+        public readonly ConcurrentBag<string> SkippedIds = [];
         public readonly DateTimeOffset CreatedAt = DateTimeOffset.UtcNow;
 
         public JobState(int total) => Total = total;
@@ -66,6 +71,14 @@ public sealed class ApprovalJobStore
         job.FailedIds.Add(itemId);
     }
 
+    public void RecordSkipped(string jobId, string itemId)
+    {
+        if (!_jobs.TryGetValue(jobId, out var job)) return;
+        Interlocked.Increment(ref job.Processed);
+        Interlocked.Increment(ref job.Skipped);
+        job.SkippedIds.Add(itemId);
+    }
+
     public void Complete(string jobId)
     {
         if (_jobs.TryGetValue(jobId, out var job))
@@ -81,8 +94,10 @@ public sealed class ApprovalJobStore
             Volatile.Read(ref job.Processed),
             Volatile.Read(ref job.Succeeded),
             Volatile.Read(ref job.Failed),
+            Volatile.Read(ref job.Skipped),
             Volatile.Read(ref job.IsComplete),
-            job.FailedIds.ToArray());
+            job.FailedIds.ToArray(),
+            job.SkippedIds.ToArray());
     }
 
     private void EvictStale()

@@ -33,17 +33,25 @@
 
     @if (_approveResult is not null)
     {
-        <div style="background:@(_approveResult.Failed == 0 ? "#e8f5e9" : "#fff3e0"); border:1px solid @(_approveResult.Failed == 0 ? "#388e3c" : "#f57c00"); border-radius:4px; padding:12px; margin-bottom:16px;">
-            @if (_approveResult.Failed == 0)
+        var hasProblems = _approveResult.Failed > 0 || _approveResult.Skipped > 0;
+        <div style="background:@(hasProblems ? "#fff3e0" : "#e8f5e9"); border:1px solid @(hasProblems ? "#f57c00" : "#388e3c"); border-radius:4px; padding:12px; margin-bottom:16px;">
+            @if (!hasProblems)
             {
                 <strong style="color:#388e3c;">✔ @_approveResult.Succeeded update(s) approved successfully.</strong>
             }
             else
             {
-                <strong>⚠ @_approveResult.Succeeded approved, @_approveResult.Failed failed.</strong>
+                <strong>⚠ @_approveResult.Succeeded approved@(_approveResult.Failed > 0 ? $", {_approveResult.Failed} failed" : "")@(_approveResult.Skipped > 0 ? $", {_approveResult.Skipped} require manual approval" : "").</strong>
                 @if (_approveResult.FailedIds.Count > 0)
                 {
                     <div style="margin-top:4px; font-size:0.85rem; color:#c62828;">Failed IDs: @string.Join(", ", _approveResult.FailedIds)</div>
+                }
+                @if (_approveResult.SkippedIds.Count > 0)
+                {
+                    <div style="margin-top:6px; font-size:0.85rem; color:#e65100;">
+                        <strong>⚠ Software delivery packages not approvable via API — approve manually in Action1 console (Software Delivery):</strong>
+                        <div style="margin-top:2px; font-family:monospace; font-size:0.78rem;">@string.Join(", ", _approveResult.SkippedIds)</div>
+                    </div>
                 }
             }
         </div>
@@ -58,7 +66,9 @@
                     Approving… @_jobProgress.Processed / @_jobProgress.Total
                 </span>
                 <span style="font-size:0.82rem; color:#555;">
-                    ✔ @_jobProgress.Succeeded succeeded&nbsp; @if (_jobProgress.Failed > 0) { <span style="color:#c62828;">✗ @_jobProgress.Failed failed</span> }
+                    ✔ @_jobProgress.Succeeded succeeded&nbsp;
+                    @if (_jobProgress.Failed > 0) { <span style="color:#c62828;">✗ @_jobProgress.Failed failed&nbsp;</span> }
+                    @if (_jobProgress.Skipped > 0) { <span style="color:#e65100;">⏭ @_jobProgress.Skipped manual</span> }
                 </span>
             </div>
             <div style="background:#bbdefb; border-radius:4px; height:8px; overflow:hidden;">
