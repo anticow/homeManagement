@@ -220,6 +220,8 @@ public static class Action1CatalogEndpoints
                     jobStore.RecordSuccess(jobId);
                 else if (outcome == ApprovalOutcome.RateLimitExhausted)
                     rateLimited.Add(id);         // retry in second pass
+                else if (outcome == ApprovalOutcome.NotSupported)
+                    jobStore.RecordSkipped(jobId, id); // API doesn't support this package type
                 else
                     jobStore.RecordFailure(jobId, id);
             }
@@ -263,8 +265,8 @@ public static class Action1CatalogEndpoints
         jobStore.Complete(jobId);
         var final = jobStore.GetStatus(jobId);
         logger.LogInformation(
-            "Action1: job {JobId} complete — {Succeeded} succeeded, {Failed} failed of {Total}.",
-            jobId, final?.Succeeded, final?.Failed, final?.Total);
+            "Action1: job {JobId} complete — {Succeeded} succeeded, {Failed} failed, {Skipped} skipped (manual approval required) of {Total}.",
+            jobId, final?.Succeeded, final?.Failed, final?.Skipped, final?.Total);
     }
 
     private static CatalogUpdateDto MapCatalogDto(Action1CatalogUpdate u) => new(

@@ -317,8 +317,10 @@ public sealed record ApprovalJobStatusDto(
     int Processed,
     int Succeeded,
     int Failed,
+    int Skipped,
     bool IsComplete,
-    IReadOnlyList<string> FailedIds);
+    IReadOnlyList<string> FailedIds,
+    IReadOnlyList<string> SkippedIds);
 
 public sealed record CatalogTestResultDto(
     bool Success,
