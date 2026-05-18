@@ -452,27 +452,43 @@ public sealed class Action1Client : IDisposable
     /// Action1's software-repository API separates packageId and versionId:
     ///   PATCH /software-repository/all/{packageId}/versions/{versionId}
     ///
-    /// We try two URL shapes:
-    ///   1. packageId = versionId = full update ID (same value, works for UUID-based packages)
-    ///   2. packageId = timestamp-stripped ID (e.g. "Google_Chrome" from "Google_Chrome_1234_builtin")
-    ///      versionId = full update ID
+    /// The packageId is NOT the same as the versionId. From live API error responses we know:
     ///
-    /// If both return 500, the package cannot be approved via API. Log it and return Error.
-    /// Do NOT fall back to org-updates — that will always 403 for global catalog items.
+    ///   versionId = full update ID (e.g. "Microsoft_Microsoft_OneDrive_1570833281465_builtin")
+    ///   packageId = versionId without the _builtin suffix
+    ///               (e.g. "Microsoft_Microsoft_OneDrive_1570833281465")
+    ///
+    /// We probe three shapes in order, stopping as soon as one succeeds:
+    ///   Shape 1: packageId = full ID (same as versionId)                    → usually 500
+    ///   Shape 2: packageId = full ID minus _builtin suffix (keep timestamp)  → most likely correct
+    ///   Shape 3: packageId = name only (timestamp + _builtin stripped)       → 400 "doesn't exist"
+    ///
+    /// 500 and 400 "does not exist" are both treated as "wrong URL shape — try next".
+    /// Any other error (403, 429, other 4xx) is a definitive failure.
+    ///
+    /// Named packages are NEVER routed to org-updates — that endpoint returns 403 for
+    /// global catalog items and produces misleading log noise.
     /// </summary>
     private async Task<ApprovalOutcome> ApproveNamedPackageAsync(
         string updateId, string approvalStatus, int maxRetries, CancellationToken ct)
     {
         var retryDelays = new[] { TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30) };
 
-        // Two candidate URL shapes for the software-repository endpoint.
-        // Shape 1: both packageId and versionId = full ID (works when Action1 indexes by full ID)
-        // Shape 2: packageId = timestamp-stripped name, versionId = full ID
-        //          (Action1 seems to use this for named packages where timestamp = version discriminator)
+        const string builtinSuffix = "_builtin";
+        var withoutBuiltin = updateId.EndsWith(builtinSuffix, StringComparison.OrdinalIgnoreCase)
+            ? updateId[..^builtinSuffix.Length]
+            : updateId;
+
+        // Ordered best-guess candidates for packageId.
+        // Shape 2 (without _builtin) is the most likely correct value based on the live
+        // Action1 400 response: "package with id=Microsoft_Microsoft_OneDrive does not exist"
+        // confirmed that the name-only strip (shape 3) is wrong. Shape 2 keeps the
+        // timestamp which is the version discriminator Action1 uses as the package key.
         var packageIdCandidates = new[]
         {
-            updateId,                            // shape 1: full ID as both segments
-            StripTimestampSuffix(updateId),      // shape 2: name-only as packageId
+            withoutBuiltin,                      // shape 2: drop _builtin only  (most likely correct)
+            updateId,                            // shape 1: full ID as-is       (fallback, usually 500)
+            StripTimestampSuffix(updateId),      // shape 3: name-only           (almost always 400)
         };
 
         foreach (var packageId in packageIdCandidates)
@@ -493,13 +509,15 @@ public sealed class Action1Client : IDisposable
 
                 var content = await resp.Content.ReadAsStringAsync(ct);
 
-                // 500 from this shape → break inner loop and try next packageId candidate.
-                // Do NOT retry on 500 (it won't change; it means the URL is wrong).
-                if (resp.StatusCode == System.Net.HttpStatusCode.InternalServerError)
+                // 500 (wrong URL structure) and 400 "does not exist" both mean this packageId
+                // shape is wrong — skip to the next candidate immediately without retrying.
+                if (resp.StatusCode == System.Net.HttpStatusCode.InternalServerError ||
+                    (resp.StatusCode == System.Net.HttpStatusCode.BadRequest &&
+                     content.Contains("does not exist", StringComparison.OrdinalIgnoreCase)))
                 {
                     _logger.LogDebug(
-                        "Action1: software-repository PATCH for {Id} (packageId={PkgId}) returned 500 — trying next URL shape. Body: {Body}",
-                        updateId, packageId, content);
+                        "Action1: software-repository PATCH for {Id} (packageId={PkgId}) returned {Status} — trying next URL shape. Body: {Body}",
+                        updateId, packageId, (int)resp.StatusCode, content);
                     break; // try next packageId candidate
                 }
 
@@ -533,13 +551,12 @@ public sealed class Action1Client : IDisposable
             }
         }
 
-        // Both URL shapes returned 500 — Action1 cannot approve this package via API.
+        // All URL shapes exhausted without success — package cannot be approved via API.
         _logger.LogError(
             "Action1: unable to approve software delivery package {Id} — " +
-            "both software-repository URL shapes returned 500. " +
-            "This package may require manual approval in the Action1 console " +
-            "(Software Repository → {Id} → Approve).",
-            updateId, StripTimestampSuffix(updateId));
+            "all software-repository URL shapes failed. " +
+            "Approve manually in the Action1 console: Software Repository → {PkgName}.",
+            updateId, withoutBuiltin);
         return ApprovalOutcome.Error;
     }
 
