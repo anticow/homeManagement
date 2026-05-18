@@ -547,60 +547,73 @@ public sealed class Action1Client : IDisposable
 
         // ── Phase 2: org-updates fallback ────────────────────────────────────
         // All software-repository shapes failed (500/400 "not found") — the package is not
-        // in the global catalog. Try the org-updates endpoint. The earlier 403 on this path
-        // was a credential permissions issue (pre-Enterprise role), not a wrong endpoint.
-        var scope = _options.ApprovalScope;
+        // in the global catalog. Try the org-updates endpoint with both scope variants.
+        // Software delivery packages are enterprise-scoped, so "Enterprise" is tried first
+        // even if ApprovalScope is configured as "Organization". The 403 seen before this
+        // fix was caused by sending scope="Organization" for an enterprise-level package.
         var orgPath = $"updates/{_options.OrganizationId}/{Uri.EscapeDataString(updateId)}";
-        _logger.LogDebug(
-            "Action1: software-repository exhausted for {Id} — trying org-updates fallback {Path} scope={Scope}",
-            updateId, orgPath, scope);
+        var scopeCandidates = _options.ApprovalScope.Equals("Enterprise", StringComparison.OrdinalIgnoreCase)
+            ? new[] { "Enterprise" }
+            : new[] { "Enterprise", _options.ApprovalScope }; // try Enterprise first for named packages
 
-        for (var attempt = 0; attempt < maxRetries; attempt++)
+        foreach (var scope in scopeCandidates)
         {
-            var resp = await PatchJsonAsync(orgPath, new { approval_status = approvalStatus, scope }, ct);
+            _logger.LogDebug(
+                "Action1: software-repository exhausted for {Id} — trying org-updates fallback {Path} scope={Scope}",
+                updateId, orgPath, scope);
 
-            if (resp.IsSuccessStatusCode)
+            for (var attempt = 0; attempt < maxRetries; attempt++)
             {
-                _logger.LogInformation(
-                    "Action1: org-updates fallback PATCH succeeded for named package {Id}", updateId);
-                return ApprovalOutcome.Success;
-            }
+                var resp = await PatchJsonAsync(orgPath, new { approval_status = approvalStatus, scope }, ct);
 
-            var content = await resp.Content.ReadAsStringAsync(ct);
-
-            if (resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
-            {
-                if (attempt < maxRetries - 1)
+                if (resp.IsSuccessStatusCode)
                 {
-                    _logger.LogWarning(
-                        "Action1: PATCH approval for {Id} rate-limited (429). Waiting {Delay}s before retry {Next}/{Max}.",
-                        updateId, retryDelays[attempt].TotalSeconds, attempt + 2, maxRetries);
-                    await Task.Delay(retryDelays[attempt], ct);
-                    continue;
+                    _logger.LogInformation(
+                        "Action1: org-updates fallback PATCH succeeded for named package {Id} (scope={Scope})",
+                        updateId, scope);
+                    return ApprovalOutcome.Success;
                 }
-                _logger.LogError("Action1: PATCH approval for {Id} rate-limited after {Max} attempts — will retry in second pass.", updateId, maxRetries);
-                return ApprovalOutcome.RateLimitExhausted;
-            }
-            else if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
-            {
-                _logger.LogError(
-                    "Action1: PATCH approval for {Id} returned 403 Forbidden on org-updates fallback. " +
-                    "Ensure the API credential has 'Approve Updates: Enterprise' with no exclusions.",
-                    updateId);
-                return ApprovalOutcome.Forbidden;
-            }
-            else
-            {
-                _logger.LogError(
-                    "Action1: all approval paths failed for {Id} — " +
-                    "software-repository (all shapes: 500/400) and org-updates ({Status}: {Content}). " +
-                    "Approve manually in the Action1 console.",
-                    updateId, (int)resp.StatusCode, content);
-                return ApprovalOutcome.Error;
+
+                var content = await resp.Content.ReadAsStringAsync(ct);
+
+                // 403 on this scope → try the next scope candidate before giving up.
+                if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    _logger.LogDebug(
+                        "Action1: org-updates 403 for {Id} with scope={Scope} — trying next scope.", updateId, scope);
+                    break; // next scope candidate
+                }
+
+                if (resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                {
+                    if (attempt < maxRetries - 1)
+                    {
+                        _logger.LogWarning(
+                            "Action1: PATCH approval for {Id} rate-limited (429). Waiting {Delay}s before retry {Next}/{Max}.",
+                            updateId, retryDelays[attempt].TotalSeconds, attempt + 2, maxRetries);
+                        await Task.Delay(retryDelays[attempt], ct);
+                        continue;
+                    }
+                    _logger.LogError("Action1: PATCH approval for {Id} rate-limited after {Max} attempts — will retry in second pass.", updateId, maxRetries);
+                    return ApprovalOutcome.RateLimitExhausted;
+                }
+                else
+                {
+                    _logger.LogWarning("Action1: org-updates fallback for {Id} returned {Status}: {Content}",
+                        updateId, (int)resp.StatusCode, content);
+                    return ApprovalOutcome.Error;
+                }
             }
         }
 
-        return ApprovalOutcome.RateLimitExhausted;
+        // All paths exhausted.
+        _logger.LogError(
+            "Action1: all approval paths failed for {Id} — " +
+            "software-repository (all shapes: 500/400) and org-updates (403 on all scopes). " +
+            "Check 'Approve Updates: Enterprise, no exclusions' in Action1 console → " +
+            "Configuration → Users & API Credentials.",
+            updateId);
+        return ApprovalOutcome.Forbidden;
     }
 
     /// <summary>
