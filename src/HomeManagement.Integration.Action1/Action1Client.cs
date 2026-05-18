@@ -447,27 +447,25 @@ public sealed class Action1Client : IDisposable
     }
 
     /// <summary>
-    /// Approves a named software delivery package via the software-repository endpoint.
+    /// Approves a named software delivery package.
     ///
-    /// Action1's software-repository API separates packageId and versionId:
-    ///   PATCH /software-repository/all/{packageId}/versions/{versionId}
+    /// Strategy — probe in order until one succeeds:
     ///
-    /// The packageId is NOT the same as the versionId. From live API error responses we know:
+    ///   Phase 1 — software-repository endpoint (three packageId shapes):
+    ///     Shape A: packageId = fullId minus _builtin  (e.g. "OneDrive_1570833281465")
+    ///     Shape B: packageId = full ID as-is          (e.g. "OneDrive_1570833281465_builtin")
+    ///     Shape C: packageId = name only              (e.g. "OneDrive")
+    ///     Body: { "approval_status": "Approved" }  — no scope field
+    ///     Skip to next shape on 500 or 400 "does not exist"; hard-fail on 403/429/other.
     ///
-    ///   versionId = full update ID (e.g. "Microsoft_Microsoft_OneDrive_1570833281465_builtin")
-    ///   packageId = versionId without the _builtin suffix
-    ///               (e.g. "Microsoft_Microsoft_OneDrive_1570833281465")
+    ///   Phase 2 — org-updates endpoint (last resort):
+    ///     PATCH /updates/{orgId}/{updateId} with { approval_status, scope }
+    ///     Used when the package does not exist in the global software-repository catalog.
+    ///     The original 403 seen here was a credential-permission issue (pre-Enterprise role),
+    ///     not a wrong-endpoint issue — so it is worth trying after all shapes are exhausted.
     ///
-    /// We probe three shapes in order, stopping as soon as one succeeds:
-    ///   Shape 1: packageId = full ID (same as versionId)                    → usually 500
-    ///   Shape 2: packageId = full ID minus _builtin suffix (keep timestamp)  → most likely correct
-    ///   Shape 3: packageId = name only (timestamp + _builtin stripped)       → 400 "doesn't exist"
-    ///
-    /// 500 and 400 "does not exist" are both treated as "wrong URL shape — try next".
-    /// Any other error (403, 429, other 4xx) is a definitive failure.
-    ///
-    /// Named packages are NEVER routed to org-updates — that endpoint returns 403 for
-    /// global catalog items and produces misleading log noise.
+    /// This covers Docker Desktop, VMware Tools, and similar packages that may appear in
+    /// the org-updates catalog rather than the global software-repository catalog.
     /// </summary>
     private async Task<ApprovalOutcome> ApproveNamedPackageAsync(
         string updateId, string approvalStatus, int maxRetries, CancellationToken ct)
@@ -479,16 +477,12 @@ public sealed class Action1Client : IDisposable
             ? updateId[..^builtinSuffix.Length]
             : updateId;
 
-        // Ordered best-guess candidates for packageId.
-        // Shape 2 (without _builtin) is the most likely correct value based on the live
-        // Action1 400 response: "package with id=Microsoft_Microsoft_OneDrive does not exist"
-        // confirmed that the name-only strip (shape 3) is wrong. Shape 2 keeps the
-        // timestamp which is the version discriminator Action1 uses as the package key.
+        // ── Phase 1: software-repository with three packageId candidates ──────
         var packageIdCandidates = new[]
         {
-            withoutBuiltin,                      // shape 2: drop _builtin only  (most likely correct)
-            updateId,                            // shape 1: full ID as-is       (fallback, usually 500)
-            StripTimestampSuffix(updateId),      // shape 3: name-only           (almost always 400)
+            withoutBuiltin,                      // shape A: drop _builtin only (most likely)
+            updateId,                            // shape B: full ID as-is      (usually 500)
+            StripTimestampSuffix(updateId),      // shape C: name-only          (usually 400)
         };
 
         foreach (var packageId in packageIdCandidates)
@@ -537,7 +531,7 @@ public sealed class Action1Client : IDisposable
                 else if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
                 {
                     _logger.LogError(
-                        "Action1: PATCH approval for {Id} returned 403 Forbidden. " +
+                        "Action1: PATCH approval for {Id} returned 403 Forbidden on software-repository. " +
                         "Check API credential role in Action1 console → Configuration → Users & API Credentials.",
                         updateId);
                     return ApprovalOutcome.Forbidden;
@@ -551,13 +545,62 @@ public sealed class Action1Client : IDisposable
             }
         }
 
-        // All URL shapes exhausted without success — package cannot be approved via API.
-        _logger.LogError(
-            "Action1: unable to approve software delivery package {Id} — " +
-            "all software-repository URL shapes failed. " +
-            "Approve manually in the Action1 console: Software Repository → {PkgName}.",
-            updateId, withoutBuiltin);
-        return ApprovalOutcome.Error;
+        // ── Phase 2: org-updates fallback ────────────────────────────────────
+        // All software-repository shapes failed (500/400 "not found") — the package is not
+        // in the global catalog. Try the org-updates endpoint. The earlier 403 on this path
+        // was a credential permissions issue (pre-Enterprise role), not a wrong endpoint.
+        var scope = _options.ApprovalScope;
+        var orgPath = $"updates/{_options.OrganizationId}/{Uri.EscapeDataString(updateId)}";
+        _logger.LogDebug(
+            "Action1: software-repository exhausted for {Id} — trying org-updates fallback {Path} scope={Scope}",
+            updateId, orgPath, scope);
+
+        for (var attempt = 0; attempt < maxRetries; attempt++)
+        {
+            var resp = await PatchJsonAsync(orgPath, new { approval_status = approvalStatus, scope }, ct);
+
+            if (resp.IsSuccessStatusCode)
+            {
+                _logger.LogInformation(
+                    "Action1: org-updates fallback PATCH succeeded for named package {Id}", updateId);
+                return ApprovalOutcome.Success;
+            }
+
+            var content = await resp.Content.ReadAsStringAsync(ct);
+
+            if (resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+            {
+                if (attempt < maxRetries - 1)
+                {
+                    _logger.LogWarning(
+                        "Action1: PATCH approval for {Id} rate-limited (429). Waiting {Delay}s before retry {Next}/{Max}.",
+                        updateId, retryDelays[attempt].TotalSeconds, attempt + 2, maxRetries);
+                    await Task.Delay(retryDelays[attempt], ct);
+                    continue;
+                }
+                _logger.LogError("Action1: PATCH approval for {Id} rate-limited after {Max} attempts — will retry in second pass.", updateId, maxRetries);
+                return ApprovalOutcome.RateLimitExhausted;
+            }
+            else if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                _logger.LogError(
+                    "Action1: PATCH approval for {Id} returned 403 Forbidden on org-updates fallback. " +
+                    "Ensure the API credential has 'Approve Updates: Enterprise' with no exclusions.",
+                    updateId);
+                return ApprovalOutcome.Forbidden;
+            }
+            else
+            {
+                _logger.LogError(
+                    "Action1: all approval paths failed for {Id} — " +
+                    "software-repository (all shapes: 500/400) and org-updates ({Status}: {Content}). " +
+                    "Approve manually in the Action1 console.",
+                    updateId, (int)resp.StatusCode, content);
+                return ApprovalOutcome.Error;
+            }
+        }
+
+        return ApprovalOutcome.RateLimitExhausted;
     }
 
     /// <summary>
