@@ -113,6 +113,12 @@ public sealed class BrokerApiClient : IBrokerApi, IDisposable
     public Task<IReadOnlyList<MachinePendingPatchesDto>> GetAllPendingPatchesAsync(CancellationToken ct = default)
         => ExecuteAsync(api => api.GetAllPendingPatchesAsync(ct), ct);
 
+    public Task<PatchNowResultDto> PatchNowAsync(Guid machineId, [Body] PatchNowRequestDto request, CancellationToken ct = default)
+        => ExecuteAsync(api => api.PatchNowAsync(machineId, request, ct), ct);
+
+    public Task<FleetPatchCycleResultDto> StartFleetPatchCycleAsync([Body] FleetPatchCycleRequestDto request, CancellationToken ct = default)
+        => ExecuteAsync(api => api.StartFleetPatchCycleAsync(request, ct), ct);
+
     public Task<IReadOnlyList<CatalogUpdateDto>> GetCatalogUpdatesAsync(string approvalStatus = "New", CancellationToken ct = default)
         => ExecuteAsync(api => api.GetCatalogUpdatesAsync(approvalStatus, ct), ct);
 

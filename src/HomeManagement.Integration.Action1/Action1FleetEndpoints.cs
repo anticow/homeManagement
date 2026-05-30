@@ -352,6 +352,146 @@ public static class Action1FleetEndpoints
             }
         });
 
+        // ── On-demand: deploy ALL available patches for a single machine ─────────
+        // POST /api/action1/fleet/{machineId}/patch-now
+        // Fetches the current pending patch list from Action1 and immediately creates
+        // a deployment for all (or just critical) patches — no pre-selection required.
+        group.MapPost("{machineId:guid}/patch-now", async (
+            Guid machineId,
+            PatchNowRequest request,
+            Action1Client action1,
+            IInventoryService inventory,
+            IOptions<Action1Options> opts,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            var logger = loggerFactory.CreateLogger("Broker.Action1.Fleet");
+            if (!opts.Value.Enabled)
+                return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
+
+            try
+            {
+                var endpointId = await ResolveEndpointIdAsync(machineId, action1, inventory, ct);
+                if (endpointId is null)
+                    return Results.NotFound(new { Message = $"Machine {machineId} is not enrolled in Action1." });
+
+                var allPatches = await action1.GetAvailablePatchesAsync(endpointId, ct);
+
+                var toInstall = (request.CriticalOnly
+                    ? allPatches.Where(p => p.Severity.Equals("Critical", StringComparison.OrdinalIgnoreCase))
+                    : allPatches).ToList();
+
+                if (toInstall.Count == 0)
+                    return Results.Ok(new PatchNowResult(null, endpointId, 0,
+                        request.CriticalOnly ? "No critical patches pending." : "No patches pending."));
+
+                var patchItems = toInstall.Select(p => new PatchToInstall(p.Id, p.Version)).ToList();
+                var deploymentId = await action1.CreateDeploymentAsync(endpointId, patchItems, request.AllowReboot, ct);
+
+                if (deploymentId is null)
+                    return Results.Problem(
+                        "Action1 failed to create the deployment. Check broker logs.",
+                        statusCode: 502);
+
+                logger.LogInformation(
+                    "Action1: patch-now deployment {Id} created for machine {MachineId} ({Count} patches)",
+                    deploymentId, machineId, toInstall.Count);
+
+                return Results.Accepted(
+                    $"/api/action1/fleet/{machineId}/deployments/{deploymentId}",
+                    new PatchNowResult(deploymentId, endpointId, toInstall.Count, null));
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Action1: patch-now failed for machine {MachineId}: {Error}", machineId, ex.Message);
+                return Results.Problem("Action1 API request failed. Check broker logs.", statusCode: 502, title: "Action1 API Error");
+            }
+        });
+
+        // ── Fleet-wide patching cycle ─────────────────────────────────────────
+        // POST /api/action1/fleet/patch-cycle
+        // Creates individual deployments for every enrolled Action1 endpoint that has
+        // pending patches. Concurrency is capped so we don't hammer the Action1 API.
+        // Returns 202 Accepted with a summary of machines targeted and deployments created.
+        group.MapPost("patch-cycle", async (
+            PatchCycleRequest request,
+            Action1Client action1,
+            IOptions<Action1Options> opts,
+            ILoggerFactory loggerFactory,
+            CancellationToken ct) =>
+        {
+            var logger = loggerFactory.CreateLogger("Broker.Action1.Fleet");
+            if (!opts.Value.Enabled)
+                return Results.Problem("Action1 integration is not enabled.", statusCode: 503);
+
+            try
+            {
+                var allEndpoints = await action1.ListEndpointsAsync(ct);
+
+                // Filter to only endpoints with pending patches (critical-only if requested).
+                var candidates = allEndpoints
+                    .Where(e => request.CriticalOnly
+                        ? e.MissingCriticalUpdates > 0
+                        : e.MissingCriticalUpdates + e.MissingOtherUpdates > 0)
+                    .ToList();
+
+                if (candidates.Count == 0)
+                {
+                    logger.LogInformation("Action1: patch-cycle found no endpoints with pending patches");
+                    return Results.Accepted(null, new PatchCycleResult(0, 0, 0, []));
+                }
+
+                // Fan-out with conservative concurrency to stay under Action1 rate limits.
+                using var semaphore = new SemaphoreSlim(3);
+                var tasks = candidates.Select(async ep =>
+                {
+                    await semaphore.WaitAsync(ct);
+                    try
+                    {
+                        var patches = await action1.GetAvailablePatchesAsync(ep.Id, ct);
+                        var toInstall = (request.CriticalOnly
+                            ? patches.Where(p => p.Severity.Equals("Critical", StringComparison.OrdinalIgnoreCase))
+                            : patches).ToList();
+
+                        if (toInstall.Count == 0)
+                            return new MachineDeploymentResult(ep.Id, ep.Name, null, 0, null);
+
+                        var items = toInstall.Select(p => new PatchToInstall(p.Id, p.Version)).ToList();
+                        var deploymentId = await action1.CreateDeploymentAsync(ep.Id, items, request.AllowReboot, ct);
+
+                        return deploymentId is null
+                            ? new MachineDeploymentResult(ep.Id, ep.Name, null, toInstall.Count, "Deployment creation failed.")
+                            : new MachineDeploymentResult(ep.Id, ep.Name, deploymentId, toInstall.Count, null);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Action1: patch-cycle failed for endpoint {EndpointId}: {Error}", ep.Id, ex.Message);
+                        return new MachineDeploymentResult(ep.Id, ep.Name, null, 0, ex.Message);
+                    }
+                    finally
+                    {
+                        semaphore.Release();
+                    }
+                });
+
+                var results = (await Task.WhenAll(tasks)).ToList();
+                var machinesTargeted = results.Count(r => r.PatchCount > 0);
+                var deploymentsCreated = results.Count(r => r.DeploymentId is not null);
+                var machinesFailed = results.Count(r => r.Error is not null && r.PatchCount > 0);
+
+                logger.LogInformation(
+                    "Action1: patch-cycle complete — {Targeted} targeted, {Created} deployments, {Failed} failed",
+                    machinesTargeted, deploymentsCreated, machinesFailed);
+
+                return Results.Accepted(null, new PatchCycleResult(machinesTargeted, deploymentsCreated, machinesFailed, results));
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Action1: patch-cycle failed: {Error}", ex.Message);
+                return Results.Problem("Action1 API request failed. Check broker logs.", statusCode: 502, title: "Action1 API Error");
+            }
+        });
+
         return app;
     }
 
@@ -824,3 +964,47 @@ public sealed record MachinePendingPatchesDto(
     int CriticalCount,
     int OtherCount,
     IReadOnlyList<Models.Action1Patch> Patches);
+
+// ── Patch-now / Patch-cycle request & result types ────────────────────────────
+
+/// <summary>
+/// Request body for POST /api/action1/fleet/{machineId}/patch-now.
+/// Deploys all (or only critical) available patches immediately without pre-selection.
+/// </summary>
+public sealed record PatchNowRequest(
+    bool AllowReboot = false,
+    bool CriticalOnly = false);
+
+/// <summary>
+/// Result returned by POST /api/action1/fleet/{machineId}/patch-now.
+/// </summary>
+public sealed record PatchNowResult(
+    string? DeploymentId,
+    string? EndpointId,
+    int PatchCount,
+    string? Message);
+
+/// <summary>
+/// Request body for POST /api/action1/fleet/patch-cycle.
+/// Starts an immediate patching cycle across all enrolled endpoints with pending patches.
+/// </summary>
+public sealed record PatchCycleRequest(
+    bool AllowReboot = false,
+    bool CriticalOnly = false);
+
+/// <summary>Per-machine result within a fleet patch cycle.</summary>
+public sealed record MachineDeploymentResult(
+    string EndpointId,
+    string Hostname,
+    string? DeploymentId,
+    int PatchCount,
+    string? Error);
+
+/// <summary>
+/// Summary returned by POST /api/action1/fleet/patch-cycle.
+/// </summary>
+public sealed record PatchCycleResult(
+    int MachinesTargeted,
+    int DeploymentsCreated,
+    int MachinesFailed,
+    IReadOnlyList<MachineDeploymentResult> Results);

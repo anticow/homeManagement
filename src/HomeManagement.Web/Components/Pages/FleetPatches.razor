@@ -21,6 +21,50 @@
         Patch counts come from Action1 in real-time; deployments are approved here and executed by Action1.
     </p>
 
+    @if (!_summaryLoading && _summaryError is null && _summary is not null)
+    {
+        <div style="display:flex; gap:8px; margin-bottom:16px; align-items:center; flex-wrap:wrap;">
+            <button @onclick="StartPatchCycleAsync"
+                    disabled="@(_patchCycleRunning || _fleetLoading)"
+                    style="padding:8px 18px; background:#1b5e20; color:white; border:none; border-radius:4px;
+                           cursor:pointer; font-weight:bold; font-size:0.9rem; display:flex; align-items:center; gap:6px;">
+                @if (_patchCycleRunning)
+                {
+                    <span>⏳ Starting cycle…</span>
+                }
+                else
+                {
+                    <span>⚡ Start Patch Cycle</span>
+                }
+            </button>
+            <label style="font-size:0.82rem; color:#555; display:flex; align-items:center; gap:4px; cursor:pointer;">
+                <input type="checkbox" checked="@_allowRebootCycle"
+                       @onchange="e => _allowRebootCycle = (bool)e.Value!" />
+                Allow reboot
+            </label>
+            <label style="font-size:0.82rem; color:#555; display:flex; align-items:center; gap:4px; cursor:pointer;">
+                <input type="checkbox" checked="@_criticalOnlyCycle"
+                       @onchange="e => _criticalOnlyCycle = (bool)e.Value!" />
+                Critical only
+            </label>
+            @if (_patchCycleResult is not null)
+            {
+                <span style="font-size:0.82rem; color:#1b5e20; margin-left:8px;">
+                    ✓ Cycle complete: @_patchCycleResult.DeploymentsCreated deployment(s) created
+                    on @_patchCycleResult.MachinesTargeted machine(s)
+                    @if (_patchCycleResult.MachinesFailed > 0)
+                    {
+                        <span style="color:#c62828;"> (@_patchCycleResult.MachinesFailed failed)</span>
+                    }
+                </span>
+            }
+            @if (_patchCycleError is not null)
+            {
+                <span style="font-size:0.82rem; color:#c62828; margin-left:8px;">⚠ @_patchCycleError</span>
+            }
+        </div>
+    }
+
     @if (_summaryLoading)
     {
         <p style="color:#888;">Loading fleet summary…</p>
@@ -102,12 +146,17 @@
                @bind:event="oninput"
                placeholder="Filter machines…"
                style="margin-bottom:8px; padding:4px 8px; width:280px;" />
+        <label style="font-size:0.82rem; color:#555; display:flex; align-items:center; gap:4px; cursor:pointer; margin-bottom:8px;">
+            <input type="checkbox" checked="@_enrolledOnly"
+                   @onchange="e => _enrolledOnly = (bool)e.Value!" />
+            Show only Action1-enrolled machines
+        </label>
 
-        var filtered = string.IsNullOrWhiteSpace(_filter)
-            ? _fleet
-            : _fleet.Where(m =>
+        var filtered = (_enrolledOnly ? _fleet.Where(m => m.Action1EndpointId is not null) : _fleet)
+            .Where(m => string.IsNullOrWhiteSpace(_filter) ||
                 m.Hostname.Contains(_filter, StringComparison.OrdinalIgnoreCase) ||
-                m.Action1Status.Contains(_filter, StringComparison.OrdinalIgnoreCase)).ToList();
+                m.Action1Status.Contains(_filter, StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
         <table>
             <thead>
@@ -183,20 +232,49 @@
                             @(machine.Action1LastSeen?.ToString("g") ?? "—")
                         </td>
                         <td>
-                            @if (machine.Action1EndpointId is not null && (machine.CriticalPatchCount + machine.OtherPatchCount) > 0)
+                            @if (machine.Action1EndpointId is not null)
                             {
-                                <button @onclick="() => OpenPatchPanel(machine)"
-                                        style="padding:4px 10px; background:#1565c0; color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.82rem;">
-                                    Review Patches
-                                </button>
-                            }
-                            else if (machine.Action1EndpointId is null)
-                            {
-                                <span style="color:#888; font-size:0.8rem;">Not enrolled</span>
+                                <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center;">
+                                    @if ((machine.CriticalPatchCount + machine.OtherPatchCount) > 0)
+                                    {
+                                        <button @onclick="() => OpenPatchPanel(machine)"
+                                                style="padding:4px 10px; background:#1565c0; color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.82rem;">
+                                            Review (@(machine.CriticalPatchCount + machine.OtherPatchCount))
+                                        </button>
+                                    }
+                                    <button @onclick="() => PatchNowAsync(machine)"
+                                            disabled="@(_patchNowRunning.Contains(machine.MachineId))"
+                                            title="Deploy all available patches immediately without review"
+                                            style="padding:4px 10px; background:#4caf50; color:white; border:none; border-radius:4px; cursor:pointer; font-size:0.82rem;">
+                                        @if (_patchNowRunning.Contains(machine.MachineId))
+                                        {
+                                            <span>⏳</span>
+                                        }
+                                        else if (machine.CriticalPatchCount + machine.OtherPatchCount == 0)
+                                        {
+                                            <span>✓ Patched</span>
+                                        }
+                                        else
+                                        {
+                                            <span>⚡ Patch Now</span>
+                                        }
+                                    </button>
+                                    @if (_patchNowResults.TryGetValue(machine.MachineId, out var pnr))
+                                    {
+                                        @if (pnr.DeploymentId is not null)
+                                        {
+                                            <span style="font-size:0.75rem; color:#1b5e20;">✓ @pnr.PatchCount patched</span>
+                                        }
+                                        else
+                                        {
+                                            <span style="font-size:0.75rem; color:#888;" title="@pnr.Message">@(pnr.Message ?? "No patches")</span>
+                                        }
+                                    }
+                                </div>
                             }
                             else
                             {
-                                <span style="color:#388e3c; font-size:0.8rem;">✓ Patched</span>
+                                <span style="color:#888; font-size:0.8rem;">Not enrolled</span>
                             }
                         </td>
                     </tr>
@@ -353,54 +431,101 @@ else
         <span style="background:#1976d2; color:white; border-radius:4px; padding:2px 10px; font-size:0.75rem; font-weight:bold; letter-spacing:.05em;">Action1 RMM</span>
     </div>
 
-    <p>Select a machine to scan for available patches or review deployment history.</p>
+    <p>Select an Action1-enrolled machine to view pending patches and trigger an on-demand deployment.</p>
 
-    @if (_machineLoading)
+    @if (_fleetLoading)
     {
         <p>Loading machines...</p>
     }
-    else if (_patchingMachines is not null)
+    else if (_fleet is not null)
     {
+        var enrolledMachines = _fleet.Where(m => m.Action1EndpointId is not null).ToList();
+
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
             <label for="machine-select">Machine:</label>
-            <select id="machine-select" @onchange="OnMachineSelected" style="padding:6px 12px; border:1px solid #ddd; border-radius:4px; font-size:0.88rem; min-width:240px;">
+            <select id="machine-select" @onchange="OnMachineSelectedAction1"
+                    style="padding:6px 12px; border:1px solid #ddd; border-radius:4px; font-size:0.88rem; min-width:240px;">
                 <option value="">-- Select a machine --</option>
-                @foreach (var m in _patchingMachines.Items)
+                @foreach (var m in enrolledMachines.OrderBy(m => m.Hostname))
                 {
-                    <option value="@m.Id">@m.Hostname</option>
+                    <option value="@m.MachineId">@m.Hostname (@m.Action1Status)</option>
                 }
             </select>
             @if (_selectedMachineId is not null)
             {
-                <button @onclick="ScanForPatchesAsync" disabled="@_scanning"
+                <button @onclick="RefreshAction1PatchesAsync" disabled="@_scanning"
                         style="padding:8px 16px; background:#1565c0; color:white; border:none; border-radius:4px; cursor:pointer;">
-                    @(_scanning ? "Scanning…" : "Scan for Patches")
+                    @(_scanning ? "Refreshing…" : "↻ Refresh")
                 </button>
             }
         </div>
 
         @if (_selectedMachineId is not null)
         {
-            @if (_detectedPatches is not null)
+            @if (_scanning)
             {
-                <h3>Detected Patches (@_detectedPatches.Count)</h3>
+                <p style="color:#888;">Loading patches from Action1…</p>
+            }
+            else if (_detectedPatches is not null)
+            {
+                <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+                    <h3 style="margin:0;">Pending Patches (@_detectedPatches.Count)</h3>
+                    @if (_detectedPatches.Count > 0)
+                    {
+                        <button @onclick="DeployAllAction1PatchesAsync"
+                                disabled="@_deployingAll"
+                                style="padding:6px 14px; background:#1b5e20; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">
+                            @(_deployingAll ? "Deploying…" : "⚡ Deploy All")
+                        </button>
+                        <label style="font-size:0.82rem; color:#555; display:flex; align-items:center; gap:4px; cursor:pointer;">
+                            <input type="checkbox" checked="@_allowRebootMachine"
+                                   @onchange="e => _allowRebootMachine = (bool)e.Value!" />
+                            Allow reboot
+                        </label>
+                    }
+                </div>
+                @if (_deployAllResult is not null)
+                {
+                    <p style="color:#1b5e20; font-size:0.85rem;">
+                        ✓ Deployment <code>@_deployAllResult</code> created. Monitor progress in Action1.
+                    </p>
+                }
+                @if (_deployAllError is not null)
+                {
+                    <p style="color:#c62828; font-size:0.85rem;">@_deployAllError</p>
+                }
+
                 @if (_detectedPatches.Count > 0)
                 {
                     <table>
                         <thead>
                             <tr>
-                                <th>Patch ID</th>
-                                <th>Title</th>
+                                <th>Name</th>
                                 <th>Severity</th>
+                                <th>Category</th>
+                                <th>Version</th>
+                                <th>Reboot</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var p in _detectedPatches)
+                            @foreach (var p in _detectedPatches.OrderByDescending(p => SeverityOrder(p.Severity)))
                             {
+                                var sc = p.Severity switch
+                                {
+                                    "Critical" => "#c62828",
+                                    "Important" => "#e65100",
+                                    "Moderate" => "#f57c00",
+                                    "Low" => "#388e3c",
+                                    _ => "#888"
+                                };
                                 <tr>
-                                    <td>@p.PatchId</td>
-                                    <td>@p.Title</td>
-                                    <td>@p.Severity</td>
+                                    <td style="font-size:0.88rem;">@p.Name</td>
+                                    <td style="color:@sc; font-weight:bold; font-size:0.85rem;">@p.Severity</td>
+                                    <td style="font-size:0.85rem; color:#555;">@p.Category</td>
+                                    <td style="font-size:0.82rem; color:#555;">@(p.Version ?? "—")</td>
+                                    <td style="font-size:0.82rem; color:@(p.RequiresReboot ? "#f57c00" : "#388e3c");">
+                                        @(p.RequiresReboot ? "⚠ Yes" : "No")
+                                    </td>
                                 </tr>
                             }
                         </tbody>
@@ -408,11 +533,11 @@ else
                 }
                 else
                 {
-                    <p>No patches detected — this machine is up to date.</p>
+                    <p style="color:#388e3c;">✓ No pending patches — this machine is up to date.</p>
                 }
             }
 
-            <h3>Deployment History</h3>
+            <h3 style="margin-top:20px;">Deployment History</h3>
             @if (_historyLoading)
             {
                 <p>Loading deployment history...</p>
@@ -441,7 +566,7 @@ else
                     </tbody>
                 </table>
             }
-            else
+            else if (!_historyLoading)
             {
                 <p>No deployment history found for this machine.</p>
             }
@@ -459,6 +584,7 @@ else
 
     private string _activeTab = FleetTab;
 
+    // Fleet tab state
     private bool _summaryLoading = true;
     private bool _fleetLoading = true;
     private bool _patchesLoading;
@@ -472,17 +598,32 @@ else
     private string? _approveResult;
     private string? _approveError;
     private string _filter = string.Empty;
+    private bool _enrolledOnly = true;
     private readonly HashSet<string> _selectedPatchIds = [];
     private bool _allowReboot;
 
-    private bool _machineLoading = true;
+    // Fleet patch cycle state
+    private bool _patchCycleRunning;
+    private bool _allowRebootCycle;
+    private bool _criticalOnlyCycle;
+    private FleetPatchCycleResultDto? _patchCycleResult;
+    private string? _patchCycleError;
+
+    // Per-machine Patch Now state
+    private readonly HashSet<Guid> _patchNowRunning = [];
+    private readonly Dictionary<Guid, PatchNowResultDto> _patchNowResults = new();
+
+    // Machine tab state
     private bool _scanning;
     private bool _historyLoading;
-    private PagedResult<Machine>? _patchingMachines;
+    private bool _deployingAll;
+    private bool _allowRebootMachine;
     private Guid? _selectedMachineId;
     private IReadOnlyList<PatchHistoryEntry>? _history;
-    private IReadOnlyList<PatchInfo>? _detectedPatches;
+    private IReadOnlyList<Action1PatchDto>? _detectedPatches;
     private string? _machineErrorMessage;
+    private string? _deployAllResult;
+    private string? _deployAllError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -491,7 +632,7 @@ else
             ? MachineTab
             : FleetTab;
 
-        await Task.WhenAll(LoadSummaryAsync(), LoadFleetAsync(), LoadMachinePatchingMachinesAsync());
+        await Task.WhenAll(LoadSummaryAsync(), LoadFleetAsync());
     }
 
     private void SwitchTab(string tab) => _activeTab = tab;
@@ -640,66 +781,34 @@ else
         else _selectedPatchIds.Remove(id);
     }
 
-    private async Task LoadMachinePatchingMachinesAsync()
-    {
-        try
-        {
-            _patchingMachines = await BrokerApi.GetMachinesAsync();
-        }
-        catch (UnauthorizedAccessException)
-        {
-            Navigation.NavigateTo("/login");
-        }
-        catch (Exception ex)
-        {
-            _machineErrorMessage = $"Unable to load machines: {ex.Message}";
-        }
-        finally
-        {
-            _machineLoading = false;
-        }
-    }
+    // ── Machine Patching tab — Action1-backed methods ─────────────────────────
 
-    private async Task OnMachineSelected(ChangeEventArgs e)
+    private async Task OnMachineSelectedAction1(ChangeEventArgs e)
     {
         _detectedPatches = null;
         _machineErrorMessage = null;
         _history = null;
-        if (Guid.TryParse(e.Value?.ToString(), out var id))
-        {
-            _selectedMachineId = id;
-            _historyLoading = true;
-            try
-            {
-                _history = await BrokerApi.GetPatchHistoryAsync(id);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                Navigation.NavigateTo("/login");
-            }
-            catch (Exception ex)
-            {
-                _machineErrorMessage = $"Unable to load deployment history: {ex.Message}";
-            }
-            finally
-            {
-                _historyLoading = false;
-            }
-        }
-        else
+        _deployAllResult = null;
+        _deployAllError = null;
+
+        if (!Guid.TryParse(e.Value?.ToString(), out var id))
         {
             _selectedMachineId = null;
+            return;
         }
-    }
 
-    private async Task ScanForPatchesAsync()
-    {
-        if (_selectedMachineId is null) return;
+        _selectedMachineId = id;
         _scanning = true;
-        _machineErrorMessage = null;
+        _historyLoading = true;
+        StateHasChanged();
+
         try
         {
-            _detectedPatches = await BrokerApi.ScanPatchesAsync(new PatchScanRequest(_selectedMachineId.Value));
+            var patchesTask = BrokerApi.GetMachinePatchesAsync(id);
+            var historyTask = BrokerApi.GetPatchHistoryAsync(id);
+            await Task.WhenAll(patchesTask, historyTask);
+            _detectedPatches = patchesTask.Result;
+            _history = historyTask.Result;
         }
         catch (UnauthorizedAccessException)
         {
@@ -707,11 +816,134 @@ else
         }
         catch (Exception ex)
         {
-            _machineErrorMessage = $"Scan failed: {ex.Message}";
+            _machineErrorMessage = $"Could not load patch data: {ex.Message}";
         }
         finally
         {
             _scanning = false;
+            _historyLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshAction1PatchesAsync()
+    {
+        if (_selectedMachineId is null) return;
+        _scanning = true;
+        _machineErrorMessage = null;
+        _deployAllResult = null;
+        StateHasChanged();
+        try
+        {
+            _detectedPatches = await BrokerApi.GetMachinePatchesAsync(_selectedMachineId.Value);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            _machineErrorMessage = $"Refresh failed: {ex.Message}";
+        }
+        finally
+        {
+            _scanning = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeployAllAction1PatchesAsync()
+    {
+        if (_selectedMachineId is null) return;
+        _deployingAll = true;
+        _deployAllResult = null;
+        _deployAllError = null;
+        StateHasChanged();
+        try
+        {
+            var result = await BrokerApi.PatchNowAsync(
+                _selectedMachineId.Value,
+                new PatchNowRequestDto(_allowRebootMachine, CriticalOnly: false));
+            _deployAllResult = result.DeploymentId ?? result.Message;
+            if (result.DeploymentId is not null)
+                _detectedPatches = await BrokerApi.GetMachinePatchesAsync(_selectedMachineId.Value);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            _deployAllError = $"Deployment failed: {ex.Message}";
+        }
+        finally
+        {
+            _deployingAll = false;
+            StateHasChanged();
+        }
+    }
+
+    // ── Fleet-level Patch Now (per-machine, no pre-selection) ─────────────────
+
+    private async Task PatchNowAsync(FleetMachineStatusDto machine)
+    {
+        _patchNowRunning.Add(machine.MachineId);
+        _patchNowResults.Remove(machine.MachineId);
+        StateHasChanged();
+        try
+        {
+            var result = await BrokerApi.PatchNowAsync(
+                machine.MachineId,
+                new PatchNowRequestDto(AllowReboot: false, CriticalOnly: false));
+            _patchNowResults[machine.MachineId] = result;
+            if (result.DeploymentId is not null)
+            {
+                await LoadFleetAsync();
+                await LoadSummaryAsync();
+            }
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            _patchNowResults[machine.MachineId] = new PatchNowResultDto(null, null, 0, ex.Message);
+        }
+        finally
+        {
+            _patchNowRunning.Remove(machine.MachineId);
+            StateHasChanged();
+        }
+    }
+
+    // ── Fleet-wide patch cycle ────────────────────────────────────────────────
+
+    private async Task StartPatchCycleAsync()
+    {
+        _patchCycleRunning = true;
+        _patchCycleResult = null;
+        _patchCycleError = null;
+        StateHasChanged();
+        try
+        {
+            _patchCycleResult = await BrokerApi.StartFleetPatchCycleAsync(
+                new FleetPatchCycleRequestDto(_allowRebootCycle, _criticalOnlyCycle));
+            await LoadFleetAsync();
+            await LoadSummaryAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            _patchCycleError = $"Patch cycle failed: {ex.Message}";
+        }
+        finally
+        {
+            _patchCycleRunning = false;
+            StateHasChanged();
         }
     }
 

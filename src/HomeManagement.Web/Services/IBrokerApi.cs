@@ -87,6 +87,14 @@ public interface IBrokerApi
     [Get("/api/action1/fleet/pending-patches")]
     Task<IReadOnlyList<MachinePendingPatchesDto>> GetAllPendingPatchesAsync(CancellationToken ct = default);
 
+    /// <summary>Deploy all (or only critical) available patches on a single machine immediately.</summary>
+    [Post("/api/action1/fleet/{machineId}/patch-now")]
+    Task<PatchNowResultDto> PatchNowAsync(Guid machineId, [Body] PatchNowRequestDto request, CancellationToken ct = default);
+
+    /// <summary>Start a fleet-wide patching cycle — deploys pending patches on all enrolled machines.</summary>
+    [Post("/api/action1/fleet/patch-cycle")]
+    Task<FleetPatchCycleResultDto> StartFleetPatchCycleAsync([Body] FleetPatchCycleRequestDto request, CancellationToken ct = default);
+
     // ── Action1 Catalog (org-level update approval queue) ──
     [Get("/api/action1/catalog")]
     Task<IReadOnlyList<CatalogUpdateDto>> GetCatalogUpdatesAsync(string approvalStatus = "New", CancellationToken ct = default);
@@ -328,3 +336,37 @@ public sealed record CatalogTestResultDto(
     int ItemCount,
     long ElapsedMs,
     string? Error);
+
+// ── Patch-now / Patch-cycle DTOs ──────────────────────────────────────────────
+
+/// <summary>Request body for POST /api/action1/fleet/{machineId}/patch-now.</summary>
+public sealed record PatchNowRequestDto(
+    bool AllowReboot = false,
+    bool CriticalOnly = false);
+
+/// <summary>Result returned by POST /api/action1/fleet/{machineId}/patch-now.</summary>
+public sealed record PatchNowResultDto(
+    string? DeploymentId,
+    string? EndpointId,
+    int PatchCount,
+    string? Message);
+
+/// <summary>Request body for POST /api/action1/fleet/patch-cycle.</summary>
+public sealed record FleetPatchCycleRequestDto(
+    bool AllowReboot = false,
+    bool CriticalOnly = false);
+
+/// <summary>Per-machine result within a fleet patch cycle.</summary>
+public sealed record MachineDeploymentResultDto(
+    string EndpointId,
+    string Hostname,
+    string? DeploymentId,
+    int PatchCount,
+    string? Error);
+
+/// <summary>Summary returned by POST /api/action1/fleet/patch-cycle.</summary>
+public sealed record FleetPatchCycleResultDto(
+    int MachinesTargeted,
+    int DeploymentsCreated,
+    int MachinesFailed,
+    IReadOnlyList<MachineDeploymentResultDto> Results);
