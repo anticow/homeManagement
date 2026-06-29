@@ -47,7 +47,7 @@ jobs:
           --results-directory ./TestResults
 
       - name: Setup Helm
-        uses: azure/setup-helm@v5.0.0
+        uses: azure/setup-helm@v5.0.1
         with:
           version: ${{ env.HELM_VERSION }}
 
