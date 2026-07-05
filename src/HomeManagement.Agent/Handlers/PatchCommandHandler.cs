@@ -133,14 +133,11 @@ public sealed partial class PatchCommandHandler(ILogger<PatchCommandHandler> log
             if (safeIds.Length == 0)
                 return (-1, "", "No valid patch IDs provided.");
 
-            // Build PowerShell script with sanitized IDs
-            var idFilter = string.Join("','", safeIds);
-            var script = $"Install-WindowsUpdate -KBArticleID '{idFilter}' -AcceptAll -IgnoreReboot | ConvertTo-Json";
             psi.ArgumentList.Add("-NoProfile");
             psi.ArgumentList.Add("-ExecutionPolicy");
             psi.ArgumentList.Add("Bypass");
             psi.ArgumentList.Add("-Command");
-            psi.ArgumentList.Add(script);
+            psi.ArgumentList.Add(BuildWindowsApplyScript(safeIds));
         }
         else
         {
@@ -148,11 +145,140 @@ public sealed partial class PatchCommandHandler(ILogger<PatchCommandHandler> log
             psi.ArgumentList.Add("-ExecutionPolicy");
             psi.ArgumentList.Add("Bypass");
             psi.ArgumentList.Add("-Command");
-            psi.ArgumentList.Add("Get-WindowsUpdate -MicrosoftUpdate | ConvertTo-Json");
+            psi.ArgumentList.Add(BuildWindowsScanScript());
         }
 
         return await RunProcessAsync(psi, ct);
     }
+
+    private static string BuildWindowsScanScript() =>
+        """
+        $ErrorActionPreference = 'Stop'
+        function Ensure-WinGet {
+            if (Get-Command winget -ErrorAction SilentlyContinue) { return }
+
+            $bundlePath = Join-Path $env:TEMP 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle'
+            Invoke-WebRequest -Uri 'https://aka.ms/getwinget' -OutFile $bundlePath -UseBasicParsing
+            Add-AppxPackage -Path $bundlePath
+
+            if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+                throw 'winget is not available after installation attempt.'
+            }
+        }
+
+        Ensure-WinGet
+        $wingetVersion = (& winget --version).Trim()
+        $windowsUpdates = @(Get-WindowsUpdate -MicrosoftUpdate)
+
+        [pscustomobject]@{
+            WingetVersion = $wingetVersion
+            WindowsUpdates = $windowsUpdates
+        } | ConvertTo-Json -Compress -Depth 8
+        """;
+
+    private static string BuildWindowsApplyScript(string[] safeIds)
+    {
+        var packageIds = safeIds.Where(id => !IsKbPatchId(id)).ToArray();
+        var kbIds = safeIds.Where(IsKbPatchId).ToArray();
+
+        var packageIdsLiteral = ToPowerShellStringArrayLiteral(packageIds);
+        var kbIdsLiteral = ToPowerShellStringArrayLiteral(kbIds);
+        const string scriptTemplate =
+            """
+            $ErrorActionPreference = 'Stop'
+            function Ensure-WinGet {
+                if (Get-Command winget -ErrorAction SilentlyContinue) { return }
+
+                $bundlePath = Join-Path $env:TEMP 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle'
+                Invoke-WebRequest -Uri 'https://aka.ms/getwinget' -OutFile $bundlePath -UseBasicParsing
+                Add-AppxPackage -Path $bundlePath
+
+                if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+                    throw 'winget is not available after installation attempt.'
+                }
+            }
+
+            $packageIds = __PACKAGE_IDS__
+            $kbIds = __KB_IDS__
+            $results = @()
+
+            if ($packageIds.Count -gt 0) {
+                Ensure-WinGet
+                foreach ($packageId in $packageIds) {
+                    $exitCode = 0
+                    try {
+                        winget upgrade --id $packageId --exact --silent --accept-package-agreements --accept-source-agreements --disable-interactivity | Out-Null
+                        $exitCode = $LASTEXITCODE
+                    } catch {
+                        $exitCode = -1
+                    }
+
+                    $results += [pscustomobject]@{
+                        PatchId = $packageId
+                        Installed = ($exitCode -eq 0)
+                        ExitCode = $exitCode
+                        ErrorMessage = if ($exitCode -eq 0) { $null } else { "winget exit code $exitCode" }
+                    }
+                }
+            }
+
+            if ($kbIds.Count -gt 0) {
+                try {
+                    $kbUpdates = Install-WindowsUpdate -KBArticleID $kbIds -AcceptAll -IgnoreReboot -Confirm:$false
+                    foreach ($update in $kbUpdates) {
+                        $status = [string]$update.Status
+                        $installed = $status -like '*Installed*'
+                        $results += [pscustomobject]@{
+                            PatchId = [string]$update.KB
+                            Installed = $installed
+                            ExitCode = if ($installed) { 0 } else { 1 }
+                            ErrorMessage = if ($installed) { $null } else { $status }
+                        }
+                    }
+                } catch {
+                    foreach ($kbId in $kbIds) {
+                        $results += [pscustomobject]@{
+                            PatchId = $kbId
+                            Installed = $false
+                            ExitCode = -1
+                            ErrorMessage = $_.Exception.Message
+                        }
+                    }
+                }
+            }
+
+            $results | ConvertTo-Json -Compress
+            """;
+
+        return scriptTemplate
+            .Replace("__PACKAGE_IDS__", packageIdsLiteral, StringComparison.Ordinal)
+            .Replace("__KB_IDS__", kbIdsLiteral, StringComparison.Ordinal);
+    }
+
+    private static bool IsKbPatchId(string patchId)
+    {
+        if (!patchId.StartsWith("KB", StringComparison.OrdinalIgnoreCase) || patchId.Length <= 2)
+            return false;
+
+        for (var i = 2; i < patchId.Length; i++)
+        {
+            if (!char.IsDigit(patchId[i]))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static string ToPowerShellStringArrayLiteral(string[] values)
+    {
+        if (values.Length == 0)
+            return "@()";
+
+        return $"@('{string.Join("','", values.Select(EscapePowerShellSingleQuotedString))}')";
+    }
+
+    private static string EscapePowerShellSingleQuotedString(string value) =>
+        value.Replace("'", "''", StringComparison.Ordinal);
 
     private async Task<(int, string, string)> RunProcessAsync(
         ProcessStartInfo psi, CancellationToken ct)
