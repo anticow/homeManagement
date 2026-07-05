@@ -13,6 +13,7 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Serilog" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\HomeManagement.Core\HomeManagement.Core.csproj" />
