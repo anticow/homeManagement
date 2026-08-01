@@ -28,7 +28,11 @@ public static class ServiceRegistration
         IEnumerable<Assembly>? moduleAssemblies = null)
     {
         // ── Data layer (only register SQLite if no provider was registered by a platform host) ──
-        if (!services.Any(s => s.ServiceType == typeof(DbContextOptions<HomeManagementDbContext>)))
+        // In .NET 10, EF Core strictly enforces one provider per service provider. If a host
+        // has already registered a DbContext with a specific provider (e.g., SqlServer),
+        // skip the default SQLite registration to avoid provider conflicts.
+        if (!services.Any(s => s.ServiceType == typeof(DbContextOptions<HomeManagementDbContext>)) &&
+            !services.Any(s => s.ServiceType == typeof(DbContextOptions)))
         {
             var dbPath = Path.Combine(dataDirectory, "homemanagement.db");
             services.AddDbContext<HomeManagementDbContext>(options =>

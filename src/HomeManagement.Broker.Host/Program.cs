@@ -35,7 +35,15 @@ var dataDirectory = builder.Configuration[ServiceRegistration.DataDirectoryConfi
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HomeManagement");
 
 // ── Services ──
-builder.Services.AddHomeManagementSqlServer(connectionString);
+// In test scenarios (Environment=Test), skip SQL Server and use SQLite only.
+// When ASPNETCORE_ENVIRONMENT=Test is set by WebApplicationFactory, we don't register SQL Server.
+var isTestEnvironment = builder.Environment.EnvironmentName == "Test";
+
+if (!isTestEnvironment)
+{
+    builder.Services.AddHomeManagementSqlServer(connectionString);
+}
+
 builder.Services.AddHomeManagementAuthRepositories();
 builder.Services.AddHomeManagement(dataDirectory);
 builder.Services.AddHomeManagementLogging(dataDirectory);

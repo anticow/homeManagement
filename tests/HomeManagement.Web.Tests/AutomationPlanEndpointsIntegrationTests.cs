@@ -631,6 +631,9 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
 
         public BrokerAutomationWebApplicationFactory()
         {
+            // Set environment to "Test" so hosts detect and skip SQL Server registration
+            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Test");
+            
             _dataDirectory = Path.Combine(Path.GetTempPath(), $"hm-broker-automation-tests-{Guid.NewGuid():N}");
             Directory.CreateDirectory(_dataDirectory);
             _databasePath = Path.Combine(_dataDirectory, "broker-automation-tests.db");
@@ -641,7 +644,7 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            builder.ConfigureAppConfiguration((_, config) =>
+            builder.ConfigureAppConfiguration((context, config) =>
             {
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
@@ -665,17 +668,23 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
 
             builder.ConfigureServices(services =>
             {
+                // Remove DbContextOptions first, so both AddHomeManagementSqlServer and AddHomeManagement
+                // will detect it's not registered and skip their own registrations (see their guard checks).
+                // Then we register our test DbContext with SQLite, which will be picked up by both.
                 services.RemoveAll<DbContextOptions<HomeManagementDbContext>>();
                 services.RemoveAll<HomeManagementDbContext>();
+
+                // Register SQLite DbContext for tests (avoids multi-provider conflict in .NET 10).
+                services.AddDbContext<HomeManagementDbContext>(options =>
+                    options.UseSqlite($"Data Source={_databasePath}"));
+
+                // Remove and replace test dependencies
                 services.RemoveAll<ILLMClient>();
                 services.RemoveAll<IInventoryService>();
                 services.RemoveAll<IServiceController>();
                 services.RemoveAll<IPatchService>();
                 services.RemoveAll<IHaosAdapter>();
                 services.RemoveAll<IAuditLogger>();
-
-                services.AddDbContext<HomeManagementDbContext>(options =>
-                    options.UseSqlite($"Data Source={_databasePath}"));
 
                 services.AddSingleton<ILLMClient>(LlmClient);
                 services.AddScoped<IInventoryService, FakeInventoryService>();

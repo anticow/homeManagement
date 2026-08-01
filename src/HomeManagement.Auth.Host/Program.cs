@@ -26,7 +26,16 @@ var connectionString = builder.Configuration.GetConnectionString("HomeManagement
 
 // ── Services ──
 builder.Services.AddSingleton<ICorrelationContext, CorrelationContext>();
-builder.Services.AddHomeManagementSqlServer(connectionString);
+
+// In test scenarios (Environment=Test), skip SQL Server and use SQLite only.
+// When ASPNETCORE_ENVIRONMENT=Test is set by WebApplicationFactory, we don't register SQL Server.
+var isTestEnvironment = builder.Environment.EnvironmentName == "Test";
+
+if (!isTestEnvironment)
+{
+    builder.Services.AddHomeManagementSqlServer(connectionString);
+}
+
 builder.Services.AddHomeManagementAuthRepositories();
 builder.Services.AddHomeManagementAuth(builder.Configuration);
 
