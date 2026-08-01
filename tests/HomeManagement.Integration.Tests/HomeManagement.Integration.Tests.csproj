@@ -16,5 +16,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\HomeManagement.Data\HomeManagement.Data.csproj" />
     <ProjectReference Include="..\..\src\HomeManagement.Data.SqlServer\HomeManagement.Data.SqlServer.csproj" />
+    <ProjectReference Include="..\..\src\HomeManagement.Integration.Prometheus\HomeManagement.Integration.Prometheus.csproj" />
   </ItemGroup>
 </Project>
