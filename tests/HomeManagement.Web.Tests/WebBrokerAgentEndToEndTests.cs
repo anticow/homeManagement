@@ -454,7 +454,9 @@ public sealed class WebBrokerAgentEndToEndTests
 
         public static async Task<TestAgentGatewayHost> StartAsync()
         {
-            var apiKey = $"test-agent-gateway-key-{Guid.NewGuid():N}";
+            var apiKey = Convert.ToBase64String(
+                System.Security.Cryptography.RandomNumberGenerator.GetBytes(
+                    AgentGatewayHostOptions.MinimumApiKeyBytes));
 
             var builder = WebApplication.CreateBuilder(new WebApplicationOptions
             {
@@ -484,33 +486,23 @@ public sealed class WebBrokerAgentEndToEndTests
             builder.Services.AddLogging();
             builder.Services.AddSingleton<TestApiKeyInterceptor>();
             builder.Services.AddGrpc(options => options.Interceptors.Add<TestApiKeyInterceptor>());
+            builder.Services.AddOptions<AgentGatewayHostOptions>()
+                .BindConfiguration(AgentGatewayHostOptions.SectionName)
+                .Validate(
+                    AgentGatewayHostOptions.HasValidControlPlaneApiKey,
+                    $"AgentGateway:ApiKey must be a nontrivial Base64-encoded key containing exactly {AgentGatewayHostOptions.MinimumApiKeyBytes} decoded bytes.")
+                .ValidateOnStart();
+            builder.Services.AddSingleton<RevokedAgentStore>();
+            builder.Services.AddSingleton<IRevokedAgentStore>(
+                services => services.GetRequiredService<RevokedAgentStore>());
             builder.Services.AddSingleton<StandaloneAgentGatewayService>();
             // Use a passthrough validator — TestApiKeyInterceptor handles key validation
             builder.Services.AddSingleton<IAgentApiKeyValidator, PassthroughAgentApiKeyValidator>();
             builder.Services.AddHealthChecks();
 
             var app = builder.Build();
-            
-            // Add API key validation middleware for /internal/agents endpoints
-            app.Use(async (ctx, next) =>
-            {
-                if (ctx.Request.Path.StartsWithSegments("/internal/agents"))
-                {
-                    var expectedKey = apiKey;
-                    var suppliedKey = ctx.Request.Headers["x-agent-gateway-api-key"].FirstOrDefault();
-                    var expectedBytes = System.Text.Encoding.UTF8.GetBytes(expectedKey ?? string.Empty);
-                    var suppliedBytes = System.Text.Encoding.UTF8.GetBytes(suppliedKey ?? string.Empty);
-                    
-                    if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(expectedBytes, suppliedBytes))
-                    {
-                        ctx.Response.StatusCode = 401;
-                        return;
-                    }
-                }
-                
-                await next(ctx);
-            });
-            
+            app.UseControlPlaneApiKeyAuthentication();
+
             app.MapHealthChecks("/healthz");
             app.MapGet("/readyz", () => Results.Ok("ready"));
             app.MapGrpcService<AgentGatewayGrpcService>();

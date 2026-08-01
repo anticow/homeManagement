@@ -56,7 +56,7 @@ jobs:
           helm lint deploy/helm/homemanagement
           --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;Encrypt=True;TrustServerCertificate=False;"
           --set auth.jwtSigningKey="validation-signing-key-that-is-long-enough-for-ci-checks-1234567890"
-          --set agentGateway.apiKey="validation-agent-gateway-api-key"
+          --set agentGateway.apiKey="AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
 
       - name: Verify chart fails without required secret values
         run: >-
@@ -67,7 +67,7 @@ jobs:
           helm template homemanagement deploy/helm/homemanagement
           --set database.connectionString="Server=sql;Database=HomeManagement;User Id=sa;Password=ValidationPassword_123!;Encrypt=True;TrustServerCertificate=False;"
           --set auth.jwtSigningKey="validation-signing-key-that-is-long-enough-for-ci-checks-1234567890"
-          --set agentGateway.apiKey="validation-agent-gateway-api-key"
+          --set agentGateway.apiKey="AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
           > /tmp/homemanagement-rendered.yaml
 
   publish-binaries:

@@ -131,46 +131,15 @@ spec:
     - host: {{ .Values.ingress.agentGatewayHost | quote }}
       http:
         paths:
-          - path: /
+          # Restrict the public listener to the generated gRPC service path.
+          # The REST control plane is served by the same process but must only
+          # be reached through the internal API service port.
+          - path: /homemanagement.agent.v1.AgentHub
             pathType: Prefix
             backend:
               service:
                 name: hm-agent-gw
                 port:
                   number: {{ .Values.agentGateway.port }}
-{{- end }}
-{{- if .Values.ingress.agentGatewayApiHost }}
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: hm-agent-gw-api-ingress
-  namespace: {{ .Values.namespace }}
-  labels:
-    {{- include "homemanagement.labels" . | nindent 4 }}
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: {{ .Values.ingress.sslRedirect | quote }}
-    {{- with .Values.ingress.annotations }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
-spec:
-  ingressClassName: {{ .Values.ingress.className }}
-  {{- if .Values.ingress.tls.enabled }}
-  tls:
-    - hosts:
-        - {{ .Values.ingress.agentGatewayApiHost | quote }}
-      secretName: {{ .Values.ingress.tls.secretName }}
-  {{- end }}
-  rules:
-    - host: {{ .Values.ingress.agentGatewayApiHost | quote }}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: hm-agent-gw
-                port:
-                  number: {{ .Values.agentGateway.apiPort }}
 {{- end }}
 {{- end }}

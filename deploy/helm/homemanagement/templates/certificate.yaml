@@ -22,7 +22,4 @@ spec:
     {{- if .Values.ingress.agentGatewayHost }}
     - {{ .Values.ingress.agentGatewayHost | quote }}
     {{- end }}
-    {{- if .Values.ingress.agentGatewayApiHost }}
-    - {{ .Values.ingress.agentGatewayApiHost | quote }}
-    {{- end }}
 {{- end }}

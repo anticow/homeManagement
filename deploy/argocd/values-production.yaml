@@ -47,7 +47,6 @@ ingress:
   brokerHost: broker.cowgomu.net
   authHost: authapi.cowgomu.net
   agentGatewayHost: agentgw.cowgomu.net
-  agentGatewayApiHost: agentgw-api.cowgomu.net
   clusterIssuer: letsencrypt-dns-sp-v2
   sslRedirect: true
   tls:

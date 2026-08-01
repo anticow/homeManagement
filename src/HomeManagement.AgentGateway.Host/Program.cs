@@ -17,6 +17,9 @@ builder.AddHomeManagementObservability("hm-agent-gw");
 // ── Services ──
 builder.Services.AddOptions<AgentGatewayHostOptions>()
     .BindConfiguration(AgentGatewayHostOptions.SectionName)
+    .Validate(
+        AgentGatewayHostOptions.HasValidControlPlaneApiKey,
+        $"AgentGateway:ApiKey must be a nontrivial Base64-encoded key containing exactly {AgentGatewayHostOptions.MinimumApiKeyBytes} decoded bytes.")
     .ValidateOnStart();
 builder.Services.AddSingleton<RevokedAgentStore>();
 builder.Services.AddSingleton<IRevokedAgentStore>(sp => sp.GetRequiredService<RevokedAgentStore>());
@@ -41,6 +44,7 @@ app.UseSerilogRequestLogging(opts =>
         ctx.Request.Path.StartsWithSegments("/healthz") || ctx.Request.Path.StartsWithSegments("/readyz")
             ? Serilog.Events.LogEventLevel.Verbose
             : Serilog.Events.LogEventLevel.Information);
+app.UseControlPlaneApiKeyAuthentication();
 
 // ── Health ──
 app.UseHomeManagementHealthEndpoints();

@@ -135,7 +135,6 @@ ingress:
   brokerHost: broker.cowgomu.net
   authHost: authapi.cowgomu.net
   agentGatewayHost: agentgw.cowgomu.net
-  agentGatewayApiHost: agentgw-api.cowgomu.net
   clusterIssuer: ""
   sslRedirect: true
   tls:
@@ -193,7 +192,7 @@ healthPage:
     grafanaUrl: "http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local/api/health"
     argoCDUrl: "http://argocd-server.argocd.svc.cluster.local:80/healthz"
     awxUrl: "http://awx-service.awx.svc.cluster.local/api/v2/ping/"
-
+
 # -- Grafana panel embedding (iframes in MachineDetail)
 # baseUrl: public URL of Grafana (e.g. https://grafana.cowgomu.net)
 # Dashboard UIDs must match those imported by the monitoring Ansible role.

@@ -94,7 +94,6 @@ Abstractions ← Core ← Domain Modules ← Platform Services ← GUI/Web
 | Broker API | `broker.cowgomu.net` |
 | Auth API | `authapi.cowgomu.net` |
 | Agent Gateway (gRPC) | `agentgw.cowgomu.net` |
-| Agent Gateway API | `agentgw-api.cowgomu.net` |
 
 **Helm chart** (`deploy/helm/homemanagement/`): The chart requires three values that have no defaults — `database.connectionString`, `auth.jwtSigningKey`, and `agentGateway.apiKey`. The CI Helm lint job supplies dummy values; real values come from the Ansible vault. The chart renders a cert-manager `Certificate` resource for all five hostnames; `ingress.clusterIssuer` must be set to a valid ClusterIssuer name (in production this is the Azure DNS-backed `letsencrypt-dns-sp-v2`).
 
