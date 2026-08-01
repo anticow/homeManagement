@@ -104,4 +104,38 @@ public sealed class PatchCommandHandlerTests
     {
         Handler.CommandType.Should().Be("PatchScan");
     }
+
+    [Fact]
+    public void BuildWindowsApplyScript_IncludesWinGetEnsureAndSilentFlags()
+    {
+        var method = typeof(PatchCommandHandler)
+            .GetMethod("BuildWindowsApplyScript", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("BuildWindowsApplyScript method not found");
+        var patchIds = new[] { "Git.Git", "KB5001234" };
+
+        var script = (string)method.Invoke(null, [patchIds])!;
+
+        script.Should().Contain("function Ensure-WinGet");
+        script.Should().Contain("winget upgrade --id $packageId --exact --silent");
+        script.Should().Contain("--accept-package-agreements");
+        script.Should().Contain("--accept-source-agreements");
+        script.Should().Contain("--disable-interactivity");
+        script.Should().Contain("$packageIds = @('Git.Git')");
+        script.Should().Contain("$kbIds = @('KB5001234')");
+    }
+
+    [Fact]
+    public void BuildWindowsScanScript_EnsuresWinGetBeforeScanning()
+    {
+        var method = typeof(PatchCommandHandler)
+            .GetMethod("BuildWindowsScanScript", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("BuildWindowsScanScript method not found");
+
+        var script = (string)method.Invoke(null, null)!;
+
+        script.Should().Contain("function Ensure-WinGet");
+        script.Should().Contain("Ensure-WinGet");
+        script.Should().Contain("winget --version");
+        script.Should().Contain("Get-WindowsUpdate -MicrosoftUpdate");
+    }
 }
