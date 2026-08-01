@@ -32,6 +32,12 @@ public sealed class BrokerApiClient : IBrokerApi, IDisposable
     public Task<HomeManagement.Abstractions.Models.MachineStateSnapshot> GetMachineStateAsync(Guid id, CancellationToken ct = default)
         => ExecuteAsync(api => api.GetMachineStateAsync(id, ct), ct);
 
+    public Task<IReadOnlyList<HomeManagement.Abstractions.Models.AgentHealthSummary>> GetAllAgentHealthAsync(CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetAllAgentHealthAsync(ct), ct);
+
+    public Task<HomeManagement.Abstractions.Models.AgentHealthSummary> GetAgentHealthAsync(Guid machineId, CancellationToken ct = default)
+        => ExecuteAsync(api => api.GetAgentHealthAsync(machineId, ct), ct);
+
     public Task<HomeManagement.Abstractions.Models.MachineSummary> GetMachineSummaryAsync(CancellationToken ct = default)
         => ExecuteAsync(api => api.GetMachineSummaryAsync(ct), ct);
 

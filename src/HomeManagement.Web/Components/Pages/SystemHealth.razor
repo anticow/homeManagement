@@ -1,0 +1,232 @@
+@page "/health"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using HomeManagement.Abstractions.Models
+@using HomeManagement.Web.Services
+@inject IBrokerApi BrokerApi
+@inject NavigationManager Navigation
+
+<h1>System Health</h1>
+
+<div style="margin-bottom: 16px;">
+    <p style="color: #666; margin-bottom: 12px;">
+        Real-time CPU, memory, and disk usage for all managed agents.
+        Refresh data from Prometheus and display current health status.
+    </p>
+    <button style="@BtnStyle" @onclick="RefreshHealthAsync" disabled="@_loading">
+        @(_loading ? "Loading…" : "⟳ Refresh")
+    </button>
+</div>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div style="background: #ffebee; border: 1px solid #c62828; border-radius: 4px; padding: 12px; margin-bottom: 16px; color: #c62828;">
+        <strong>⚠ Error:</strong> @_error
+    </div>
+}
+
+@if (_loading && _summaries == null)
+{
+    <p style="color: #888;">Loading health summaries…</p>
+}
+else if (_summaries is not null)
+{
+    // Summary stats
+    var healthy = _summaries.Count(s => s.OverallStatus == AgentHealthStatus.Healthy);
+    var warning = _summaries.Count(s => s.OverallStatus == AgentHealthStatus.Warning);
+    var critical = _summaries.Count(s => s.OverallStatus == AgentHealthStatus.Critical);
+    var offline = _summaries.Count(s => !s.IsOnline);
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 24px;">
+        <div style="@StatBoxStyle(HealthBoxColor(AgentHealthStatus.Healthy))">
+            <div style="font-size: 1.6rem; font-weight: bold;">@healthy</div>
+            <div style="font-size: 0.85rem; opacity: 0.8;">Healthy</div>
+        </div>
+        <div style="@StatBoxStyle(HealthBoxColor(AgentHealthStatus.Warning))">
+            <div style="font-size: 1.6rem; font-weight: bold;">@warning</div>
+            <div style="font-size: 0.85rem; opacity: 0.8;">Warning</div>
+        </div>
+        <div style="@StatBoxStyle(HealthBoxColor(AgentHealthStatus.Critical))">
+            <div style="font-size: 1.6rem; font-weight: bold;">@critical</div>
+            <div style="font-size: 0.85rem; opacity: 0.8;">Critical</div>
+        </div>
+        <div style="@StatBoxStyle("#f5f5f5")">
+            <div style="font-size: 1.6rem; font-weight: bold; color: #999;">@offline</div>
+            <div style="font-size: 0.85rem; opacity: 0.8;">Offline</div>
+        </div>
+    </div>
+
+    @if (_summaries.Count == 0)
+    {
+        <p style="color: #888;">No agents found.</p>
+    }
+    else
+    {
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
+            <thead>
+                <tr style="border-bottom: 2px solid #ddd; background: #fafafa; text-align: left;">
+                    <th style="padding: 12px; font-weight: 600;">Hostname</th>
+                    <th style="padding: 12px; font-weight: 600;">OS</th>
+                    <th style="padding: 12px; font-weight: 600; text-align: center;">Status</th>
+                    <th style="padding: 12px; font-weight: 600; text-align: right; width: 80px;">CPU</th>
+                    <th style="padding: 12px; font-weight: 600; text-align: right; width: 80px;">Memory</th>
+                    <th style="padding: 12px; font-weight: 600; text-align: right; width: 80px;">Disk</th>
+                    <th style="padding: 12px; font-weight: 600;">Last Updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var summary in _summaries.OrderByDescending(s => s.OverallStatus).ThenBy(s => s.Hostname))
+                {
+                    var statusColor = HealthStatusColor(summary.OverallStatus);
+                    var statusLabel = summary.OverallStatus.ToString();
+                    var statusDot = summary.OverallStatus switch
+                    {
+                        AgentHealthStatus.Healthy => "●",
+                        AgentHealthStatus.Warning => "⚠",
+                        AgentHealthStatus.Critical => "✕",
+                        _ => "?"
+                    };
+
+                    <tr style="border-bottom: 1px solid #eee; @(summary.OverallStatus == AgentHealthStatus.Critical ? "background: #ffebee;" : "")">
+                        <td style="padding: 12px; font-weight: 500;">
+                            <a href="/machines/@summary.Id" style="color: #1565c0; text-decoration: none;">
+                                @summary.Hostname
+                            </a>
+                        </td>
+                        <td style="padding: 12px; color: #666;">@summary.OsType</td>
+                        <td style="padding: 12px; text-align: center;">
+                            @if (!summary.IsOnline)
+                            {
+                                <span style="color: #999; font-weight: 500;">○ Offline</span>
+                            }
+                            else
+                            {
+                                <span style="@($"color: {statusColor}; font-weight: 600;")">
+                                    @statusDot @statusLabel
+                                </span>
+                            }
+                        </td>
+                        <td style="padding: 12px; text-align: right;">
+                            @if (summary.CpuUsagePercent.HasValue)
+                            {
+                                <span style="@MetricStyle(summary.CpuUsagePercent.Value)">
+                                    @summary.CpuUsagePercent.Value.ToString("F1")%
+                                </span>
+                            }
+                            else
+                            {
+                                <span style="color: #999;">—</span>
+                            }
+                        </td>
+                        <td style="padding: 12px; text-align: right;">
+                            @if (summary.MemoryUsagePercent.HasValue)
+                            {
+                                <span style="@MetricStyle(summary.MemoryUsagePercent.Value)">
+                                    @summary.MemoryUsagePercent.Value.ToString("F1")%
+                                </span>
+                            }
+                            else
+                            {
+                                <span style="color: #999;">—</span>
+                            }
+                        </td>
+                        <td style="padding: 12px; text-align: right;">
+                            @if (summary.DiskUsagePercent.HasValue)
+                            {
+                                <span style="@MetricStyle(summary.DiskUsagePercent.Value)">
+                                    @summary.DiskUsagePercent.Value.ToString("F1")%
+                                </span>
+                            }
+                            else
+                            {
+                                <span style="color: #999;">—</span>
+                            }
+                        </td>
+                        <td style="padding: 12px; color: #666; font-size: 0.8rem;">
+                            @if (summary.LastUpdatedUtc != default)
+                            {
+                                var ago = DateTime.UtcNow - summary.LastUpdatedUtc;
+                                @if (ago.TotalSeconds < 60)
+                                {
+                                    <span>just now</span>
+                                }
+                                else if (ago.TotalMinutes < 60)
+                                {
+                                    <span>@((int)ago.TotalMinutes)m ago</span>
+                                }
+                                else
+                                {
+                                    <span>@((int)ago.TotalHours)h ago</span>
+                                }
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private IReadOnlyList<AgentHealthSummary>? _summaries;
+    private string? _error;
+    private bool _loading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshHealthAsync();
+    }
+
+    private async Task RefreshHealthAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _summaries = await BrokerApi.GetAllAgentHealthAsync();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            Navigation.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            _error = $"Unable to load health summaries: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string HealthStatusColor(AgentHealthStatus status) => status switch
+    {
+        AgentHealthStatus.Healthy => "#388e3c",
+        AgentHealthStatus.Warning => "#f57c00",
+        AgentHealthStatus.Critical => "#c62828",
+        _ => "#999"
+    };
+
+    private static string HealthBoxColor(AgentHealthStatus status) => status switch
+    {
+        AgentHealthStatus.Healthy => "#e8f5e9",
+        AgentHealthStatus.Warning => "#fff3e0",
+        AgentHealthStatus.Critical => "#ffebee",
+        _ => "#f5f5f5"
+    };
+
+    private static string StatBoxStyle(string bgColor) =>
+        $"background: {bgColor}; border-radius: 4px; padding: 16px; text-align: center; border: 1px solid #ddd;";
+
+    private static string MetricStyle(double value)
+    {
+        var color = value > 85 ? "#c62828" : value > 70 ? "#f57c00" : "#388e3c";
+        var fontWeight = value > 85 ? "600" : "400";
+        return $"color: {color}; font-weight: {fontWeight};";
+    }
+
+    private string BtnStyle => "padding: 8px 16px; background: #1565c0; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;";
+}

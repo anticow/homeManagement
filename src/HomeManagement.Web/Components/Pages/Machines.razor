@@ -17,6 +17,12 @@
 {
     <h2 style="margin-top:0;">HM Fleet</h2>
 
+    <div style="margin-bottom: 16px;">
+        <a href="/health" style="color: #1565c0; text-decoration: none; font-weight: 500;">
+            → View system health dashboard
+        </a>
+    </div>
+
     @if (_machinesLoading)
     {
         <p>Loading machines...</p>
@@ -25,7 +31,7 @@
     {
         <p>@_machinesError</p>
     }
-    else if (_machines is not null)
+    else if (_machines is not null && _health is not null)
     {
         <table>
             <thead>
@@ -33,15 +39,88 @@
                     <th>Hostname</th>
                     <th>OS</th>
                     <th>State</th>
+                    <th style="text-align: center;">Health Status</th>
+                    <th style="text-align: right;">CPU</th>
+                    <th style="text-align: right;">Memory</th>
+                    <th style="text-align: right;">Disk</th>
                 </tr>
             </thead>
             <tbody>
                 @foreach (var machine in _machines.Items)
                 {
+                    var health = _health.FirstOrDefault(h => h.Id == machine.Id);
+                    var statusColor = health?.OverallStatus switch
+                    {
+                        AgentHealthStatus.Healthy => "#388e3c",
+                        AgentHealthStatus.Warning => "#f57c00",
+                        AgentHealthStatus.Critical => "#c62828",
+                        _ => "#999"
+                    };
+                    var statusLabel = health?.OverallStatus.ToString() ?? "Unknown";
+                    var statusDot = health?.OverallStatus switch
+                    {
+                        AgentHealthStatus.Healthy => "●",
+                        AgentHealthStatus.Warning => "⚠",
+                        AgentHealthStatus.Critical => "✕",
+                        _ => "?"
+                    };
+
                     <tr>
                         <td><a href="/machines/@machine.Id">@machine.Hostname</a></td>
                         <td>@machine.OsType</td>
                         <td>@machine.State</td>
+                        <td style="text-align: center;">
+                            @if (health != null && !health.IsOnline)
+                            {
+                                <span style="color: #999;">○ Offline</span>
+                            }
+                            else if (health != null)
+                            {
+                                <span style="@($"color: {statusColor}; font-weight: 600;")">
+                                    @statusDot @statusLabel
+                                </span>
+                            }
+                            else
+                            {
+                                <span style="color: #999;">—</span>
+                            }
+                        </td>
+                        <td style="text-align: right;">
+                            @if (health?.CpuUsagePercent.HasValue ?? false)
+                            {
+                                <span style="@MetricStyle(health.CpuUsagePercent.Value)">
+                                    @health.CpuUsagePercent.Value.ToString("F1")%
+                                </span>
+                            }
+                            else
+                            {
+                                <span style="color: #999;">—</span>
+                            }
+                        </td>
+                        <td style="text-align: right;">
+                            @if (health?.MemoryUsagePercent.HasValue ?? false)
+                            {
+                                <span style="@MetricStyle(health.MemoryUsagePercent.Value)">
+                                    @health.MemoryUsagePercent.Value.ToString("F1")%
+                                </span>
+                            }
+                            else
+                            {
+                                <span style="color: #999;">—</span>
+                            }
+                        </td>
+                        <td style="text-align: right;">
+                            @if (health?.DiskUsagePercent.HasValue ?? false)
+                            {
+                                <span style="@MetricStyle(health.DiskUsagePercent.Value)">
+                                    @health.DiskUsagePercent.Value.ToString("F1")%
+                                </span>
+                            }
+                            else
+                            {
+                                <span style="color: #999;">—</span>
+                            }
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -293,6 +372,7 @@ else
     private string _activeTab = HmFleetTab;
     private bool _machinesLoading = true;
     private PagedResult<Machine>? _machines;
+    private IReadOnlyList<AgentHealthSummary>? _health;
     private string? _machinesError;
     private IReadOnlyList<Action1OrgDto>? _orgs;
     private string? _action1Error;
@@ -314,7 +394,12 @@ else
     {
         try
         {
-            _machines = await BrokerApi.GetMachinesAsync();
+            var machinesTask = BrokerApi.GetMachinesAsync();
+            var healthTask = BrokerApi.GetAllAgentHealthAsync();
+            await Task.WhenAll(machinesTask, healthTask);
+            
+            _machines = machinesTask.Result;
+            _health = healthTask.Result;
         }
         catch (UnauthorizedAccessException)
         {
@@ -363,4 +448,11 @@ else
         "default" => "padding:8px 16px; background:#f5f5f5; color:#333; border:1px solid #ccc; border-radius:4px; cursor:pointer;",
         _ => ""
     };
+
+    private static string MetricStyle(double value)
+    {
+        var color = value > 85 ? "#c62828" : value > 70 ? "#f57c00" : "#388e3c";
+        var fontWeight = value > 85 ? "600" : "400";
+        return $"color: {color}; font-weight: {fontWeight};";
+    }
 }

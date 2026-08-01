@@ -24,6 +24,12 @@ public interface IBrokerApi
     [Get("/api/machines/{id}/state")]
     Task<MachineStateSnapshot> GetMachineStateAsync(Guid id, CancellationToken ct = default);
 
+    [Get("/api/agents/health")]
+    Task<IReadOnlyList<AgentHealthSummary>> GetAllAgentHealthAsync(CancellationToken ct = default);
+
+    [Get("/api/agents/health/{machineId}")]
+    Task<AgentHealthSummary> GetAgentHealthAsync(Guid machineId, CancellationToken ct = default);
+
     [Get("/api/machines/summary")]
     Task<MachineSummary> GetMachineSummaryAsync(CancellationToken ct = default);
 
