@@ -11,6 +11,7 @@ using HomeManagement.Data.SqlServer;
 using HomeManagement.Automation;
 using HomeManagement.Integration.Action1;
 using HomeManagement.Integration.Prometheus;
+using HomeManagement.Services;
 using HomeManagement.Vault;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Serilog;
@@ -93,6 +94,11 @@ builder.Services
     .Bind(builder.Configuration.GetSection(VaultOptions.SectionName))
     .Validate(o => !string.IsNullOrWhiteSpace(o.StoragePath),
         "Vault:StoragePath is required.")
+    .ValidateOnStart();
+
+builder.Services
+    .AddOptions<AgentHealthOptions>()
+    .Bind(builder.Configuration.GetSection(AgentHealthOptions.SectionName))
     .ValidateOnStart();
 
 // ── JWT Authentication ──

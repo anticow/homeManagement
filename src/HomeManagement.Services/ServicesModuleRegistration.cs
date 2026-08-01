@@ -14,5 +14,6 @@ public sealed class ServicesModuleRegistration : IModuleRegistration
         services.AddSingleton<WindowsServiceStrategy>();
         services.AddScoped<IServiceController, ServiceControllerService>();
         services.AddScoped<IProcessListService, RemoteProcessListService>();
+        services.AddHealthMonitoring();
     }
 }

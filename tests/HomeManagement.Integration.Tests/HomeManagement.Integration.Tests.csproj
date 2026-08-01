@@ -12,10 +12,13 @@
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Testcontainers.MsSql" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\HomeManagement.Data\HomeManagement.Data.csproj" />
     <ProjectReference Include="..\..\src\HomeManagement.Data.SqlServer\HomeManagement.Data.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\HomeManagement.Integration.Prometheus\HomeManagement.Integration.Prometheus.csproj" />
+    <ProjectReference Include="..\..\src\HomeManagement.Services\HomeManagement.Services.csproj" />
   </ItemGroup>
 </Project>
