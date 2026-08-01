@@ -234,6 +234,9 @@ public sealed class WebBrokerAgentEndToEndTests
 
         public AuthHostWebApplicationFactory()
         {
+            // Set environment to "Test" so host detects and skips SQL Server registration
+            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Test");
+            
             _databasePath = Path.Combine(Path.GetTempPath(), $"hm-auth-e2e-{Guid.NewGuid():N}.db");
         }
 
@@ -289,6 +292,9 @@ public sealed class WebBrokerAgentEndToEndTests
 
         public BrokerHostWebApplicationFactory(Uri gatewayBaseAddress, string gatewayApiKey, Machine machine)
         {
+            // Set environment to "Test" so host detects and skips SQL Server registration
+            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Test");
+            
             _gatewayBaseAddress = gatewayBaseAddress;
             _gatewayApiKey = gatewayApiKey;
             _machine = machine;
@@ -460,7 +466,7 @@ public sealed class WebBrokerAgentEndToEndTests
                 ["AgentGateway:ApiKey"] = apiKey
             });
 
-            builder.Logging.AddFilter("Grpc.AspNetCore.Server", LogLevel.Warning);
+            builder.Logging.AddFilter("Grpc.AspNetCore.Server", LogLevel.Debug);
 
             builder.WebHost.ConfigureKestrel(options =>
             {
@@ -484,6 +490,27 @@ public sealed class WebBrokerAgentEndToEndTests
             builder.Services.AddHealthChecks();
 
             var app = builder.Build();
+            
+            // Add API key validation middleware for /internal/agents endpoints
+            app.Use(async (ctx, next) =>
+            {
+                if (ctx.Request.Path.StartsWithSegments("/internal/agents"))
+                {
+                    var expectedKey = apiKey;
+                    var suppliedKey = ctx.Request.Headers["x-agent-gateway-api-key"].FirstOrDefault();
+                    var expectedBytes = System.Text.Encoding.UTF8.GetBytes(expectedKey ?? string.Empty);
+                    var suppliedBytes = System.Text.Encoding.UTF8.GetBytes(suppliedKey ?? string.Empty);
+                    
+                    if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(expectedBytes, suppliedBytes))
+                    {
+                        ctx.Response.StatusCode = 401;
+                        return;
+                    }
+                }
+                
+                await next(ctx);
+            });
+            
             app.MapHealthChecks("/healthz");
             app.MapGet("/readyz", () => Results.Ok("ready"));
             app.MapGrpcService<AgentGatewayGrpcService>();

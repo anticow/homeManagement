@@ -9,29 +9,26 @@ public static class ControlPlaneEndpoints
     private const string HeaderName = "x-agent-gateway-api-key";
 
     public static void MapControlPlaneEndpoints(this WebApplication app)
-    {
-        var group = app.MapGroup("/internal/agents");
-
-        group.AddEndpointFilter(async (context, next) =>
         {
-            var configuration = context.HttpContext.RequestServices.GetRequiredService<IConfiguration>();
-            var expectedKey = configuration["AgentGateway:ApiKey"]
-                ?? throw new InvalidOperationException("AgentGateway:ApiKey must be configured.");
+            var group = app.MapGroup("/internal/agents")
+                .WithMetadata(new ApiKeyValidationRequired());
 
-            var suppliedKey = context.HttpContext.Request.Headers[HeaderName].FirstOrDefault();
-            var expectedBytes = System.Text.Encoding.UTF8.GetBytes(expectedKey ?? string.Empty);
-            var suppliedBytes = System.Text.Encoding.UTF8.GetBytes(suppliedKey ?? string.Empty);
-            if (!CryptographicOperations.FixedTimeEquals(expectedBytes, suppliedBytes))
-            {
-                return Results.Unauthorized();
-            }
+            group.MapGet("/", GetConnectedAgents);
+            group.MapGet("/{agentId}", GetAgentMetadata);
+            group.MapPost("/{agentId}/commands", SendCommand);
+            group.MapPost("/{agentId}/updates", RequestUpdate);
+            group.MapGet("/revoked", GetRevokedAgents);
+            group.MapPost("/{agentId}/revoke", RevokeAgent);
+            group.MapDelete("/{agentId}/revoke", ReinstateAgent);
+        }
 
-            return await next(context);
-        });
+        // Mark endpoints that require validation
+        private sealed class ApiKeyValidationRequired;
 
-        group.MapGet("/", (StandaloneAgentGatewayService gateway) => Results.Ok(gateway.GetConnectedAgents()));
+        private static IResult GetConnectedAgents(StandaloneAgentGatewayService gateway)
+            => Results.Ok(gateway.GetConnectedAgents());
 
-        group.MapGet("/{agentId}", (string agentId, StandaloneAgentGatewayService gateway) =>
+        private static IResult GetAgentMetadata(string agentId, StandaloneAgentGatewayService gateway)
         {
             try
             {
@@ -41,13 +38,13 @@ public static class ControlPlaneEndpoints
             {
                 return Results.NotFound(new { error = ex.Message });
             }
-        });
+        }
 
-        group.MapPost("/{agentId}/commands", async (
+        private static async Task<IResult> SendCommand(
             string agentId,
             RemoteCommand command,
             StandaloneAgentGatewayService gateway,
-            CancellationToken ct) =>
+            CancellationToken ct)
         {
             try
             {
@@ -57,13 +54,13 @@ public static class ControlPlaneEndpoints
             {
                 return Results.NotFound(new { error = ex.Message });
             }
-        });
+        }
 
-        group.MapPost("/{agentId}/updates", async (
+        private static async Task<IResult> RequestUpdate(
             string agentId,
             AgentUpdatePackage package,
             StandaloneAgentGatewayService gateway,
-            CancellationToken ct) =>
+            CancellationToken ct)
         {
             try
             {
@@ -74,39 +71,33 @@ public static class ControlPlaneEndpoints
             {
                 return Results.NotFound(new { error = ex.Message });
             }
-        });
+        }
 
-        // ── Agent revocation management ─────────────────────────────────────────
-        // GET    /internal/agents/revoked             — list all revoked agents
-        // POST   /internal/agents/{agentId}/revoke    — block the agent immediately
-        // DELETE /internal/agents/{agentId}/revoke    — reinstate the agent
-        group.MapGet("/revoked", (IRevokedAgentStore store) =>
-            Results.Ok(store.GetAll()));
+        private static IResult GetRevokedAgents(IRevokedAgentStore store)
+            => Results.Ok(store.GetAll());
 
-        group.MapPost("/{agentId}/revoke", (
+        private static IResult RevokeAgent(
             string agentId,
             RevokeRequest? request,
             IRevokedAgentStore store,
-            StandaloneAgentGatewayService gateway) =>
+            StandaloneAgentGatewayService gateway)
         {
             var reason = request?.Reason ?? "Revoked via control plane API";
             store.Revoke(agentId, reason);
 
-            // Forcibly disconnect if currently online
             if (gateway.GetConnectedAgents().Any(a => string.Equals(a.AgentId, agentId, StringComparison.OrdinalIgnoreCase)))
             {
                 gateway.UnregisterAgent(agentId);
             }
 
             return Results.Ok(new { agentId, status = "revoked", reason });
-        });
+        }
 
-        group.MapDelete("/{agentId}/revoke", (string agentId, IRevokedAgentStore store) =>
+        private static IResult ReinstateAgent(string agentId, IRevokedAgentStore store)
         {
             store.Reinstate(agentId);
             return Results.Ok(new { agentId, status = "reinstated" });
-        });
-    }
+        }
 }
 
 internal sealed record RevokeRequest(string? Reason);
