@@ -1,9 +1,9 @@
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+FROM mcr.microsoft.com/dotnet/aspnet:10 AS base
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 EXPOSE 8080
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10 AS build
 ARG VERSION=0.0.0
 WORKDIR /src
 COPY Directory.Build.props Directory.Packages.props ./
@@ -25,3 +25,4 @@ COPY --from=build /app/publish .
 ENV HOME=/home/appuser
 USER appuser
 ENTRYPOINT ["dotnet", "HomeManagement.Web.dll"]
+

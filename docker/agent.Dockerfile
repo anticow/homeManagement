@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+FROM mcr.microsoft.com/dotnet/aspnet:10 AS base
 WORKDIR /app
 
 # Install Azure CLI for KeyVault resolution
@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10 AS build
 WORKDIR /src
 COPY Directory.Build.props Directory.Packages.props ./
 COPY src/HomeManagement.Abstractions/HomeManagement.Abstractions.csproj src/HomeManagement.Abstractions/
@@ -44,4 +44,5 @@ ENTRYPOINT ["/bin/bash", "-c", \
 # - AZURE_CLIENT_ID: Service Principal client ID (optional)
 # - AZURE_CLIENT_SECRET: Service Principal client secret (optional)
 # - AZURE_TENANT_ID: Azure tenant ID (optional if using Service Principal)
+
 

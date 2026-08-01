@@ -17,7 +17,7 @@ permissions:
   pull-requests: write
 
 env:
-  DOTNET_VERSION: '8.0.x'
+  DOTNET_VERSION: '10.0.x'
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   HELM_VERSION: '3.17.2'
