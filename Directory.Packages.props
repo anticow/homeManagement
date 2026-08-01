@@ -25,7 +25,7 @@
     <!-- Pin vulnerable transitive SQLite native package to patched version (GHSA-2m69-gcr7-jv3q) -->
     <PackageVersion Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.50.3" />
     <!-- Pin System.Security.Cryptography.Xml to avoid vulnerabilities (GHSA-23rf-6693-g89p, etc) -->
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="4.7.3" />
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="9.0.18" />
 
     <!-- Remote Execution -->
     <PackageVersion Include="SSH.NET" Version="2024.2.0" />
