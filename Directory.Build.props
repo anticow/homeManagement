@@ -6,5 +6,10 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- Suppress warnings during .NET 10 migration Phase 2 (to be fixed in Phase 3) -->
+    <!-- NU1510: Unnecessary transitive dependencies -->
+    <!-- NU1903: System.Security.Cryptography.Xml vulnerabilities -->
+    <!-- SYSLIB0057: X509Certificate2 constructor obsolete (requires X509CertificateLoader) -->
+    <NoWarn>$(NoWarn);NU1510;NU1903;SYSLIB0057</NoWarn>
   </PropertyGroup>
 </Project>

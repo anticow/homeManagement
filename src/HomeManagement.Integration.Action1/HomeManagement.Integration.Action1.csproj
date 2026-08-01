@@ -2,7 +2,7 @@
   <PropertyGroup>
     <RootNamespace>HomeManagement.Integration.Action1</RootNamespace>
     <Description>Action1 RMM integration — patch management and software inventory via Action1 REST API.</Description>
-    <NoWarn>CA1848;CA1873</NoWarn>
+    <NoWarn>CA1848;CA1873;NU1510</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="HomeManagement.Integration.Action1.Tests" />
