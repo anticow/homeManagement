@@ -173,6 +173,7 @@ app.UseAuthorization();
 // ── Domain API Endpoints ──
 app.MapMachineEndpoints();
 app.MapAgentEndpoints();
+app.MapHealthEndpoints();
 app.MapPatchingEndpoints();
 app.MapServiceEndpoints();
 app.MapJobEndpoints();
