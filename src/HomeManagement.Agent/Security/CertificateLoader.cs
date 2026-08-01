@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using HomeManagement.Agent.Configuration;
 using Microsoft.Extensions.Logging;
@@ -29,10 +30,26 @@ public sealed class CertificateLoader
         if (!File.Exists(fullPath))
             throw new FileNotFoundException($"Agent certificate not found at '{fullPath}'.");
 
-        var cert = string.IsNullOrEmpty(_config.CertPassword)
-            ? new X509Certificate2(fullPath)
-            : new X509Certificate2(fullPath, _config.CertPassword,
+        X509Certificate2 cert;
+        if (fullPath.EndsWith(".pem", StringComparison.OrdinalIgnoreCase))
+        {
+            // PEM format — use X509CertificateLoader (avoids obsolete constructor)
+            cert = X509CertificateLoader.LoadCertificateFromFile(fullPath);
+        }
+        else if (fullPath.EndsWith(".pfx", StringComparison.OrdinalIgnoreCase))
+        {
+            // PFX format — requires password support via X509CertificateLoader.LoadPkcs12FromFile
+            var password = string.IsNullOrEmpty(_config.CertPassword) ? null : _config.CertPassword;
+            cert = X509CertificateLoader.LoadPkcs12FromFile(
+                fullPath, 
+                password,
                 X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet);
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                $"Certificate must be .pem or .pfx format, got: {Path.GetExtension(fullPath)}");
+        }
 
         _logger.LogInformation("Loaded agent certificate: Subject={Subject}, Expires={Expires}",
             cert.Subject, cert.NotAfter);
@@ -97,7 +114,8 @@ public sealed class CertificateLoader
         if (!File.Exists(fullPath))
             throw new FileNotFoundException($"{description} not found at '{fullPath}'.");
 
-        var certificate = new X509Certificate2(fullPath);
+        var certificate = X509CertificateLoader.LoadCertificateFromFile(fullPath);
+
         _logger.LogInformation("Loaded {Description}: Subject={Subject}", description, certificate.Subject);
         return certificate;
     }

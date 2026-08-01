@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using HomeManagement.Transport;
 using Microsoft.AspNetCore.Builder;
@@ -53,8 +54,13 @@ internal sealed class GrpcServerHost : IDisposable
             return;
         }
 
-        var serverCert = new X509Certificate2(certPath);
-        var caCert = File.Exists(caPath) ? new X509Certificate2(caPath) : null;
+        var serverCert = X509CertificateLoader.LoadCertificateFromFile(certPath);
+
+        X509Certificate2? caCert = null;
+        if (File.Exists(caPath))
+        {
+            caCert = X509CertificateLoader.LoadCertificateFromFile(caPath);
+        }
 
         options.Listen(IPAddress.Any, 9444, lo =>
         {

@@ -1,4 +1,5 @@
 using System.Net.Security;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace HomeManagement.Gateway;
@@ -67,7 +68,7 @@ internal static class GatewayHttpHandlers
     {
         try
         {
-            return new X509Certificate2(path);
+            return X509CertificateLoader.LoadCertificateFromFile(path);
         }
         catch (Exception ex)
         {

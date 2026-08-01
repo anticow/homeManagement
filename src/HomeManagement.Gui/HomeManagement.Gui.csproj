@@ -3,8 +3,6 @@
     <OutputType>WinExe</OutputType>
     <RootNamespace>HomeManagement.Gui</RootNamespace>
     <Description>Avalonia desktop GUI for HomeManagement.</Description>
-    <!-- SYSLIB0057: X509Certificate2 obsolete (fix in Phase 3) -->
-    <NoWarn>SYSLIB0057</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

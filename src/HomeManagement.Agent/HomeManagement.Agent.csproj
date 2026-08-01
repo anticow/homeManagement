@@ -4,8 +4,7 @@
     <RootNamespace>HomeManagement.Agent</RootNamespace>
     <Description>Lightweight remote agent — runs on managed machines behind NAT/firewall.</Description>
     <!-- Suppress high-perf logging analyzer rules — acceptable for lightweight home agent -->
-    <!-- SYSLIB0057: X509Certificate2 obsolete (fix in Phase 3) -->
-    <NoWarn>CA1848;CA1873;SYSLIB0057</NoWarn>
+    <NoWarn>CA1848;CA1873</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="HomeManagement.Agent.Tests" />
