@@ -56,6 +56,7 @@ if (awxOpts?.Enabled == true && !string.IsNullOrWhiteSpace(awxOpts.BaseUrl))
 
 builder.Services.AddApprovalJobStore();
 builder.Services.AddPrometheusIntegration(builder.Configuration);
+builder.Services.AddHealthMonitoringWithConfiguration(builder.Configuration);
 builder.Services.AddHomeManagementAuth(builder.Configuration);
 builder.Services
     .AddOptions<AiOptions>()
