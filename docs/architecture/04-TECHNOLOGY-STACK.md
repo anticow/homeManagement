@@ -4,7 +4,7 @@
 
 | Component | Choice | Version | Rationale |
 |---|---|---|---|
-| **Runtime** | .NET 8+ (LTS) | 8.0+ | Cross-platform, AOT-capable, mature ecosystem, single-file publish |
+| **Runtime** | .NET 10 (LTS) | 10.0 | Cross-platform, AOT-capable, mature ecosystem, single-file publish |
 | **Language** | C# 12+ | Latest | Pattern matching, records, nullable references, strong typing |
 | **Build** | dotnet CLI + MSBuild | — | Standard toolchain, CI-friendly |
 | **Package Manager** | NuGet | — | Standard .NET package ecosystem |
