@@ -12,9 +12,21 @@ public static class ApplicationBuilderExtensions
     /// <summary>
     /// Appends the standard HomeManagement security response headers on every request.
     /// </summary>
+    /// <param name="app">The application builder.</param>
+    /// <param name="grafanaBaseUrl">
+    /// Optional public Grafana base URL (e.g. <c>https://grafana.cowgomu.net</c>).
+    /// When provided, a <c>frame-src</c> directive is added to the CSP allowing Grafana
+    /// panel iframes to load in the browser.
+    /// </param>
     public static IApplicationBuilder UseHomeManagementSecurityHeaders(
-        this IApplicationBuilder app)
+        this IApplicationBuilder app,
+        string? grafanaBaseUrl = null)
     {
+        // Build the frame-src directive once at startup — the Grafana origin is static.
+        var frameSrc = string.IsNullOrWhiteSpace(grafanaBaseUrl)
+            ? string.Empty
+            : $" frame-src {grafanaBaseUrl};";
+
         return app.Use(async (ctx, next) =>
         {
             ctx.Response.Headers.Append("X-Content-Type-Options", "nosniff");
@@ -22,7 +34,7 @@ public static class ApplicationBuilderExtensions
             ctx.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
             ctx.Response.Headers.Append("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
             ctx.Response.Headers.Append("Content-Security-Policy",
-                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none';");
+                $"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none';{frameSrc}");
             await next();
         });
     }

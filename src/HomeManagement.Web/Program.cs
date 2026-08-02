@@ -92,7 +92,8 @@ if (!app.Environment.IsDevelopment())
 }
 
 // ── Security headers ──
-app.UseHomeManagementSecurityHeaders();
+var grafanaBaseUrl = builder.Configuration["Grafana:BaseUrl"];
+app.UseHomeManagementSecurityHeaders(grafanaBaseUrl);
 
 // ── Correlation ID + exception handling + HTTP request logging ──
 app.UseMiddleware<CorrelationIdMiddleware>();

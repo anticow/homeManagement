@@ -197,10 +197,19 @@ healthPage:
 # baseUrl: public URL of Grafana (e.g. https://grafana.cowgomu.net)
 # Dashboard UIDs must match those imported by the monitoring Ansible role.
 # Leave baseUrl empty to disable the iframe section in the UI.
+#
+# viewerTokenSecret: references the Kubernetes secret created by the monitoring Ansible role
+# when monitoring_grafana_allow_embedding=true. The token is passed as ?auth_token=<value>
+# in each iframe URL so Grafana does not need anonymous access enabled.
 grafana:
   baseUrl: ""
   nodeExporterDashboardUid: "node-exporter-full"
   windowsExporterDashboardUid: "windows-exporter"
+  viewerTokenSecret:
+    # Set enabled: true after the monitoring Ansible role has created the grafana-viewer-token secret.
+    enabled: false
+    name: "grafana-viewer-token"
+    key: "token"
 
 # Increase verbosity for debugging: set minimumLevel to "Debug" or "Verbose".
 # Reduce noise from framework components by tightening the overrides.
