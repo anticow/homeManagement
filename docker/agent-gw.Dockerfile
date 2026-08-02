@@ -19,12 +19,11 @@ RUN dotnet publish src/HomeManagement.AgentGateway.Host/HomeManagement.AgentGate
     -c Release -o /app/publish --no-restore -p:Version=$VERSION
 
 FROM base AS final
-RUN adduser --disabled-password --gecos "" appuser
 COPY --from=build /app/publish .
 COPY deploy/docker/certs/mssql-dev.crt /usr/local/share/ca-certificates/mssql-dev.crt
 RUN if grep -q "BEGIN CERTIFICATE" /usr/local/share/ca-certificates/mssql-dev.crt; then \
       update-ca-certificates; \
     fi
-ENV HOME=/home/appuser
-USER appuser
+ENV HOME=/home/app
+USER $APP_UID
 ENTRYPOINT ["dotnet", "HomeManagement.AgentGateway.Host.dll"]

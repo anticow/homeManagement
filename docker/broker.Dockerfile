@@ -32,13 +32,12 @@ RUN dotnet publish src/HomeManagement.Broker.Host/HomeManagement.Broker.Host.csp
     -c Release -o /app/publish --no-restore -p:Version=$VERSION
 
 FROM base AS final
-RUN adduser --disabled-password --gecos "" appuser && \
-    mkdir -p /app/logs && chown appuser:appuser /app/logs
+RUN mkdir -p /app/logs && chown "$APP_UID:$APP_UID" /app/logs
 COPY --from=build /app/publish .
 COPY deploy/docker/certs/mssql-dev.crt /usr/local/share/ca-certificates/mssql-dev.crt
 RUN if grep -q "BEGIN CERTIFICATE" /usr/local/share/ca-certificates/mssql-dev.crt; then \
       update-ca-certificates; \
     fi
-ENV HOME=/home/appuser
-USER appuser
+ENV HOME=/home/app
+USER $APP_UID
 ENTRYPOINT ["dotnet", "HomeManagement.Broker.Host.dll"]

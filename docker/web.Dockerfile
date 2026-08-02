@@ -19,9 +19,8 @@ RUN dotnet publish src/HomeManagement.Web/HomeManagement.Web.csproj \
     -c Release -o /app/publish --no-restore -p:Version=$VERSION
 
 FROM base AS final
-RUN adduser --disabled-password --gecos "" appuser && \
-    mkdir -p /app/logs && chown appuser:appuser /app/logs
+RUN mkdir -p /app/logs && chown "$APP_UID:$APP_UID" /app/logs
 COPY --from=build /app/publish .
-ENV HOME=/home/appuser
-USER appuser
+ENV HOME=/home/app
+USER $APP_UID
 ENTRYPOINT ["dotnet", "HomeManagement.Web.dll"]
