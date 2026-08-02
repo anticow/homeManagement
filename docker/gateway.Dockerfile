@@ -1,9 +1,9 @@
-FROM mcr.microsoft.com/dotnet/aspnet:10 AS base
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 EXPOSE 8081
 
-FROM mcr.microsoft.com/dotnet/sdk:10 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG VERSION=0.0.0
 WORKDIR /src
 COPY Directory.Build.props Directory.Packages.props ./
@@ -21,4 +21,3 @@ RUN dotnet publish src/HomeManagement.Gateway/HomeManagement.Gateway.csproj \
 FROM base AS final
 COPY --from=build /app/publish .
 ENTRYPOINT ["dotnet", "HomeManagement.Gateway.dll"]
-

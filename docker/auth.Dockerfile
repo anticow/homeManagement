@@ -1,9 +1,9 @@
-FROM mcr.microsoft.com/dotnet/aspnet:10 AS base
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 EXPOSE 8083
 
-FROM mcr.microsoft.com/dotnet/sdk:10 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG VERSION=0.0.0
 WORKDIR /src
 COPY Directory.Build.props Directory.Packages.props ./
@@ -30,4 +30,3 @@ RUN if grep -q "BEGIN CERTIFICATE" /usr/local/share/ca-certificates/mssql-dev.cr
 ENV HOME=/home/appuser
 USER appuser
 ENTRYPOINT ["dotnet", "HomeManagement.Auth.Host.dll"]
-
