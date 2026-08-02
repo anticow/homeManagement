@@ -70,6 +70,7 @@ public sealed class AuthHostWebApplicationFactory : WebApplicationFactory<Progra
 
     public AuthHostWebApplicationFactory()
     {
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Test");
         _connection.Open();
     }
 
