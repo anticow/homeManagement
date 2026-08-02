@@ -29,7 +29,7 @@ public static class WebApplicationBuilderExtensions
             .Enrich.WithThreadId()
             .Enrich.With<SensitivePropertyEnricher>()
             .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture)
-            .WriteTo.Seq(context.Configuration[SeqConfigKey] ?? SeqFallbackUrl));
+            .WriteTo.Seq(context.Configuration[SeqConfigKey] ?? SeqFallbackUrl, formatProvider: CultureInfo.InvariantCulture));
         return builder;
     }
 

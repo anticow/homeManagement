@@ -66,7 +66,7 @@ internal static class Program
                             formatProvider: CultureInfo.InvariantCulture);
 
                     if (!string.IsNullOrWhiteSpace(seqUrl))
-                        logConfig = logConfig.WriteTo.Seq(seqUrl);
+                        logConfig = logConfig.WriteTo.Seq(seqUrl, formatProvider: CultureInfo.InvariantCulture);
 
                     Log.Logger = logConfig.CreateLogger();
                     services.AddLogging(logging =>
