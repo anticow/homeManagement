@@ -105,6 +105,7 @@ app.UseSerilogRequestLogging(opts =>
 
 app.UseStaticFiles();
 app.UseAntiforgery();
+app.MapStaticAssets();
 
 // ── Health ──
 app.MapHealthChecks("/healthz");
