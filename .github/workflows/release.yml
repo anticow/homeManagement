@@ -145,10 +145,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - image: agent
-            repository: hm-agent
-            dockerfile: docker/agent.Dockerfile
-            context: .
           - image: broker
             repository: hm-broker
             dockerfile: docker/broker.Dockerfile
