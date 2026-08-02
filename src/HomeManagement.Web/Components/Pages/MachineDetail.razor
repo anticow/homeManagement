@@ -119,9 +119,12 @@ else if (_machine is not null)
 
         @if (!string.IsNullOrWhiteSpace(dashUid))
         {
-            var dashboardUrl = $"{grafana.BaseUrl}/d/{dashUid}?orgId=1&var-instance={Uri.EscapeDataString(instanceLabel)}&from=now-3h&to=now&kiosk=tv";
-            var cpuPanelUrl = $"{grafana.BaseUrl}/d-solo/{dashUid}?orgId=1&var-instance={Uri.EscapeDataString(instanceLabel)}&panelId={grafana.CpuPanelId}&from=now-3h&to=now&theme=light";
-            var memPanelUrl = $"{grafana.BaseUrl}/d-solo/{dashUid}?orgId=1&var-instance={Uri.EscapeDataString(instanceLabel)}&panelId={grafana.MemoryPanelId}&from=now-3h&to=now&theme=light";
+            var tokenSuffix = string.IsNullOrWhiteSpace(grafana.ViewerToken)
+                ? string.Empty
+                : $"&auth_token={Uri.EscapeDataString(grafana.ViewerToken)}";
+            var dashboardUrl = $"{grafana.BaseUrl}/d/{dashUid}?orgId=1&var-instance={Uri.EscapeDataString(instanceLabel)}&from=now-3h&to=now&kiosk=tv{tokenSuffix}";
+            var cpuPanelUrl = $"{grafana.BaseUrl}/d-solo/{dashUid}?orgId=1&var-instance={Uri.EscapeDataString(instanceLabel)}&panelId={grafana.CpuPanelId}&from=now-3h&to=now&theme=light{tokenSuffix}";
+            var memPanelUrl = $"{grafana.BaseUrl}/d-solo/{dashUid}?orgId=1&var-instance={Uri.EscapeDataString(instanceLabel)}&panelId={grafana.MemoryPanelId}&from=now-3h&to=now&theme=light{tokenSuffix}";
 
             <h2 style="margin-top:24px;">Grafana Metrics
                 <a href="@dashboardUrl" target="_blank" style="font-size:0.8rem; margin-left:10px;">Open full dashboard ↗</a>

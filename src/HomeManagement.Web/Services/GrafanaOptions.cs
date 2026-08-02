@@ -37,6 +37,15 @@ public sealed class GrafanaOptions
     /// </summary>
     public int MemoryPanelId { get; set; } = 11;
 
+    /// <summary>
+    /// Optional Grafana service-account viewer token used to authenticate panel iframe requests.
+    /// When set, <c>&amp;auth_token=&lt;value&gt;</c> is appended to every iframe URL so that
+    /// anonymous access does not need to be enabled in Grafana.
+    /// Sourced from the <c>grafana-viewer-token</c> Kubernetes secret created by the monitoring
+    /// Ansible role when <c>monitoring_grafana_allow_embedding: true</c>.
+    /// </summary>
+    public string ViewerToken { get; set; } = string.Empty;
+
     public bool IsConfigured =>
         !string.IsNullOrWhiteSpace(BaseUrl) &&
         (!string.IsNullOrWhiteSpace(NodeExporterDashboardUid) || !string.IsNullOrWhiteSpace(WindowsExporterDashboardUid));
