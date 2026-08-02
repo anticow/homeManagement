@@ -12,7 +12,8 @@ updates:
           - "Microsoft.Extensions.*"
       ef-core:
         patterns:
-          - "Microsoft.EntityFrameworkCore*"
+          - "Microsoft.EntityFrameworkCore"
+          - "Microsoft.EntityFrameworkCore.*"
       grpc:
         patterns:
           - "Grpc.*"
