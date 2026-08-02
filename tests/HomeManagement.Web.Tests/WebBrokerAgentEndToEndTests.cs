@@ -236,7 +236,7 @@ public sealed class WebBrokerAgentEndToEndTests
         {
             // Set environment to "Test" so host detects and skips SQL Server registration
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Test");
-            
+
             _databasePath = Path.Combine(Path.GetTempPath(), $"hm-auth-e2e-{Guid.NewGuid():N}.db");
         }
 
@@ -294,7 +294,7 @@ public sealed class WebBrokerAgentEndToEndTests
         {
             // Set environment to "Test" so host detects and skips SQL Server registration
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Test");
-            
+
             _gatewayBaseAddress = gatewayBaseAddress;
             _gatewayApiKey = gatewayApiKey;
             _machine = machine;

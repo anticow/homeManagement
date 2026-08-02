@@ -1,11 +1,22 @@
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
 
-# Install Azure CLI for KeyVault resolution
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    azure-cli \
-    jq \
-    ca-certificates \
+# Install Azure CLI for KeyVault resolution.
+# azure-cli is not in the default Debian repos — add Microsoft's apt feed first.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       apt-transport-https \
+       ca-certificates \
+       curl \
+       gnupg \
+       jq \
+       lsb-release \
+    && curl -sLS https://packages.microsoft.com/keys/microsoft.asc \
+       | gpg --dearmor -o /etc/apt/trusted.gpg.d/microsoft.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture)] https://packages.microsoft.com/repos/azure-cli/ $(lsb_release -cs) main" \
+       > /etc/apt/sources.list.d/azure-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends azure-cli \
     && rm -rf /var/lib/apt/lists/*
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build

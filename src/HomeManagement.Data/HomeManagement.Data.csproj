@@ -7,6 +7,8 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <!-- Pin vulnerable transitive dep from EFCore.Design → Microsoft.Build (GHSA-37gx-xxp4-5rgx) -->
+    <PackageReference Include="System.Security.Cryptography.Xml" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\HomeManagement.Abstractions\HomeManagement.Abstractions.csproj" />

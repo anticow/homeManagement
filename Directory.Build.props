@@ -8,7 +8,6 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <!-- Suppress warnings during .NET 10 migration (to be addressed in Phase 4) -->
     <!-- NU1510: Unnecessary transitive dependencies (harmless but verbose) -->
-    <!-- NU1903: System.Security.Cryptography.Xml 9.0.0 vulnerabilities (transitive from EF Core 10) -->
-    <NoWarn>$(NoWarn);NU1510;NU1903</NoWarn>
+    <NoWarn>$(NoWarn);NU1510</NoWarn>
   </PropertyGroup>
 </Project>

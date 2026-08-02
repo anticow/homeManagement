@@ -41,7 +41,7 @@ public sealed class CertificateLoader
             // PFX format — requires password support via X509CertificateLoader.LoadPkcs12FromFile
             var password = string.IsNullOrEmpty(_config.CertPassword) ? null : _config.CertPassword;
             cert = X509CertificateLoader.LoadPkcs12FromFile(
-                fullPath, 
+                fullPath,
                 password,
                 X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet);
         }

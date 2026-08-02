@@ -633,7 +633,7 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
         {
             // Set environment to "Test" so hosts detect and skip SQL Server registration
             Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Test");
-            
+
             _dataDirectory = Path.Combine(Path.GetTempPath(), $"hm-broker-automation-tests-{Guid.NewGuid():N}");
             Directory.CreateDirectory(_dataDirectory);
             _databasePath = Path.Combine(_dataDirectory, "broker-automation-tests.db");

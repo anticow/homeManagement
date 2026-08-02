@@ -7,6 +7,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <!-- Pin vulnerable transitive dep from EFCore.Design → Microsoft.Build (GHSA-37gx-xxp4-5rgx) -->
+    <PackageReference Include="System.Security.Cryptography.Xml" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\HomeManagement.Data\HomeManagement.Data.csproj" />

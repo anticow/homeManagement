@@ -15,4 +15,6 @@ useDefault = true
     '''ValidationPassword_123!''',
     '''validation-signing-key.*''',
     '''validation-agent-gateway-api-key''',
+    # Dummy base64 API key used in Helm lint/render CI steps (not a real secret)
+    '''AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=''',
   ]
