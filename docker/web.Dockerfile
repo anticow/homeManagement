@@ -16,14 +16,7 @@ RUN dotnet restore src/HomeManagement.Web/HomeManagement.Web.csproj
 
 COPY src/ src/
 RUN dotnet publish src/HomeManagement.Web/HomeManagement.Web.csproj \
-    -c Release -o /app/publish --no-restore -p:Version=$VERSION && \
-    if [ ! -s /app/publish/wwwroot/_framework/blazor.web.js ]; then \
-      framework_script="$(find /root/.nuget/packages/microsoft.aspnetcore.app.internal.assets \
-        -path '*/_framework/blazor.web.js' -print -quit)"; \
-      test -n "$framework_script"; \
-      mkdir -p /app/publish/wwwroot/_framework; \
-      cp "$framework_script" /app/publish/wwwroot/_framework/blazor.web.js; \
-    fi && \
+    -c Release -o /app/publish -p:Version=$VERSION && \
     test -s /app/publish/wwwroot/_framework/blazor.web.js
 
 FROM base AS final
