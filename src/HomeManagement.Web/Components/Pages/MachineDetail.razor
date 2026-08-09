@@ -115,7 +115,15 @@ else if (_machine is not null)
         var isWindows = _machine.OsType == OsType.Windows;
         var dashUid = isWindows ? grafana.WindowsExporterDashboardUid : grafana.NodeExporterDashboardUid;
         var exporterPort = isWindows ? "9182" : "9100";
-        var instanceLabel = $"{_machine.Hostname}:{exporterPort}";
+        var hostname = _machine.Hostname.Value;
+        var resolvedFqdn = string.IsNullOrWhiteSpace(_machine.Fqdn) ? hostname : _machine.Fqdn;
+        var instanceTemplate = string.IsNullOrWhiteSpace(grafana.InstanceLabelTemplate)
+            ? "{hostname}:{port}"
+            : grafana.InstanceLabelTemplate;
+        var instanceLabel = instanceTemplate
+            .Replace("{hostname}", hostname, StringComparison.OrdinalIgnoreCase)
+            .Replace("{fqdn}", resolvedFqdn, StringComparison.OrdinalIgnoreCase)
+            .Replace("{port}", exporterPort, StringComparison.OrdinalIgnoreCase);
 
         @if (!string.IsNullOrWhiteSpace(dashUid))
         {

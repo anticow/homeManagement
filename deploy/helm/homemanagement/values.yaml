@@ -201,10 +201,13 @@ healthPage:
 # viewerTokenSecret: references the Kubernetes secret created by the monitoring Ansible role
 # when monitoring_grafana_allow_embedding=true. The token is passed as ?auth_token=<value>
 # in each iframe URL so Grafana does not need anonymous access enabled.
+# instanceLabelTemplate controls the Grafana variable value for "instance".
+# Supported placeholders: {hostname}, {fqdn}, {port}
 grafana:
   baseUrl: ""
   nodeExporterDashboardUid: "node-exporter-full"
   windowsExporterDashboardUid: "windows-exporter"
+  instanceLabelTemplate: "{hostname}:{port}"
   viewerTokenSecret:
     # Set enabled: true after the monitoring Ansible role has created the grafana-viewer-token secret.
     enabled: false

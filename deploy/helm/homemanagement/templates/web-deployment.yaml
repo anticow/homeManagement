@@ -56,6 +56,8 @@ spec:
               value: {{ .Values.grafana.nodeExporterDashboardUid | quote }}
             - name: Grafana__WindowsExporterDashboardUid
               value: {{ .Values.grafana.windowsExporterDashboardUid | quote }}
+            - name: Grafana__InstanceLabelTemplate
+              value: {{ .Values.grafana.instanceLabelTemplate | quote }}
             {{- if .Values.grafana.viewerTokenSecret.enabled }}
             - name: Grafana__ViewerToken
               valueFrom:

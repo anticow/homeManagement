@@ -108,6 +108,11 @@ services:
       ASPNETCORE_URLS: "http://+:8080"
       BrokerApi__BaseUrl: "http://broker:8082"
       AuthApi__BaseUrl: "http://auth:8083"
+      Grafana__BaseUrl: "${HM_GRAFANA_BASE_URL:-}"
+      Grafana__NodeExporterDashboardUid: "${HM_GRAFANA_NODE_DASHBOARD_UID:-node-exporter-full}"
+      Grafana__WindowsExporterDashboardUid: "${HM_GRAFANA_WINDOWS_DASHBOARD_UID:-windows-exporter}"
+      Grafana__InstanceLabelTemplate: "${HM_GRAFANA_INSTANCE_LABEL_TEMPLATE:-{hostname}:{port}}"
+      Grafana__ViewerToken: "${HM_GRAFANA_VIEWER_TOKEN:-}"
       Seq__Url: "http://seq:5341"
     depends_on:
       broker:

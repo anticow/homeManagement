@@ -46,6 +46,14 @@ public sealed class GrafanaOptions
     /// </summary>
     public string ViewerToken { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Optional instance label template used for Grafana dashboard variables.
+    /// Supported placeholders: <c>{hostname}</c>, <c>{fqdn}</c>, <c>{port}</c>.
+    /// Default matches node-exporter/windows-exporter conventions:
+    /// <c>{hostname}:{port}</c>.
+    /// </summary>
+    public string InstanceLabelTemplate { get; set; } = "{hostname}:{port}";
+
     public bool IsConfigured =>
         !string.IsNullOrWhiteSpace(BaseUrl) &&
         (!string.IsNullOrWhiteSpace(NodeExporterDashboardUid) || !string.IsNullOrWhiteSpace(WindowsExporterDashboardUid));
