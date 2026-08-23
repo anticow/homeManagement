@@ -83,8 +83,8 @@
     <!-- Platform: Auth -->
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.10" />
     <PackageVersion Include="System.DirectoryServices.Protocols" Version="10.0.7" />
-    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.19.2" />
-    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.19.2" />
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.22.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.22.0" />
 
     <!-- Platform: Web -->
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.10" />
