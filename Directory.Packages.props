@@ -27,7 +27,7 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.10" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10" />
     <!-- Pin vulnerable transitive SQLite native package to patched version (GHSA-2m69-gcr7-jv3q) -->
-    <PackageVersion Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.50.3" />
+    <PackageVersion Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
     <!-- Pin System.Security.Cryptography.Xml to avoid vulnerabilities (GHSA-23rf-6693-g89p, GHSA-37gx-xxp4-5rgx, etc) -->
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.10" />
 
