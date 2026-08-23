@@ -88,8 +88,8 @@
 
     <!-- Platform: Web -->
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.10" />
-    <PackageVersion Include="Refit" Version="10.0.1" />
-    <PackageVersion Include="Refit.HttpClientFactory" Version="10.0.1" />
+    <PackageVersion Include="Refit" Version="15.0.0" />
+    <PackageVersion Include="Refit.HttpClientFactory" Version="15.0.0" />
 
     <!-- Platform: Gateway -->
     <PackageVersion Include="Yarp.ReverseProxy" Version="2.2.0" />
