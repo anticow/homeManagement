@@ -5,7 +5,7 @@
 
 global:
   imageRegistry: ghcr.io/anticow
-  imageTag: "1.4.8"
+  imageTag: "1.4.11"
   imagePullPolicy: Always
   imagePullSecret:
     enabled: false
