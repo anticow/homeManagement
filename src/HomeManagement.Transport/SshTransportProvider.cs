@@ -56,19 +56,19 @@ internal sealed class SshTransportProvider
         IProgress<TransferProgress>? progress, CancellationToken ct)
     {
         using var credential = await _vault.GetPayloadAsync(target.CredentialId, ct);
-        using var client = CreateScpClient(target, credential);
+        using var client = CreateSftpClient(target, credential);
         client.Connect();
         try
         {
             if (request.Direction == FileTransferDirection.Upload)
             {
                 using var stream = File.OpenRead(request.LocalPath);
-                client.Upload(stream, request.RemotePath);
+                client.UploadFile(stream, request.RemotePath);
             }
             else
             {
                 using var stream = File.Create(request.LocalPath);
-                client.Download(request.RemotePath, stream);
+                client.DownloadFile(request.RemotePath, stream);
             }
         }
         finally
@@ -123,10 +123,10 @@ internal sealed class SshTransportProvider
         return new SshClient(target.Hostname.ToString(), target.Port, credential.Username, password);
     }
 
-    private static ScpClient CreateScpClient(MachineTarget target, CredentialPayload credential)
+    private static SftpClient CreateSftpClient(MachineTarget target, CredentialPayload credential)
     {
         var password = Encoding.UTF8.GetString(credential.DecryptedPayload);
-        return new ScpClient(target.Hostname.ToString(), target.Port, credential.Username, password);
+        return new SftpClient(target.Hostname.ToString(), target.Port, credential.Username, password);
     }
 
     private static string WrapWithElevation(RemoteCommand command)
