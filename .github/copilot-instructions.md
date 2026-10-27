@@ -103,7 +103,7 @@ Abstractions ← Core ← Domain Modules ← Platform Services ← GUI/Web
 
 ## C# Conventions
 
-- **Target framework:** .NET 8 / C# 12
+- **Target framework:** .NET 10 / C# 13
 - **Zero warnings:** `TreatWarningsAsErrors=true` — the build must be clean
 - **Nullable reference types:** Enabled globally; never suppress without an explanatory comment
 - **File-scoped namespaces:** `namespace Foo.Bar;` throughout — not block-scoped
@@ -125,26 +125,35 @@ Abstractions ← Core ← Domain Modules ← Platform Services ← GUI/Web
 - **Repository pattern is the DB boundary** — domain modules call repository interfaces from Abstractions; they never reference `HomeManagementDbContext` directly. Keep query logic in the repository implementation, not scattered across services.
 - **Test helpers are shared** — common test fixtures, builder helpers, and fake implementations live in a shared test support project. Don't duplicate fake/stub implementations across test projects.
 
-## CI Gates (all must pass)
+## SOLID Guardrails
 
-1. `dotnet build` — zero warnings
+- **Single Responsibility (S):** keep orchestration, transport, persistence, and validation in separate classes. If a service has multiple reasons to change, split it.
+- **Open/Closed (O):** extend via interfaces, strategy objects, and `IModuleRegistration`; avoid branching growth in core orchestrators.
+- **Liskov Substitution (L):** implementations of abstraction contracts must preserve null/error/cancellation behavior expected by callers.
+- **Interface Segregation (I):** prefer focused contracts (`IWorkflowPlanner`, `IRemoteExecutor`, etc.) over wide "god interfaces".
+- **Dependency Inversion (D):** depend on abstractions from `HomeManagement.Abstractions`; platform hosts wire concrete dependencies through DI.
+
+## Operational Definition of Done (full suite)
+
+1. `dotnet build homeManagement.sln` — zero warnings (`TreatWarningsAsErrors=true`)
 2. `dotnet format --verify-no-changes`
-3. Unit + integration tests (TestContainers)
-4. Helm lint (`deploy/helm/homemanagement/`)
-5. Docker image builds for all six services
-6. Platform smoke tests (full Docker Compose stack, `Category=Platform`)
+3. `dotnet test homeManagement.sln --filter "FullyQualifiedName!~Integration"` (unit fast path)
+4. `dotnet test homeManagement.sln` when data/transport/auth/runtime behavior changes
+5. Helm chart validation (`deploy/helm/homemanagement/`) for deployment-facing changes
+6. Docker build validation for all service images on dependency/runtime changes
+7. Platform smoke checks (`Category=Platform`) before release tags or infra-impacting merges
 
 ## Feature Development Pipeline
 
 All non-trivial changes (new features, bug fixes touching > 1 file, security fixes) **must** follow this pipeline. It is enforced by the PR template.
 
 ```
-Phase 0 (optional) → Phase 1 → Phase 2 → Phase 3 (parallel) → Deploy
+Phase 0 (optional) → Phase 1 → Phase 2 → Phase 3 (parallel tri-review) → Phase 4 → Deploy
   Research             Code      Build+Test   Audit              Tag + push
   explore agent        feature-  task agent   security-auditor   vX.X.Y
   (background)         author    (sync)       code-reviewer
-                       (background)           (both background,
-                                              same response turn)
+                       (background)           design-principles-auditor
+                                              (all same response turn)
 ```
 
 ### Phase 0 — Research (run before coding any external/undocumented API)
@@ -175,13 +184,20 @@ Launch: agent_type=task, mode=sync
 Command: dotnet build homeManagement.sln -c Release && dotnet test homeManagement.sln -c Release --no-build
 ```
 
-### Phase 3 — Parallel Audit (launch both in the SAME response turn)
+### Phase 3 — Parallel Tri-Review (launch all in the SAME response turn)
 ```
-Agent A: @security-auditor — focus on OWASP, secrets, auth, HTTP client safety
-Agent B: @code-reviewer — focus on null safety, API contracts, Blazor lifecycle, layer violations
+Agent A: @design-principles-auditor — focus on DRY/SOLID, layering, module boundaries
+Agent B: @security-auditor (or @security-review) — focus on OWASP, secrets, auth, HTTP client safety
+Agent C: @code-reviewer — focus on null safety, API contracts, lifecycle, regressions
 ```
 
-### Phase 4 — Triage + Deploy
+### Phase 4 — Peer Handoff + Test Confirmation
+- Produce a handoff package with: changed files, risk notes, test matrix, and rollback notes.
+- Request independent peer validation of critical paths (happy path + one failure path).
+- For security/auth/deployment changes, peer must confirm expected behavior from runtime evidence.
+- If Clairvoyance tools are available, use `peer_tools` to send the handoff and track review verdict/completion in inbox workflows.
+
+### Phase 5 — Triage + Deploy
 - 🔴 CRITICAL findings → fix before commit (loop to Phase 1)
 - 🟠 HIGH findings → fix or document as accepted risk
 - 🟡 MEDIUM/LOW → log as backlog todos
@@ -190,6 +206,7 @@ Agent B: @code-reviewer — focus on null safety, API contracts, Blazor lifecycl
 ### Rules
 1. **Coding agents never commit** — the human owns git history
 2. **Phase 2 is a hard gate** — broken builds block Phase 3
-3. **Phase 3 is always parallel** — security + code review are independent
+3. **Phase 3 is always parallel** — architecture/DRY+SOLID, security, and code review are independent
 4. **Context forwarding is required** — paste Phase 1's changed-files summary into Phase 3 prompts (agents are stateless)
-5. **CRITICAL audit findings block deploy** — HIGH requires an explicit human decision to proceed
+5. **Peer handoff is required before deploy** — deployment waits for independent test confirmation
+6. **CRITICAL audit findings block deploy** — HIGH requires an explicit human decision to proceed

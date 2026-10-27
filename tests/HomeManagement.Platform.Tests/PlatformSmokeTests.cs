@@ -166,15 +166,17 @@ public sealed class PlatformSmokeTests : IAsyncLifetime, IDisposable
     public async Task FullChain_Login_ThenListMachines_ReturnsOk()
     {
         // Step 1: Authenticate
+        var adminUser = Environment.GetEnvironmentVariable("HM_BOOTSTRAP_ADMIN_USERNAME") ?? "admin";
+        var adminPass = Environment.GetEnvironmentVariable("HM_BOOTSTRAP_ADMIN_PASSWORD") ?? "admin";
+
         var loginResponse = await _http.PostAsJsonAsync($"{_authUrl}/api/auth/login", new
         {
-            username = "admin",
-            password = "admin",
+            username = adminUser,
+            password = adminPass,
             provider = 0
         });
 
-        if (loginResponse.StatusCode != HttpStatusCode.OK)
-            return; // Skip if default admin not seeded
+        loginResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var loginResult = await loginResponse.Content.ReadFromJsonAsync<JsonElement>(JsonOptions);
         var token = loginResult.GetProperty("accessToken").GetString()!;

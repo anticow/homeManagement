@@ -1,0 +1,36 @@
+name: Windows Unit Tests
+
+on:
+  push:
+    branches: [master, main, develop]
+  pull_request:
+    branches: [master, main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+    - uses: actions/checkout@v7
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: '10.0.x'
+    - name: Restore dependencies
+      run: dotnet restore
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+    - name: Unit Test
+      run: dotnet test --configuration Release --no-build --logger "trx;LogFilePrefix=WindowsUnitTests" --results-directory TestResults --filter "Category!=Integration&Category!=Platform&Category!=LiveGateway&FullyQualifiedName!~HomeManagement.Integration.Tests"
+    - name: Publish test results
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: windows-test-results
+        path: TestResults/*.trx
