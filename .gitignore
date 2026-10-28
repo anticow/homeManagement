@@ -57,6 +57,7 @@ logs/rotation-reports/*.json
 
 ## Build/test artifacts (never commit)
 artifacts/
+TestResults/
 vuln.txt
 
 ## Local operational config with Azure identifiers
