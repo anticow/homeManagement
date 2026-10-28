@@ -46,7 +46,7 @@ removing every requirement for inbound firewall rules on the target.
 
 | # | Goal | Mechanism |
 |---|------|-----------|
-| G1 | **Minimal footprint** | Single binary, no runtime dependencies, < 50 MB RSS |
+| G1 | **Minimal footprint** | Bounded output/concurrency, deterministic resource cleanup, Windows job-object budgets |
 | G2 | **Firewall-friendly** | Agent opens outbound TCP only (port 9444 directly or 443 through ingress) |
 | G3 | **Secure by default** | mTLS with private CA; no passwords in config |
 | G4 | **Self-updating** | Controller pushes update packages; agent verifies, installs, restarts |
@@ -54,6 +54,36 @@ removing every requirement for inbound firewall rules on the target.
 | G6 | **Observable** | Structured JSON logs; heartbeat telemetry; audit correlation IDs |
 
 The agent does not know about GUI or Broker internals. It speaks only to AgentGateway over the gRPC protocol.
+
+### Resource budgets
+
+On Windows, startup assigns the agent to a job object with a **15% total-machine
+CPU hard cap** and an **aggregate committed-memory limit of 18% of physical RAM**.
+Child processes inherit these limits and cannot break away from the job. Startup
+fails explicitly if Windows cannot apply the policy. The CPU allowance leaves
+headroom below a 20% monitoring target; CPU rate enforcement operates over
+Windows scheduling intervals, not an instantaneous utilization ceiling.
+Committed memory is not the same as RSS: shared/file-backed resident pages are
+not an aggregate working-set guarantee.
+
+The limits cover the agent and its process descendants, not work handed off to
+independent OS services (for example Windows Update), the desktop GUI, or the
+browser. Heavy commands may take longer or fail allocation under these limits.
+Linux/macOS currently log that supervisor limits are required; the agent does
+not enforce equivalent limits on those platforms.
+
+Shell, patch, and service commands retain at most 1 MiB of UTF-16 output per
+stream while continuing to drain excess output. Truncation is reported;
+structured patch/service output exceeding the limit is a command failure.
+Cancellation kills the command's process tree. Failed gRPC streams cancel and
+join their connection loops before reconnecting, and execution tracking remains
+bounded even when request IDs repeat.
+
+Heartbeats report Windows job CPU consumption including descendants when the
+job policy is active (agent-process CPU on other platforms), plus the agent
+process's RSS. They do not force a garbage collection or create a new process
+wrapper on every heartbeat. Memory-total telemetry is the .NET runtime's
+available-memory limit, not a measurement of current free physical RAM.
 
 ---
 

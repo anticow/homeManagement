@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Threading.Channels;
 using HomeManagement.Agent.Handlers;
 using HomeManagement.Agent.Protocol;
@@ -11,6 +10,7 @@ public sealed class AgentCommandExecutionService : IDisposable
     private readonly CommandDispatcher _dispatcher;
     private readonly ILogger<AgentCommandExecutionService> _logger;
     private readonly SemaphoreSlim _commandSemaphore;
+    private readonly int _maxConcurrentCommands;
 
     public AgentCommandExecutionService(
         CommandDispatcher dispatcher,
@@ -19,7 +19,9 @@ public sealed class AgentCommandExecutionService : IDisposable
     {
         _dispatcher = dispatcher;
         _logger = logger;
-        _commandSemaphore = new SemaphoreSlim(Math.Max(1, maxConcurrentCommands));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxConcurrentCommands);
+        _maxConcurrentCommands = maxConcurrentCommands;
+        _commandSemaphore = new SemaphoreSlim(maxConcurrentCommands);
     }
 
     public async Task ProcessAsync(
@@ -27,28 +29,20 @@ public sealed class AgentCommandExecutionService : IDisposable
         ChannelWriter<AgentMessage> outboundWriter,
         CancellationToken ct)
     {
-        var inFlight = new ConcurrentDictionary<string, Task>();
+        var inFlight = new List<Task>();
 
         try
         {
             await foreach (var request in requestReader.ReadAllAsync(ct))
             {
                 await _commandSemaphore.WaitAsync(ct);
-                string requestId = string.IsNullOrWhiteSpace(request.RequestId)
-                    ? Guid.NewGuid().ToString("N")
-                    : request.RequestId!;
-
                 var executionTask = ExecuteCommandAsync(request, outboundWriter, ct);
-                inFlight[requestId] = executionTask;
-
-                _ = executionTask.ContinueWith(
-                    _ =>
-                    {
-                        inFlight.TryRemove(requestId, out var _);
-                    },
-                    CancellationToken.None,
-                    TaskContinuationOptions.ExecuteSynchronously,
-                    TaskScheduler.Default);
+                inFlight.Add(executionTask);
+                if (inFlight.Count >= _maxConcurrentCommands)
+                {
+                    await await Task.WhenAny(inFlight);
+                    inFlight.RemoveAll(task => task.IsCompletedSuccessfully);
+                }
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -56,7 +50,10 @@ public sealed class AgentCommandExecutionService : IDisposable
             _logger.LogDebug("Command execution loop cancelled");
         }
 
-        await Task.WhenAll(inFlight.Values);
+        finally
+        {
+            await Task.WhenAll(inFlight);
+        }
     }
 
     private async Task ExecuteCommandAsync(

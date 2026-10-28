@@ -10,8 +10,6 @@ namespace HomeManagement.Agent.Handlers;
 /// </summary>
 public sealed class ShellCommandHandler(ILogger<ShellCommandHandler> logger) : ICommandHandler
 {
-    private const int MaxOutputBytes = 1_048_576; // 1 MB
-
     public string CommandType => "Shell";
 
     public async Task<CommandResponse> HandleAsync(CommandRequest request, CancellationToken ct)
@@ -28,48 +26,16 @@ public sealed class ShellCommandHandler(ILogger<ShellCommandHandler> logger) : I
         foreach (var kvp in request.Env)
             psi.Environment[kvp.Key] = kvp.Value;
 
-        // Timeout is enforced by CommandDispatcher; use the already-linked token (NEW-04)
-        using var process = new Process { StartInfo = psi };
-        process.Start();
-
-        // Read stdout and stderr concurrently to avoid deadlocks
-        var stdoutTask = ReadBoundedAsync(process.StandardOutput, MaxOutputBytes);
-        var stderrTask = ReadBoundedAsync(process.StandardError, MaxOutputBytes);
-
-        bool timedOut = false;
-        try
-        {
-            await process.WaitForExitAsync(ct);
-        }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        {
-            // Per-command timeout — kill and report, don't propagate
-            timedOut = true;
-            KillProcessTree(process);
-        }
-        catch (OperationCanceledException)
-        {
-            // Application shutdown — kill and propagate
-            KillProcessTree(process);
-            throw;
-        }
-
-        // Ensure readers complete before reading results
-        var stdout = await stdoutTask;
-        var stderr = await stderrTask;
-        var outputTruncated = stdout.Length >= MaxOutputBytes / sizeof(char)
-                           || stderr.Length >= MaxOutputBytes / sizeof(char);
-
-        logger.LogInformation("Shell command {RequestId} exited with code {ExitCode}, timedOut={TimedOut}, truncated={Truncated}",
-            request.RequestId, timedOut ? -1 : process.ExitCode, timedOut, outputTruncated);
+        var result = await AgentProcessRunner.RunAsync(psi, ct);
+        logger.LogInformation("Shell command {RequestId} exited with code {ExitCode}, truncated={Truncated}",
+            request.RequestId, result.ExitCode, result.OutputTruncated);
 
         return new CommandResponse
         {
             RequestId = request.RequestId,
-            ExitCode = timedOut ? -1 : process.ExitCode,
-            Stdout = stdout,
-            Stderr = timedOut ? $"{stderr}\n[TIMED OUT after {request.TimeoutSeconds}s]" : stderr,
-            TimedOut = timedOut
+            ExitCode = result.ExitCode,
+            Stdout = result.Stdout,
+            Stderr = result.Stderr
         };
     }
 
@@ -125,24 +91,4 @@ public sealed class ShellCommandHandler(ILogger<ShellCommandHandler> logger) : I
         return psi;
     }
 
-    private static async Task<string> ReadBoundedAsync(System.IO.StreamReader reader, int maxBytes)
-    {
-        // ReadToEndAsync drains the full stream, preventing the pipe buffer from filling and
-        // deadlocking the process when output exceeds one read chunk.
-        var content = await reader.ReadToEndAsync();
-        var maxChars = maxBytes / sizeof(char);
-        return content.Length > maxChars ? content[..maxChars] : content;
-    }
-
-    private static void KillProcessTree(Process process)
-    {
-        try
-        {
-            process.Kill(entireProcessTree: true);
-        }
-        catch (InvalidOperationException)
-        {
-            // Process already exited
-        }
-    }
 }

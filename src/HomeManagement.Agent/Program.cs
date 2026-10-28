@@ -25,6 +25,14 @@ internal static class Program
 
         try
         {
+            using var resourceLimits = OperatingSystem.IsWindows() ? WindowsResourceLimits.Create() : null;
+            if (OperatingSystem.IsWindows() && resourceLimits is not null)
+                Log.Information(
+                    "Windows resource limits enabled: {CpuLimitPercent}% total CPU and {MemoryLimitPercent}% physical RAM as aggregate committed memory, including child processes",
+                    WindowsResourceLimits.CpuLimitPercent, WindowsResourceLimits.MemoryLimitPercent);
+            else
+                Log.Warning("OS resource limits are not configured by the agent on this platform; configure limits in the service supervisor");
+
             // Support --config <path> for running as a Windows/Linux service with
             // config files outside the install directory (e.g. /etc/homemanagement)
             var configIdx = Array.IndexOf(args, "--config");
@@ -86,6 +94,8 @@ internal static class Program
                     agentConfig.Validate();
 
                     services.AddSingleton(Options.Create(agentConfig));
+                    if (OperatingSystem.IsWindows() && resourceLimits is not null)
+                        services.AddSingleton(resourceLimits);
 
                     // Security
                     services.AddSingleton<CertificateLoader>();

@@ -285,14 +285,14 @@ public sealed partial class PatchCommandHandler(ILogger<PatchCommandHandler> log
     {
         logger.LogDebug("Launching {FileName} with {ArgCount} arguments", psi.FileName, psi.ArgumentList.Count);
 
-        using var process = new Process { StartInfo = psi };
-        process.Start();
+        var result = await AgentProcessRunner.RunAsync(psi, ct);
+        if (result.OutputTruncated)
+        {
+            logger.LogWarning("Patch command output exceeded the retained output limit");
+            return (-1, string.Empty, result.Stderr);
+        }
 
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
-        var stderrTask = process.StandardError.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct);
-
-        return (process.ExitCode, await stdoutTask, await stderrTask);
+        return (result.ExitCode, result.Stdout, result.Stderr);
     }
 
     private sealed record PatchApplyParameters(string[]? PatchIds, bool AllowReboot, bool DryRun);

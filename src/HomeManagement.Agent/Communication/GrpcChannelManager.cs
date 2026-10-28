@@ -18,6 +18,7 @@ public sealed class GrpcChannelManager : IDisposable
     private readonly CertificateLoader _certLoader;
     private readonly ILogger<GrpcChannelManager> _logger;
     private GrpcChannel? _channel;
+    private readonly List<X509Certificate2> _channelCertificates = [];
     private readonly object _lock = new();
 
     public GrpcChannelManager(
@@ -40,77 +41,78 @@ public sealed class GrpcChannelManager : IDisposable
         lock (_lock)
         {
             GrpcChannel newChannel;
-
-            if (_config.UseTls)
+            var certificates = new List<X509Certificate2>();
+            var handler = new SocketsHttpHandler
             {
-                var address = $"https://{_config.ControlServer}";
-                var handler = new SocketsHttpHandler
+                PooledConnectionIdleTimeout = Timeout.InfiniteTimeSpan,
+                KeepAlivePingDelay = TimeSpan.FromSeconds(20),
+                KeepAlivePingTimeout = TimeSpan.FromSeconds(10),
+                EnableMultipleHttp2Connections = true
+            };
+
+            try
+            {
+                if (_config.UseTls)
                 {
-                    PooledConnectionIdleTimeout = Timeout.InfiniteTimeSpan,
-                    KeepAlivePingDelay = TimeSpan.FromSeconds(20),
-                    KeepAlivePingTimeout = TimeSpan.FromSeconds(10),
-                    EnableMultipleHttp2Connections = true
-                };
+                    var sslOptions = new SslClientAuthenticationOptions();
+                    if (!string.IsNullOrWhiteSpace(_config.CertPath))
+                    {
+                        var agentCert = _certLoader.LoadAgentCertificate();
+                        certificates.Add(agentCert);
+                        using var clientCaCert = _certLoader.LoadCaCertificate();
 
-                var sslOptions = new SslClientAuthenticationOptions();
+                        if (!_certLoader.ValidateChain(agentCert, clientCaCert))
+                            throw new InvalidOperationException("Agent certificate chain validation failed.");
 
-                if (!string.IsNullOrWhiteSpace(_config.CertPath))
-                {
-                    var agentCert = _certLoader.LoadAgentCertificate();
-                    var clientCaCert = _certLoader.LoadCaCertificate();
+                        sslOptions.ClientCertificates = [agentCert];
+                    }
 
-                    if (!_certLoader.ValidateChain(agentCert, clientCaCert))
-                        throw new InvalidOperationException("Agent certificate chain validation failed.");
+                    if (!string.IsNullOrWhiteSpace(_config.ServerCaCertPath)
+                        || (!string.IsNullOrWhiteSpace(_config.CertPath) && !string.IsNullOrWhiteSpace(_config.CaCertPath)))
+                    {
+                        _logger.LogInformation(
+                            "Server certificate trust anchor path resolved to {ServerCaCertPath}",
+                            string.IsNullOrWhiteSpace(_config.ServerCaCertPath)
+                                ? _config.CaCertPath
+                                : _config.ServerCaCertPath);
 
-                    sslOptions.ClientCertificates = [agentCert];
-                }
+                        var serverCaCert = _certLoader.LoadServerCaCertificate();
+                        certificates.Add(serverCaCert);
+                        sslOptions.RemoteCertificateValidationCallback = (_, cert, chain, errors) =>
+                            ValidateServerCertificate(cert, chain, errors, serverCaCert);
+                    }
 
-                if (!string.IsNullOrWhiteSpace(_config.ServerCaCertPath)
-                    || (!string.IsNullOrWhiteSpace(_config.CertPath) && !string.IsNullOrWhiteSpace(_config.CaCertPath)))
-                {
-                    _logger.LogInformation(
-                        "Server certificate trust anchor path resolved to {ServerCaCertPath}",
-                        string.IsNullOrWhiteSpace(_config.ServerCaCertPath)
-                            ? _config.CaCertPath
-                            : _config.ServerCaCertPath);
-
-                    var serverCaCert = _certLoader.LoadServerCaCertificate();
-                    sslOptions.RemoteCertificateValidationCallback = (_, cert, chain, errors) =>
-                        ValidateServerCertificate(cert, chain, errors, serverCaCert);
-                }
-
-                if (sslOptions.ClientCertificates is not null
-                    || sslOptions.RemoteCertificateValidationCallback is not null)
-                {
                     handler.SslOptions = sslOptions;
                 }
+                else
+                {
+                    _logger.LogWarning("TLS disabled — connecting to agent gateway over plain HTTP");
+                    AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
+                }
 
-                newChannel = GrpcChannel.ForAddress(address, new GrpcChannelOptions { HttpHandler = handler });
-            }
-            else
-            {
-                _logger.LogWarning("TLS disabled — connecting to agent gateway over plain HTTP");
-
-                // Required for HTTP/2 over plaintext (h2c) in .NET
-                AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
-
-                var address = $"http://{_config.ControlServer}";
+                var address = $"{(_config.UseTls ? "https" : "http")}://{_config.ControlServer}";
                 newChannel = GrpcChannel.ForAddress(address, new GrpcChannelOptions
                 {
-                    HttpHandler = new SocketsHttpHandler
-                    {
-                        EnableMultipleHttp2Connections = true,
-                        PooledConnectionIdleTimeout = Timeout.InfiniteTimeSpan,
-                        KeepAlivePingDelay = TimeSpan.FromSeconds(20),
-                        KeepAlivePingTimeout = TimeSpan.FromSeconds(10)
-                    }
+                    HttpHandler = handler,
+                    DisposeHttpClient = true
                 });
+            }
+            catch
+            {
+                handler.Dispose();
+                foreach (var certificate in certificates)
+                    certificate.Dispose();
+                throw;
             }
 
             // Only now dispose the old channel — new one is fully constructed
             var old = _channel;
             _channel = newChannel;
             old?.Dispose();
+            foreach (var certificate in _channelCertificates)
+                certificate.Dispose();
+            _channelCertificates.Clear();
+            _channelCertificates.AddRange(certificates);
 
             _logger.LogInformation("gRPC channel created to {Address}",
                 _config.UseTls ? $"https://{_config.ControlServer}" : $"http://{_config.ControlServer}");
@@ -138,7 +140,7 @@ public sealed class GrpcChannelManager : IDisposable
             return false;
         }
 
-        var serverCert = new X509Certificate2(cert);
+        using var serverCert = new X509Certificate2(cert);
         var isValid = _certLoader.ValidateChain(serverCert, caCert);
 
         if (!isValid)
@@ -149,6 +151,13 @@ public sealed class GrpcChannelManager : IDisposable
 
     public void Dispose()
     {
-        _channel?.Dispose();
+        lock (_lock)
+        {
+            _channel?.Dispose();
+            _channel = null;
+            foreach (var certificate in _channelCertificates)
+                certificate.Dispose();
+            _channelCertificates.Clear();
+        }
     }
 }

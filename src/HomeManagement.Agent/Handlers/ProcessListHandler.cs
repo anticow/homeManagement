@@ -1,6 +1,6 @@
+using System.ComponentModel;
 using System.Text.Json;
 using HomeManagement.Agent.Protocol;
-using HomeManagement.Abstractions.Models;
 using Microsoft.Extensions.Logging;
 
 namespace HomeManagement.Agent.Handlers;
@@ -22,26 +22,33 @@ public sealed class ProcessListHandler(ILogger<ProcessListHandler> logger) : ICo
     {
         logger.LogInformation("ProcessList requested for {RequestId}", request.RequestId);
 
-        var processes = System.Diagnostics.Process.GetProcesses()
-            .Select(p =>
+        var processes = new List<ProcessSnapshot>();
+        var snapshot = System.Diagnostics.Process.GetProcesses();
+        try
+        {
+            foreach (var process in snapshot)
             {
+                ct.ThrowIfCancellationRequested();
                 try
                 {
-                    return new ProcessSnapshot(
-                        ProcessId: p.Id,
-                        ProcessName: p.ProcessName,
-                        WorkingSetBytes: p.WorkingSet64,
-                        Status: "Running");
+                    processes.Add(new ProcessSnapshot(
+                        ProcessId: process.Id,
+                        ProcessName: process.ProcessName,
+                        WorkingSetBytes: process.WorkingSet64,
+                        Status: "Running"));
                 }
-                catch
+                catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or NotSupportedException)
                 {
-                    // Access denied or process exited between enumeration and field read
-                    return null;
+                    logger.LogDebug(ex, "Unable to read process {ProcessId}", process.Id);
                 }
-            })
-            .Where(p => p is not null)
-            .OrderBy(p => p!.ProcessName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+            }
+        }
+        finally
+        {
+            foreach (var process in snapshot)
+                process.Dispose();
+        }
+        processes.Sort((left, right) => StringComparer.OrdinalIgnoreCase.Compare(left.ProcessName, right.ProcessName));
 
         logger.LogDebug("ProcessList returning {Count} processes for {RequestId}",
             processes.Count, request.RequestId);

@@ -50,6 +50,12 @@ public sealed class AgentConfiguration
 
     public void Validate()
     {
+        if (HeartbeatIntervalSeconds <= 0)
+            throw new InvalidOperationException("Agent:HeartbeatIntervalSeconds must be greater than zero.");
+
+        if (MaxConcurrentCommands <= 0)
+            throw new InvalidOperationException("Agent:MaxConcurrentCommands must be greater than zero.");
+
         if (string.IsNullOrWhiteSpace(ApiKey))
         {
             throw new InvalidOperationException(

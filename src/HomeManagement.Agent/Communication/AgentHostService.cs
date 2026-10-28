@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Threading.Channels;
 using Grpc.Core;
@@ -25,6 +26,7 @@ public sealed class AgentHostService : BackgroundService
     private readonly UpdateCommandHandler _updateHandler;
     private readonly AgentCommandExecutionService _commandExecutionService;
     private readonly ILogger<AgentHostService> _logger;
+    private readonly WindowsResourceLimits? _resourceLimits;
 
     // Thread-safe outbound message queue
     private readonly Channel<AgentMessage> _outbound = Channel.CreateBounded<AgentMessage>(
@@ -43,7 +45,8 @@ public sealed class AgentHostService : BackgroundService
         ShutdownCoordinator shutdown,
         UpdateCommandHandler updateHandler,
         AgentCommandExecutionService commandExecutionService,
-        ILogger<AgentHostService> logger)
+        ILogger<AgentHostService> logger,
+        WindowsResourceLimits? resourceLimits = null)
     {
         _config = config.Value;
         _channelManager = channelManager;
@@ -53,6 +56,7 @@ public sealed class AgentHostService : BackgroundService
         _updateHandler = updateHandler;
         _commandExecutionService = commandExecutionService;
         _logger = logger;
+        _resourceLimits = resourceLimits;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -91,45 +95,48 @@ public sealed class AgentHostService : BackgroundService
     {
         var channel = _channelManager.CreateChannel();
         var client = new AgentHub.AgentHubClient(channel);
+        await RunConnectionAsync(client, ct);
+    }
 
+    internal async Task RunConnectionAsync(AgentHub.AgentHubClient client, CancellationToken ct)
+    {
+        using var connectionCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var headers = new Metadata();
         if (!string.IsNullOrWhiteSpace(_config.ApiKey))
         {
             headers.Add("x-agent-api-key", _config.ApiKey);
         }
 
-        using var call = client.Connect(headers, cancellationToken: ct);
+        using var call = client.Connect(headers, cancellationToken: connectionCts.Token);
 
         // Send handshake
         var handshake = BuildHandshake();
         await call.RequestStream.WriteAsync(new AgentMessage { Handshake = handshake }, ct);
         _logger.LogInformation("Handshake sent: AgentId={AgentId}", _config.AgentId);
 
-        _reconnectPolicy.Reset();
-
-        // Start heartbeat timer
-        using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var heartbeatTask = HeartbeatLoopAsync(heartbeatCts.Token);
-        var sendTask = SendLoopAsync(call.RequestStream, heartbeatCts.Token);
-        var commandTask = CommandProcessingLoopAsync(heartbeatCts.Token);
-        var receiveTask = ReceiveLoopAsync(call.ResponseStream, ct);
-
-        // Wait for receive loop to end (stream closed or error)
-        await receiveTask;
-
-        // Cancel heartbeat, send, and command processing loops
-        await heartbeatCts.CancelAsync();
-
-        await Task.WhenAll(
-            SafeAwait(heartbeatTask),
-            SafeAwait(sendTask),
-            SafeAwait(commandTask));
+        Task[] tasks =
+        [
+            HeartbeatLoopAsync(connectionCts.Token),
+            SendLoopAsync(call.RequestStream, connectionCts.Token),
+            CommandProcessingLoopAsync(connectionCts.Token),
+            ReceiveLoopAsync(call.ResponseStream, connectionCts.Token)
+        ];
+        try
+        {
+            await await Task.WhenAny(tasks);
+        }
+        finally
+        {
+            await connectionCts.CancelAsync();
+            await Task.WhenAll(tasks.Select(task => SafeAwait(task, connectionCts.Token)));
+        }
     }
 
     private async Task ReceiveLoopAsync(IAsyncStreamReader<ControlMessage> stream, CancellationToken ct)
     {
         await foreach (var message in stream.ReadAllAsync(ct))
         {
+            _reconnectPolicy.Reset();
             switch (message.PayloadCase)
             {
                 case ControlMessage.PayloadOneofCase.CommandRequest:
@@ -184,20 +191,33 @@ public sealed class AgentHostService : BackgroundService
     private async Task HeartbeatLoopAsync(CancellationToken ct)
     {
         var interval = TimeSpan.FromSeconds(_config.HeartbeatIntervalSeconds);
+        using var process = Process.GetCurrentProcess();
+        var started = process.StartTime.ToUniversalTime();
+        var processorCount = OperatingSystem.IsWindows() && _resourceLimits is not null
+            ? _resourceLimits.ProcessorCount
+            : Environment.ProcessorCount;
+        var previousCpu = GetCpuTime(process);
+        var previousTimestamp = Stopwatch.GetTimestamp();
 
         while (!ct.IsCancellationRequested)
         {
             await Task.Delay(interval, ct);
 
+            process.Refresh();
+            var cpu = GetCpuTime(process);
+            var timestamp = Stopwatch.GetTimestamp();
+            var elapsed = Stopwatch.GetElapsedTime(previousTimestamp, timestamp);
             var heartbeat = new Heartbeat
             {
                 AgentId = _config.AgentId,
-                UptimeSeconds = (long)(DateTime.UtcNow - System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalSeconds,
-                CpuPercent = 0, // Placeholder — real impl would read perf counters
-                MemoryUsedBytes = GC.GetTotalMemory(forceFullCollection: false),
+                UptimeSeconds = (long)(DateTime.UtcNow - started).TotalSeconds,
+                CpuPercent = (cpu - previousCpu).TotalSeconds / elapsed.TotalSeconds / processorCount * 100,
+                MemoryUsedBytes = process.WorkingSet64,
                 MemoryTotalBytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes,
                 TimestampUtc = DateTime.UtcNow.ToString("O")
             };
+            previousCpu = cpu;
+            previousTimestamp = timestamp;
 
             try
             {
@@ -235,9 +255,15 @@ public sealed class AgentHostService : BackgroundService
     private static string GetAgentVersion() =>
         Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
 
-    private static async Task SafeAwait(Task task)
+    private TimeSpan GetCpuTime(Process process) =>
+        OperatingSystem.IsWindows() && _resourceLimits is not null
+            ? _resourceLimits.GetTotalProcessorTime()
+            : process.TotalProcessorTime;
+
+    private static async Task SafeAwait(Task task, CancellationToken ct)
     {
         try { await task; }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (RpcException ex) when (ct.IsCancellationRequested && ex.StatusCode == StatusCode.Cancelled) { }
     }
 }

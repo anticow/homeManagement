@@ -13,6 +13,52 @@ namespace HomeManagement.Agent.Tests.Communication;
 public sealed class AgentCommandExecutionServiceTests
 {
     [Fact]
+    public async Task ProcessAsync_DuplicateRequestIdsStillWaitsForEveryCommand()
+    {
+        var handler = new DuplicateIdHandler();
+        var dispatcher = new CommandDispatcher(
+            [handler],
+            new CommandValidator(
+                Options.Create(new AgentConfiguration { CommandRateLimit = 100 }),
+                NullLogger<CommandValidator>.Instance),
+            NullLogger<CommandDispatcher>.Instance);
+        using var service = new AgentCommandExecutionService(
+            dispatcher, NullLogger<AgentCommandExecutionService>.Instance, 2);
+        var inbound = Channel.CreateUnbounded<CommandRequest>();
+        var outbound = Channel.CreateUnbounded<AgentMessage>();
+
+        await inbound.Writer.WriteAsync(new CommandRequest
+        {
+            RequestId = "duplicate",
+            CommandType = "SystemInfo",
+            CommandText = "slow",
+            ElevationMode = "None"
+        });
+        await inbound.Writer.WriteAsync(new CommandRequest
+        {
+            RequestId = "duplicate",
+            CommandType = "SystemInfo",
+            CommandText = "fast",
+            ElevationMode = "None"
+        });
+        inbound.Writer.Complete();
+        var processing = service.ProcessAsync(inbound.Reader, outbound.Writer, CancellationToken.None);
+        try
+        {
+            await handler.FastCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await Task.WhenAny(processing, Task.Delay(100));
+            processing.IsCompleted.Should().BeFalse();
+        }
+        finally
+        {
+            handler.ReleaseSlow.TrySetResult();
+            await processing;
+        }
+
+        outbound.Reader.Count.Should().Be(2);
+    }
+
+    [Fact]
     public async Task ProcessAsync_RespectsConfiguredConcurrencyLimit()
     {
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -123,6 +169,7 @@ public sealed class AgentCommandExecutionServiceTests
             {
                 Interlocked.Decrement(ref _currentExecutions);
             }
+
         }
 
         private void UpdateMaximum(int current)
@@ -140,6 +187,23 @@ public sealed class AgentCommandExecutionServiceTests
                     return;
                 }
             }
+        }
+    }
+
+    private sealed class DuplicateIdHandler : ICommandHandler
+    {
+        public TaskCompletionSource FastCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseSlow { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public string CommandType => "SystemInfo";
+
+        public async Task<CommandResponse> HandleAsync(CommandRequest request, CancellationToken ct)
+        {
+            if (request.CommandText == "slow")
+                await ReleaseSlow.Task.WaitAsync(ct);
+            else
+                FastCompleted.TrySetResult();
+
+            return new CommandResponse { RequestId = request.RequestId };
         }
     }
 }

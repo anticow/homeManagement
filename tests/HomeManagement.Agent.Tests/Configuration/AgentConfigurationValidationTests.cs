@@ -5,6 +5,25 @@ namespace HomeManagement.Agent.Tests.Configuration;
 
 public sealed class AgentConfigurationValidationTests
 {
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(-1, 1)]
+    [InlineData(30, 0)]
+    [InlineData(30, -1)]
+    public void Validate_WithInvalidLoopOrConcurrencySettings_Throws(int heartbeatSeconds, int maxConcurrentCommands)
+    {
+        var config = new AgentConfiguration
+        {
+            ApiKey = "configured-api-key",
+            HeartbeatIntervalSeconds = heartbeatSeconds,
+            MaxConcurrentCommands = maxConcurrentCommands
+        };
+
+        var act = () => config.Validate();
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
     [Fact]
     public void Validate_WithMissingApiKey_Throws()
     {

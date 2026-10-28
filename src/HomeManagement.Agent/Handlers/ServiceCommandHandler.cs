@@ -147,15 +147,8 @@ public sealed class ServiceCommandHandler(ILogger<ServiceCommandHandler> logger)
     private static async Task<(int ExitCode, string Stdout, string Stderr)> RunProcessAsync(
         ProcessStartInfo psi, CancellationToken ct)
     {
-        using var process = new Process { StartInfo = psi };
-        process.Start();
-
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
-        var stderrTask = process.StandardError.ReadToEndAsync(ct);
-
-        await process.WaitForExitAsync(ct);
-
-        return (process.ExitCode, await stdoutTask, await stderrTask);
+        var result = await AgentProcessRunner.RunAsync(psi, ct);
+        return (result.OutputTruncated ? -1 : result.ExitCode, result.Stdout, result.Stderr);
     }
 
     private sealed record ServiceControlParameters(string ServiceName, string Action);
