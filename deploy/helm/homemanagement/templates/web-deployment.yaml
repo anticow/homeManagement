@@ -52,19 +52,12 @@ spec:
             {{- if .Values.grafana.baseUrl }}
             - name: Grafana__BaseUrl
               value: {{ .Values.grafana.baseUrl | quote }}
-            - name: Grafana__NodeExporterDashboardUid
-              value: {{ .Values.grafana.nodeExporterDashboardUid | quote }}
-            - name: Grafana__WindowsExporterDashboardUid
-              value: {{ .Values.grafana.windowsExporterDashboardUid | quote }}
+            - name: Grafana__DashboardUid
+              value: {{ .Values.grafana.dashboardUid | quote }}
+            - name: Grafana__ScrapeJob
+              value: {{ .Values.grafana.scrapeJob | quote }}
             - name: Grafana__InstanceLabelTemplate
               value: {{ .Values.grafana.instanceLabelTemplate | quote }}
-            {{- if .Values.grafana.viewerTokenSecret.enabled }}
-            - name: Grafana__ViewerToken
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.grafana.viewerTokenSecret.name | quote }}
-                  key: {{ .Values.grafana.viewerTokenSecret.key | quote }}
-            {{- end }}
             {{- end }}
           volumeMounts:
             - name: dpkeys

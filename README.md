@@ -70,6 +70,47 @@ src/
   HomeManagement.Gui            Avalonia desktop app
 ```
 
+## Per-node Grafana graphs (web console)
+
+System history is collected by Prometheus from `node_exporter` (port 9100) and
+`windows_exporter` (port 9182), not by polling the HomeManagement agent. The
+companion Ansible monitoring role scrapes configured endpoints every 30 seconds,
+retains data for 15 days by default, and separately scrapes application `/metrics`
+endpoints through a ServiceMonitor. The Broker queries Prometheus for the current
+machine status; agent heartbeats describe agent health, not whole-host history.
+Production ArgoCD values and the companion production inventory enable Broker
+Prometheus queries; reusable chart/role defaults remain opt-in for other environments.
+
+The machine detail page offers CPU, memory, per-filesystem disk, and aggregate
+network graphs, with 1-hour, 3-hour, 24-hour, and 7-day ranges. Choose **Load graphs**
+to start rendering; **Pause graphs** removes the frames and their refresh traffic.
+**Refresh status** fetches a new Broker snapshot independently. CPU/network rates
+are five-minute averages, not instantaneous readings.
+
+Deploy the companion monitoring role first with
+`monitoring_grafana_allow_embedding: true`; it provisions the `hm-node` dashboard.
+Then deploy the web app with `Grafana:BaseUrl` (Helm `grafana.baseUrl`).
+`Grafana:DashboardUid` defaults to `hm-node` and `Grafana:ScrapeJob` must match
+the Prometheus scrape job (`homemanagement` by default).
+The instance defaults to `{fqdn}:{port}`, falling back to hostname when FQDN is
+absent. For IP targets, custom ports, or different DNS names, set the machine tag
+`prometheus:instance` to the **exact** Prometheus instance label, or configure
+`Grafana:InstanceLabelTemplate`. Missing targets display no data, not another node.
+Compose uses the application's default template; set `Grafana__InstanceLabelTemplate`
+directly in a Compose override when a different template is needed.
+The dashboard includes macOS node_exporter memory queries; unsupported metrics
+remain absent rather than being reported as zero.
+
+Viewers must sign in to Grafana using **Open node dashboard**. Embedding still
+requires browser access to Grafana and a working Grafana session; third-party
+cookie restrictions can prevent cross-site embedding. Use the full-dashboard
+link in that case. No anonymous access is enabled and no service-account token
+is placed in HTML or URLs. The old community-dashboard panel settings and
+`Grafana:ViewerToken`/`grafana.viewerTokenSecret` configuration are superseded.
+After rollout, revoke the previously issued `homemanagement-embed` token and
+remove the unused `grafana-viewer-token` secret through the approved operations
+path; this change does not revoke or delete live credentials automatically.
+
 ## License
 
 Private — All rights reserved.

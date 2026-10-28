@@ -71,8 +71,11 @@ builder.Services.AddHealthChecks();
 builder.Services.AddSingleton<ICorrelationContext, CorrelationContext>();
 
 // ── Grafana embedding configuration ──
-builder.Services.Configure<GrafanaOptions>(
-    builder.Configuration.GetSection(GrafanaOptions.SectionName));
+builder.Services.AddOptions<GrafanaOptions>()
+    .Bind(builder.Configuration.GetSection(GrafanaOptions.SectionName))
+    .Validate(options => options.IsValid,
+        "Grafana requires an HTTP(S) base URL without credentials, query or fragment, a dashboard UID, scrape job and instance template.")
+    .ValidateOnStart();
 
 // ── Data Protection — persist keys to file system so antiforgery tokens survive pod restarts ──
 var dpKeyPath = builder.Configuration["DataProtection:KeyStorePath"];
@@ -92,8 +95,10 @@ if (!app.Environment.IsDevelopment())
 }
 
 // ── Security headers ──
-var grafanaBaseUrl = builder.Configuration["Grafana:BaseUrl"];
-app.UseHomeManagementSecurityHeaders(grafanaBaseUrl);
+var grafanaOptions = app.Services.GetRequiredService<IOptions<GrafanaOptions>>().Value;
+app.UseHomeManagementSecurityHeaders(grafanaOptions.IsConfigured
+    ? new Uri(grafanaOptions.BaseUrl).GetLeftPart(UriPartial.Authority)
+    : null);
 
 // ── Correlation ID + exception handling + HTTP request logging ──
 app.UseMiddleware<CorrelationIdMiddleware>();

@@ -3,10 +3,9 @@
 @using HomeManagement.Abstractions
 @using HomeManagement.Abstractions.Models
 @using HomeManagement.Web.Services
-@using Microsoft.Extensions.Options
 @inject HomeManagement.Web.Services.IBrokerApi BrokerApi
-@inject IOptions<HomeManagement.Web.Services.GrafanaOptions> GrafanaOpts
 @inject NavigationManager Navigation
+@inject ILogger<MachineDetail> Logger
 
 @if (_loading)
 {
@@ -48,6 +47,7 @@ else if (_machine is not null)
     <!-- ── Live Prometheus metrics ────────────────────────────────────────── -->
     <h2 style="margin-top:24px; display:flex; align-items:center; gap:10px;">
         Live Status
+        <button type="button" @onclick="LoadStateAsync" disabled="@_stateLoading">Refresh status</button>
         @if (_state is not null)
         {
             var onlineColor = _state.Online ? "#388e3c" : "#c62828";
@@ -61,9 +61,14 @@ else if (_machine is not null)
     {
         <p style="color:#888;">Loading live metrics…</p>
     }
+    else if (_stateError is not null)
+    {
+        <p role="alert">@_stateError</p>
+    }
     else if (_state is not null)
     {
-        @if (_state.CpuUsagePercent.HasValue || _state.MemoryTotalBytes.HasValue)
+        @if (_state.CpuUsagePercent.HasValue || _state.MemoryTotalBytes.HasValue ||
+             _state.DiskTotalBytes.HasValue || _state.Uptime.HasValue)
         {
             <table>
                 <tbody>
@@ -96,7 +101,7 @@ else if (_machine is not null)
                         </tr>
                     }
                     <tr>
-                        <td><strong>Sampled</strong></td>
+                        <td><strong>Fetched</strong></td>
                         <td style="color:#888;">@_state.FetchedUtc.ToString("g") UTC</td>
                     </tr>
                 </tbody>
@@ -108,51 +113,7 @@ else if (_machine is not null)
         }
     }
 
-    <!-- ── Grafana dashboard panels (F-5) ─────────────────────────────────── -->
-    @if (GrafanaOpts.Value.IsConfigured)
-    {
-        var grafana = GrafanaOpts.Value;
-        var isWindows = _machine.OsType == OsType.Windows;
-        var dashUid = isWindows ? grafana.WindowsExporterDashboardUid : grafana.NodeExporterDashboardUid;
-        var exporterPort = isWindows ? "9182" : "9100";
-        var hostname = _machine.Hostname.Value;
-        var resolvedFqdn = string.IsNullOrWhiteSpace(_machine.Fqdn) ? hostname : _machine.Fqdn;
-        var instanceTemplate = string.IsNullOrWhiteSpace(grafana.InstanceLabelTemplate)
-            ? "{hostname}:{port}"
-            : grafana.InstanceLabelTemplate;
-        var instanceLabel = instanceTemplate
-            .Replace("{hostname}", hostname, StringComparison.OrdinalIgnoreCase)
-            .Replace("{fqdn}", resolvedFqdn, StringComparison.OrdinalIgnoreCase)
-            .Replace("{port}", exporterPort, StringComparison.OrdinalIgnoreCase);
-
-        @if (!string.IsNullOrWhiteSpace(dashUid))
-        {
-            var tokenSuffix = string.IsNullOrWhiteSpace(grafana.ViewerToken)
-                ? string.Empty
-                : $"&auth_token={Uri.EscapeDataString(grafana.ViewerToken)}";
-            var dashboardUrl = $"{grafana.BaseUrl}/d/{dashUid}?orgId=1&var-instance={Uri.EscapeDataString(instanceLabel)}&from=now-3h&to=now&kiosk=tv{tokenSuffix}";
-            var cpuPanelUrl = $"{grafana.BaseUrl}/d-solo/{dashUid}?orgId=1&var-instance={Uri.EscapeDataString(instanceLabel)}&panelId={grafana.CpuPanelId}&from=now-3h&to=now&theme=light{tokenSuffix}";
-            var memPanelUrl = $"{grafana.BaseUrl}/d-solo/{dashUid}?orgId=1&var-instance={Uri.EscapeDataString(instanceLabel)}&panelId={grafana.MemoryPanelId}&from=now-3h&to=now&theme=light{tokenSuffix}";
-
-            <h2 style="margin-top:24px;">Grafana Metrics
-                <a href="@dashboardUrl" target="_blank" style="font-size:0.8rem; margin-left:10px;">Open full dashboard ↗</a>
-            </h2>
-            <div style="display:flex; gap:12px; flex-wrap:wrap;">
-                <iframe src="@cpuPanelUrl"
-                        width="450" height="200"
-                        frameborder="0"
-                        title="CPU Usage — @_machine.Hostname"
-                        style="border:1px solid #ddd; border-radius:4px;">
-                </iframe>
-                <iframe src="@memPanelUrl"
-                        width="450" height="200"
-                        frameborder="0"
-                        title="Memory Usage — @_machine.Hostname"
-                        style="border:1px solid #ddd; border-radius:4px;">
-                </iframe>
-            </div>
-        }
-    }
+    <HomeManagement.Web.Components.Shared.NodeMetricsPanels Machine="_machine" />
 
     <!-- ── Services (from agent) ─────────────────────────────────────────── -->
     <h2 style="margin-top:24px;">
@@ -510,6 +471,7 @@ else if (_machine is not null)
     private IReadOnlyList<ServiceInfo>? _services;
     private IReadOnlyList<Action1PatchDto>? _action1Patches;
     private string? _errorMessage;
+    private string? _stateError;
     private string? _processesError;
     private string? _servicesError;
     private string? _action1Error;
@@ -564,13 +526,17 @@ else if (_machine is not null)
 
     private async Task LoadStateAsync()
     {
+        _stateLoading = true;
+        _stateError = null;
         try
         {
             _state = await BrokerApi.GetMachineStateAsync(Id);
         }
-        catch
+        catch (Exception ex)
         {
-            // State load failure is non-fatal — show machine info without live metrics
+            Logger.LogWarning(ex, "Unable to fetch system metrics for machine {MachineId}", Id);
+            _state = null;
+            _stateError = "Unable to fetch system metrics. Retry using Refresh status.";
         }
         finally
         {

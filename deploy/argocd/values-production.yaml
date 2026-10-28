@@ -35,10 +35,16 @@ action1:
   syncIntervalMinutes: 15
 
 prometheus:
-  enabled: false
+  enabled: true
   url: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090"
   scrapeLabel: "homemanagement"
   queryTimeoutSeconds: 10
+
+grafana:
+  baseUrl: "https://grafana.cowgomu.net"
+  dashboardUid: "hm-node"
+  scrapeJob: "homemanagement"
+  instanceLabelTemplate: "{fqdn}:{port}"
 
 ingress:
   enabled: true

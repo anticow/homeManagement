@@ -1,0 +1,58 @@
+@using HomeManagement.Abstractions.Models
+@using HomeManagement.Web.Services
+@using Microsoft.Extensions.Options
+@inject IOptions<GrafanaOptions> Grafana
+
+<section aria-label="Node resource history" style="margin-top:24px;">
+    <h2>Node Resource History</h2>
+    @if (!Grafana.Value.IsConfigured)
+    {
+        <p>Grafana graphs are not configured. Configure Grafana:BaseUrl and provision the HomeManagement node dashboard.</p>
+    }
+    else
+    {
+        var links = GrafanaDashboardLinks.Create(Grafana.Value, Machine, _range);
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            <label>
+                Time range
+                <select @bind="_range" aria-label="Metrics time range">
+                    <option value="now-1h">Last hour</option>
+                    <option value="now-3h">Last 3 hours</option>
+                    <option value="now-24h">Last 24 hours</option>
+                    <option value="now-7d">Last 7 days</option>
+                </select>
+            </label>
+            <a href="@links.DashboardUrl" target="_blank" rel="noopener noreferrer">Open node dashboard</a>
+            <button type="button" @onclick="() => _showGraphs = !_showGraphs">
+                @(_showGraphs ? "Pause graphs" : "Load graphs")
+            </button>
+        </div>
+        <p>
+            Exporter instance: <code>@links.Instance</code>. Source: Prometheus
+            (<code>@Grafana.Value.ScrapeJob</code>); graphs refresh every 30 seconds.
+            Sign in to Grafana using the dashboard link if panels require authentication.
+            No data means the selected exporter or metric is unavailable; it does not mean zero usage.
+        </p>
+        @if (_showGraphs)
+        {
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr)); gap:12px;">
+                @foreach (var panel in links.Panels)
+                {
+                    <iframe @key="panel.Url" src="@panel.Url" loading="lazy"
+                            title="@($"{panel.Title} - {Machine.Hostname}")"
+                            referrerpolicy="no-referrer"
+                            style="width:100%; height:280px; border:1px solid #ddd; border-radius:4px;">
+                    </iframe>
+                }
+            </div>
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public Machine Machine { get; set; } = default!;
+
+    private string _range = "now-3h";
+    private bool _showGraphs;
+}
