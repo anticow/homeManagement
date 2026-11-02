@@ -12,6 +12,13 @@ global:
 # -- Namespace
 namespace: homemanagement
 
+# -- Opt-in encrypted, AWX-enrolled service controls. Provision these resources first.
+managedServices:
+  enabled: false
+  tlsSecretName: ""  # tls.crt/tls.key and ca.crt; SANs: hm-control and all five hm-* service names
+  trustBundleConfigMap: ""  # ca-bundle.pem: internal CA plus normal public roots
+  revocationExistingClaim: ""  # Protected, durable RWO claim; single Gateway replica required
+
 # -- Database
 database:
   connectionString: ""  # Required — override via --set or values override file

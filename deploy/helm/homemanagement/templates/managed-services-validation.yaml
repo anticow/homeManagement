@@ -1,0 +1,14 @@
+{{- if .Values.managedServices.enabled -}}
+{{- if ne (int .Values.agentGateway.replicaCount) 1 -}}
+{{- fail "Managed services require a single authoritative Agent Gateway replica" -}}
+{{- end -}}
+{{- if not .Values.managedServices.revocationExistingClaim -}}
+{{- fail "managedServices.revocationExistingClaim is required; emptyDir revocation is unsafe" -}}
+{{- end -}}
+{{- if or (not .Values.ingress.tls.enabled) (not .Values.ingress.sslRedirect) -}}
+{{- fail "Managed services require ingress TLS and SSL redirect" -}}
+{{- end -}}
+{{- if ne .Values.ingress.className "nginx" -}}
+{{- fail "Managed service ingress TLS verification currently requires the nginx chart configuration" -}}
+{{- end -}}
+{{- end -}}

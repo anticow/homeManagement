@@ -13,7 +13,7 @@ public sealed class CommandValidator
 {
     private static readonly HashSet<string> AllowedCommandTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Shell", "PatchScan", "PatchApply", "ServiceControl", "SystemInfo"
+        "Shell", "PatchScan", "PatchApply", "ServiceControl", "SystemInfo", "ProcessList", "ManagedServices"
     };
 
     private readonly AgentConfiguration _config;
@@ -38,6 +38,17 @@ public sealed class CommandValidator
 
     public CommandValidationResult Validate(string commandType, string? commandText, string elevationMode)
     {
+        if (!string.IsNullOrWhiteSpace(_config.ManagedServicesPath) && File.Exists(_config.ManagedServicesPath + ".disabled"))
+        {
+            _logger.LogWarning("Local remote-management break rejected command");
+            return CommandValidationResult.Rejected("Authorization", "Remote management is disabled locally.");
+        }
+        if (_config.ManagedServicesOnly
+            && commandType is not ("ManagedServices" or "SystemInfo" or "ProcessList"))
+        {
+            _logger.LogWarning("Restricted agent rejected command type {CommandType}", commandType);
+            return CommandValidationResult.Rejected("Authorization", "This agent permits only monitoring and enrolled service control.");
+        }
         // 1. Command type allowlist
         if (!AllowedCommandTypes.Contains(commandType))
         {

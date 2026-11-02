@@ -65,6 +65,33 @@ public sealed class BrokerApiClient : IBrokerApi, IDisposable
     public Task<IReadOnlyList<HomeManagement.Abstractions.Models.ServiceInfo>> GetServicesAsync(Guid machineId, CancellationToken ct = default)
         => ExecuteAsync(api => api.GetServicesAsync(machineId, ct), ct);
 
+    public Task<IReadOnlyList<HomeManagement.Abstractions.Models.ManagedServiceSnapshot>> GetManagedServicesAsync(
+        Guid machineId, CancellationToken ct = default)
+    {
+        RequireManagedServiceHttps();
+        return ExecuteAsync(api => api.GetManagedServicesAsync(machineId, ct), ct);
+    }
+
+    public Task<IReadOnlyList<HomeManagement.Abstractions.Models.ManagedServiceSnapshot>> ControlManagedServiceAsync(
+        Guid machineId, HomeManagement.Abstractions.Models.ManagedServiceRequest request, CancellationToken ct = default)
+    {
+        RequireManagedServiceHttps();
+        return ExecuteAsync(api => api.ControlManagedServiceAsync(machineId, request, ct), ct);
+    }
+
+    public Task BreakAgentPeeringAsync(Guid machineId, CancellationToken ct = default)
+    {
+        RequireManagedServiceHttps();
+        return ExecuteAsync(api => api.BreakAgentPeeringAsync(machineId, ct), ct);
+    }
+
+    private void RequireManagedServiceHttps()
+    {
+        using var client = _httpClientFactory.CreateClient(HttpClientName);
+        if (client.BaseAddress?.Scheme != Uri.UriSchemeHttps)
+            throw new InvalidOperationException("Managed services require an HTTPS BrokerApi:BaseUrl.");
+    }
+
     public Task<IReadOnlyList<Action1PatchDto>> GetAction1PatchesAsync(string endpointId, CancellationToken ct = default)
         => ExecuteAsync(api => api.GetAction1PatchesAsync(endpointId, ct), ct);
 

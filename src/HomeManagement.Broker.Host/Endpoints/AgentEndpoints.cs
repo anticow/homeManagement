@@ -34,6 +34,8 @@ public static class AgentEndpoints
             IAgentGateway gateway,
             CancellationToken ct) =>
         {
+            if (command.CommandType.Equals("ManagedServices", StringComparison.OrdinalIgnoreCase))
+                return Results.BadRequest(new { error = "Use the authorized, audited machine managed-service endpoints." });
             try
             {
                 return Results.Ok(await gateway.SendCommandAsync(agentId, command, ct));

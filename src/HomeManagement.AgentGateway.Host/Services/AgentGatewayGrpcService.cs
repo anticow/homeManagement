@@ -32,6 +32,8 @@ public sealed class AgentGatewayGrpcService : AgentHub.AgentHubBase
     {
         string? agentId = null;
         var isRegistered = false;
+        AgentGatewaySession? registeredSession = null;
+        Task? sendTask = null;
 
         try
         {
@@ -51,7 +53,10 @@ public sealed class AgentGatewayGrpcService : AgentHub.AgentHubBase
 
             _apiKeyValidator.ValidateOrThrow(context, handshake);
 
-            var session = _gateway.RegisterAgent(handshake, responseStream);
+            var httpContext = context.GetHttpContext();
+            var session = _gateway.RegisterAgent(handshake, responseStream,
+                httpContext.Request.IsHttps, httpContext.Abort, _apiKeyValidator.SupportsManagedServiceControl(agentId));
+            registeredSession = session;
             isRegistered = true;
 
             _logger.LogInformation("Agent {AgentId} ({Hostname}) connected", agentId, handshake.Hostname);
@@ -62,7 +67,7 @@ public sealed class AgentGatewayGrpcService : AgentHub.AgentHubBase
                 Ack = new Ack { InResponseTo = "handshake" }
             }, context.CancellationToken);
 
-            var sendTask = SendLoopAsync(session.Outbound.Reader, responseStream, context.CancellationToken);
+            sendTask = SendLoopAsync(agentId, session.Outbound.Reader, responseStream, httpContext.Abort, context.CancellationToken);
 
             // Process incoming messages
             while (await requestStream.MoveNext(context.CancellationToken))
@@ -85,7 +90,6 @@ public sealed class AgentGatewayGrpcService : AgentHub.AgentHubBase
             }
 
             session.Outbound.Writer.TryComplete();
-            await sendTask;
         }
         catch (OperationCanceledException)
         {
@@ -95,20 +99,38 @@ public sealed class AgentGatewayGrpcService : AgentHub.AgentHubBase
         {
             if (isRegistered && agentId is not null)
             {
-                _gateway.UnregisterAgent(agentId);
+                _gateway.UnregisterAgent(agentId, registeredSession);
                 _logger.LogInformation("Agent {AgentId} disconnected", agentId);
+            }
+            if (sendTask is not null)
+            {
+                try { await sendTask; }
+                catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested) { }
             }
         }
     }
 
-    private static async Task SendLoopAsync(
+    private async Task SendLoopAsync(
+        string agentId,
         ChannelReader<ControlMessage> reader,
         IServerStreamWriter<ControlMessage> responseStream,
+        Action abort,
         CancellationToken ct)
     {
-        await foreach (var message in reader.ReadAllAsync(ct))
+        try
         {
-            await responseStream.WriteAsync(message, ct);
+            await foreach (var message in reader.ReadAllAsync(ct))
+            {
+                if (!_gateway.CanSend(agentId))
+                    throw new RpcException(new Status(StatusCode.PermissionDenied, "Agent peering revoked."));
+                await responseStream.WriteAsync(message, ct);
+            }
+        }
+        catch (Exception ex) when (ex is RpcException or IOException or InvalidOperationException)
+        {
+            _logger.LogWarning(ex, "Agent {AgentId} send loop failed; aborting connection", agentId);
+            abort();
+            throw;
         }
     }
 }

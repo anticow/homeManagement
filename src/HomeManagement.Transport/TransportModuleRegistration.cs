@@ -21,6 +21,7 @@ public sealed class TransportModuleRegistration : IModuleRegistration
         services.AddSingleton<AgentTransportProvider>();
         services.AddSingleton<RemoteAgentGatewayClient>();
         services.AddSingleton<IAgentGateway>(sp => sp.GetRequiredService<RemoteAgentGatewayClient>());
+        services.AddSingleton<IAgentPeeringControl>(sp => sp.GetRequiredService<RemoteAgentGatewayClient>());
         services.AddHostedService<AgentAutoRegistrationHostedService>();
         // Command broker: async queue for fire-and-forget command dispatch with persistent results
         services.AddSingleton<CommandBrokerService>();

@@ -10,6 +10,18 @@ namespace HomeManagement.Web.Tests;
 public sealed class BrokerApiClientTests
 {
     [Fact]
+    public async Task ManagedServiceControl_RejectsPlaintextBeforeSendingCredentials()
+    {
+        var handler = new QueueHttpMessageHandler();
+        var session = new ServerSessionState();
+        session.SetSession(CreateToken("alice", ["Operator"]), "refresh-a");
+        using var client = new BrokerApiClient(CreateFactory(handler), session, Substitute.For<IWebSessionAuthService>());
+        var control = () => client.ControlManagedServiceAsync(Guid.NewGuid(), new("app", ManagedServiceAction.Start));
+        await control.Should().ThrowAsync<InvalidOperationException>().WithMessage("*HTTPS*");
+        handler.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task GetMachinesAsync_AuthenticatedRequest_ForwardsBearerToken()
     {
         var session = new ServerSessionState();

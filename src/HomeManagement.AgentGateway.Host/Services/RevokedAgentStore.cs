@@ -16,6 +16,9 @@ public sealed class RevokedAgentStore : IRevokedAgentStore
 
     private readonly string? _persistencePath;
     private readonly ILogger<RevokedAgentStore> _logger;
+    private readonly object _persistenceLock = new();
+    private volatile bool _persistenceFault;
+    public bool HasDurableStorage => !string.IsNullOrWhiteSpace(_persistencePath) && !_persistenceFault;
 
     private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
 
@@ -32,23 +35,31 @@ public sealed class RevokedAgentStore : IRevokedAgentStore
 
     public void Revoke(string agentId, string reason)
     {
-        var entry = new RevokedAgentEntry(agentId, reason, DateTimeOffset.UtcNow);
-        _revoked[agentId] = entry;
-        _logger.LogWarning("Agent {AgentId} revoked: {Reason}", agentId, reason);
-        PersistToDisk();
-    }
-
-    public void Reinstate(string agentId)
-    {
-        if (_revoked.TryRemove(agentId, out _))
+        lock (_persistenceLock)
         {
-            _logger.LogInformation("Agent {AgentId} reinstated — revocation removed", agentId);
+            var entry = new RevokedAgentEntry(agentId, reason, DateTimeOffset.UtcNow);
+            _revoked[agentId] = entry;
+            _logger.LogWarning("Agent {AgentId} revoked: {Reason}", agentId, reason);
             PersistToDisk();
         }
     }
 
+    public void Reinstate(string agentId)
+    {
+        lock (_persistenceLock)
+        {
+            if (_persistenceFault)
+                throw new InvalidOperationException("Revocation storage failed; remote control remains disabled.");
+            if (_revoked.TryRemove(agentId, out _))
+            {
+                _logger.LogInformation("Agent {AgentId} reinstated — revocation removed", agentId);
+                PersistToDisk();
+            }
+        }
+    }
+
     public bool IsRevoked(string agentId) =>
-        _revoked.ContainsKey(agentId);
+        _persistenceFault || _revoked.ContainsKey(agentId);
 
     public IReadOnlyList<RevokedAgentEntry> GetAll() =>
         [.. _revoked.Values.OrderBy(e => e.RevokedAt)];
@@ -61,17 +72,23 @@ public sealed class RevokedAgentStore : IRevokedAgentStore
                 return;
 
             var json = File.ReadAllText(_persistencePath);
-            var entries = JsonSerializer.Deserialize<List<RevokedAgentEntry>>(json) ?? [];
+            var entries = JsonSerializer.Deserialize<List<RevokedAgentEntry>>(json)
+                ?? throw new InvalidOperationException("Revocation list must be a JSON array.");
 
             foreach (var entry in entries)
+            {
+                if (entry is null || string.IsNullOrWhiteSpace(entry.AgentId))
+                    throw new InvalidOperationException("Revocation list contains an invalid agent identity.");
                 _revoked[entry.AgentId] = entry;
+            }
 
             _logger.LogInformation("Loaded {Count} revoked agent(s) from {Path}",
                 _revoked.Count, _persistencePath);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
         {
-            _logger.LogError(ex, "Failed to load revocation list from {Path} — starting empty", _persistencePath);
+            _logger.LogCritical(ex, "Failed to load revocation list from {Path}; refusing startup", _persistencePath);
+            throw;
         }
     }
 
@@ -86,14 +103,24 @@ public sealed class RevokedAgentStore : IRevokedAgentStore
             if (!string.IsNullOrWhiteSpace(dir))
                 Directory.CreateDirectory(dir);
 
-            var tmp = _persistencePath + ".tmp";
+            var tmp = _persistencePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
             var json = JsonSerializer.Serialize(GetAll(), _jsonOptions);
-            File.WriteAllText(tmp, json);
-            File.Move(tmp, _persistencePath, overwrite: true);
+            try
+            {
+                File.WriteAllText(tmp, json);
+                File.Move(tmp, _persistencePath, overwrite: true);
+            }
+            finally
+            {
+                if (File.Exists(tmp))
+                    File.Delete(tmp);
+            }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            _persistenceFault = true;
             _logger.LogError(ex, "Failed to persist revocation list to {Path}", _persistencePath);
+            throw;
         }
     }
 }

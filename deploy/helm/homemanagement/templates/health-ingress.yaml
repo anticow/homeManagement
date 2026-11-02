@@ -15,6 +15,7 @@ metadata:
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    {{- include "homemanagement.controlIngressTls" . | nindent 4 }}
     # Redirect bare / to the health page so http://health.cowgomu.net/ works
     nginx.ingress.kubernetes.io/app-root: /platform-health
 spec:
@@ -23,7 +24,7 @@ spec:
     - host: {{ .Values.healthPage.host | quote }}
       http:
         paths:
-          - path: /
+          - path: {{ ternary "/platform-health" "/" .Values.managedServices.enabled }}
             pathType: Prefix
             backend:
               service:

@@ -6,6 +6,7 @@ namespace HomeManagement.AgentGateway.Host.Services;
 /// </summary>
 public interface IRevokedAgentStore
 {
+    bool HasDurableStorage => false;
     /// <summary>Revokes an agent by ID. Idempotent — revoking an already-revoked agent is a no-op.</summary>
     void Revoke(string agentId, string reason);
 

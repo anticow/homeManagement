@@ -185,6 +185,7 @@ app.MapAgentEndpoints();
 app.MapHealthEndpoints();
 app.MapPatchingEndpoints();
 app.MapServiceEndpoints();
+app.MapManagedServiceEndpoints();
 app.MapJobEndpoints();
 app.MapCredentialEndpoints();
 app.MapAuditEndpoints();

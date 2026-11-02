@@ -183,7 +183,7 @@ public sealed class AgentConnectionTrackerTests
         });
 
         var validator = new AgentApiKeyValidator(options, new NullRevokedAgentStore(), NullLogger<AgentApiKeyValidator>.Instance);
-        using var gateway = new StandaloneAgentGatewayService(NullLogger<StandaloneAgentGatewayService>.Instance);
+        using var gateway = new StandaloneAgentGatewayService(NullLogger<StandaloneAgentGatewayService>.Instance, new NullRevokedAgentStore());
         var service = new AgentGatewayGrpcService(
             validator,
             gateway,

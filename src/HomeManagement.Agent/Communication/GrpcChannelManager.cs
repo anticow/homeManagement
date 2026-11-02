@@ -140,6 +140,12 @@ public sealed class GrpcChannelManager : IDisposable
             return false;
         }
 
+        if ((errors & (SslPolicyErrors.RemoteCertificateNameMismatch | SslPolicyErrors.RemoteCertificateNotAvailable)) != 0)
+        {
+            _logger.LogWarning("Server certificate identity validation failed: {Errors}", errors);
+            return false;
+        }
+
         using var serverCert = new X509Certificate2(cert);
         var isValid = _certLoader.ValidateChain(serverCert, caCert);
 

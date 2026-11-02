@@ -32,11 +32,14 @@ spec:
             - name: APP_VERSION
               value: {{ .Values.web.image.tag | default .Values.global.imageTag | quote }}
             - name: ASPNETCORE_URLS
-              value: "http://+:{{ .Values.web.port }}"
+              value: "{{ include "homemanagement.controlScheme" . }}://+:{{ .Values.web.port }}"
+            {{- include "homemanagement.controlTlsEnv" . | nindent 12 }}
+            - name: ManagedServices__Enabled
+              value: {{ .Values.managedServices.enabled | quote }}
             - name: BrokerApi__BaseUrl
-              value: "http://hm-broker:{{ .Values.broker.port }}"
+              value: "{{ include "homemanagement.controlScheme" . }}://hm-broker:{{ .Values.broker.port }}"
             - name: AuthApi__BaseUrl
-              value: "http://hm-auth:{{ .Values.authService.port }}"
+              value: "{{ include "homemanagement.controlScheme" . }}://hm-auth:{{ .Values.authService.port }}"
             - name: Seq__Url
               value: {{ .Values.seq.url | quote }}
             - name: Serilog__MinimumLevel__Default
@@ -60,6 +63,7 @@ spec:
               value: {{ .Values.grafana.instanceLabelTemplate | quote }}
             {{- end }}
           volumeMounts:
+            {{- include "homemanagement.controlTlsMounts" . | nindent 12 }}
             - name: dpkeys
               mountPath: /dpkeys
           resources:
@@ -68,6 +72,7 @@ spec:
             httpGet:
               path: /healthz
               port: http
+              scheme: {{ ternary "HTTPS" "HTTP" .Values.managedServices.enabled }}
               httpHeaders:
                 - name: Host
                   value: localhost
@@ -77,12 +82,14 @@ spec:
             httpGet:
               path: /healthz
               port: http
+              scheme: {{ ternary "HTTPS" "HTTP" .Values.managedServices.enabled }}
               httpHeaders:
                 - name: Host
                   value: localhost
             initialDelaySeconds: 5
             periodSeconds: 10
       volumes:
+        {{- include "homemanagement.controlTlsVolumes" . | nindent 8 }}
         - name: dpkeys
           emptyDir: {}
 ---

@@ -23,7 +23,9 @@ internal sealed class AgentTransportProvider
 
     public async Task<RemoteResult> ExecuteAsync(MachineTarget target, RemoteCommand command, CancellationToken ct)
     {
-        var agentId = ResolveAgentId(target);
+        var agentId = command.CommandType.Equals("ManagedServices", StringComparison.OrdinalIgnoreCase)
+            ? target.Hostname.Value
+            : ResolveAgentId(target);
 
         _logger.LogInformation("Routing command to agent {AgentId} for host {Hostname}",
             agentId, target.Hostname);

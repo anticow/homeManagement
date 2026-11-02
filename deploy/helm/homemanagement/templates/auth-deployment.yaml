@@ -32,7 +32,8 @@ spec:
             - name: APP_VERSION
               value: {{ .Values.authService.image.tag | default .Values.global.imageTag | quote }}
             - name: ASPNETCORE_URLS
-              value: "http://+:{{ .Values.authService.port }}"
+              value: "{{ include "homemanagement.controlScheme" . }}://+:{{ .Values.authService.port }}"
+            {{- include "homemanagement.controlTlsEnv" . | nindent 12 }}
             - name: ConnectionStrings__HomeManagement
               valueFrom:
                 secretKeyRef:
@@ -74,12 +75,17 @@ spec:
             {{- end }}
             - name: AllowedHosts
               value: "{{ .Values.ingress.host }};{{ .Values.ingress.authHost }};hm-auth;hm-auth.{{ .Release.Namespace }}.svc.cluster.local;localhost"
+          {{- if .Values.managedServices.enabled }}
+          volumeMounts:
+            {{- include "homemanagement.controlTlsMounts" . | nindent 12 }}
+          {{- end }}
           resources:
             {{- toYaml .Values.authService.resources | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
+              scheme: {{ ternary "HTTPS" "HTTP" .Values.managedServices.enabled }}
               httpHeaders:
                 - name: Host
                   value: localhost
@@ -89,11 +95,16 @@ spec:
             httpGet:
               path: /readyz
               port: http
+              scheme: {{ ternary "HTTPS" "HTTP" .Values.managedServices.enabled }}
               httpHeaders:
                 - name: Host
                   value: localhost
             initialDelaySeconds: 5
             periodSeconds: 10
+      {{- if .Values.managedServices.enabled }}
+      volumes:
+        {{- include "homemanagement.controlTlsVolumes" . | nindent 8 }}
+      {{- end }}
 ---
 {{- if .Values.authService.autoscaling.enabled }}
 apiVersion: autoscaling/v2

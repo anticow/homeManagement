@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace HomeManagement.Transport;
 
-public sealed class RemoteAgentGatewayClient : IAgentGateway, IDisposable
+public sealed class RemoteAgentGatewayClient : IAgentGateway, IAgentPeeringControl, IDisposable
 {
     private const string HeaderName = "x-agent-gateway-api-key";
 
@@ -31,7 +31,7 @@ public sealed class RemoteAgentGatewayClient : IAgentGateway, IDisposable
     {
         _options = options.Value;
         _logger = logger;
-        _httpClient = new HttpClient
+        _httpClient = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
         {
             BaseAddress = new Uri(_options.BaseUrl, UriKind.Absolute),
             // Per-request timeouts are applied in SendCommandAsync based on command.Timeout.
@@ -94,6 +94,8 @@ public sealed class RemoteAgentGatewayClient : IAgentGateway, IDisposable
 
     public async Task<RemoteResult> SendCommandAsync(string agentId, RemoteCommand command, CancellationToken ct = default)
     {
+        if (command.CommandType.Equals("ManagedServices", StringComparison.OrdinalIgnoreCase))
+            RequireEncryptedControlPlane();
         EnsureStarted();
         // Apply per-request timeout: command timeout + 30s buffer for network and gateway overhead.
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -101,6 +103,21 @@ public sealed class RemoteAgentGatewayClient : IAgentGateway, IDisposable
         using var response = await _httpClient.PostAsJsonAsync(
             $"/internal/agents/{Uri.EscapeDataString(agentId)}/commands", command, timeoutCts.Token);
         return await ReadRequiredAsync<RemoteResult>(response, agentId, ct);
+    }
+
+    public async Task RevokeAsync(string agentId, CancellationToken ct = default)
+    {
+        RequireEncryptedControlPlane();
+        using var response = await _httpClient.PostAsJsonAsync(
+            $"/internal/agents/{Uri.EscapeDataString(agentId)}/revoke",
+            new { Reason = "Peering broken by HomeManagement operator" }, ct);
+        response.EnsureSuccessStatusCode();
+    }
+
+    private void RequireEncryptedControlPlane()
+    {
+        if (_httpClient.BaseAddress?.Scheme != Uri.UriSchemeHttps)
+            throw new InvalidOperationException("Managed service control and peering revocation require HTTPS to the Agent Gateway.");
     }
 
     public async Task<AgentMetadata> GetMetadataAsync(string agentId, CancellationToken ct = default)

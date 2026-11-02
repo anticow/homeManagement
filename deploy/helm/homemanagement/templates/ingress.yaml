@@ -11,6 +11,7 @@ metadata:
     {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
+    {{- include "homemanagement.controlIngressTls" . | nindent 4 }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
   {{- if .Values.ingress.tls.enabled }}
@@ -51,6 +52,7 @@ metadata:
     {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
+    {{- include "homemanagement.controlIngressTls" . | nindent 4 }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
   {{- if .Values.ingress.tls.enabled }}
@@ -85,6 +87,7 @@ metadata:
     {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
+    {{- include "homemanagement.controlIngressTls" . | nindent 4 }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}
   {{- if .Values.ingress.tls.enabled }}
@@ -116,8 +119,19 @@ metadata:
     {{- include "homemanagement.labels" . | nindent 4 }}
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: {{ .Values.ingress.sslRedirect | quote }}
+    {{- if .Values.managedServices.enabled }}
+    {{- with omit .Values.ingress.grpcAnnotations "nginx.ingress.kubernetes.io/backend-protocol" "nginx.ingress.kubernetes.io/proxy-ssl-verify" "nginx.ingress.kubernetes.io/proxy-ssl-server-name" "nginx.ingress.kubernetes.io/proxy-ssl-name" "nginx.ingress.kubernetes.io/proxy-ssl-secret" }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPCS"
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "on"
+    nginx.ingress.kubernetes.io/proxy-ssl-server-name: "on"
+    nginx.ingress.kubernetes.io/proxy-ssl-name: "hm-control"
+    nginx.ingress.kubernetes.io/proxy-ssl-secret: "{{ .Values.namespace }}/{{ .Values.managedServices.tlsSecretName }}"
+    {{- else }}
     {{- with .Values.ingress.grpcAnnotations }}
     {{- toYaml . | nindent 4 }}
+    {{- end }}
     {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.className }}

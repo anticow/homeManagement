@@ -1,0 +1,132 @@
+@using HomeManagement.Abstractions
+@using HomeManagement.Abstractions.Models
+@using Microsoft.AspNetCore.Components.Authorization
+@inject HomeManagement.Web.Services.IBrokerApi BrokerApi
+@inject NavigationManager Navigation
+@inject ILogger<ManagedServicesPanel> Logger
+
+<h2>Enrolled applications</h2>
+<p>Packages and enrollment are managed by AWX. These controls only start or stop installed services.</p>
+<button type="button" @onclick="RefreshAsync" disabled="@_busy">Refresh service state</button>
+@if (_error is not null)
+{
+    <p role="alert">@_error</p>
+}
+@if (_revoked)
+{
+    <p>Agent peering is revoked. Running applications are unchanged. Re-pairing requires an administrator.</p>
+}
+else if (_services is not null)
+{
+    @if (_services.Count == 0)
+    {
+        <p>No applications are enrolled on this node.</p>
+    }
+    else
+    {
+        <table>
+            <thead><tr><th>Application</th><th>Service</th><th>State</th><th>Observed (UTC)</th><th>Control</th></tr></thead>
+            <tbody>
+                @foreach (var service in _services)
+                {
+                    <tr>
+                        <td>@service.DisplayName</td><td><code>@service.ServiceName</code></td>
+                        <td>@service.State</td><td>@service.ObservedUtc.ToString("u")</td>
+                        <td>
+                            <AuthorizeView Roles="Operator,Admin">
+                                <button type="button" disabled="@(_busy || service.State is not (ServiceState.Stopped or ServiceState.Failed))"
+                                        @onclick="() => Select(service, ManagedServiceAction.Start)">Start</button>
+                                <button type="button" disabled="@(_busy || service.State != ServiceState.Running)"
+                                        @onclick="() => Select(service, ManagedServiceAction.Stop)">Stop</button>
+                            </AuthorizeView>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    <AuthorizeView Roles="Admin">
+        <button type="button" disabled="@_busy" @onclick="() => _confirmBreak = true">Break agent peering</button>
+    </AuthorizeView>
+}
+@if (_pending is not null)
+{
+    <p role="alert">Confirm @_pending.Action for <strong>@_pending.Id</strong>?
+        Stopping can interrupt active work, including image generation.</p>
+    <button type="button" disabled="@_busy" @onclick="ControlAsync">Confirm</button>
+    <button type="button" disabled="@_busy" @onclick="() => _pending = null">Cancel</button>
+}
+@if (_confirmBreak)
+{
+    <p role="alert">Revoke this node's agent access? All remote agent commands will be blocked; running applications will not be stopped.</p>
+    <button type="button" disabled="@_busy" @onclick="BreakAsync">Confirm revocation</button>
+    <button type="button" disabled="@_busy" @onclick="() => _confirmBreak = false">Cancel</button>
+}
+
+@code {
+    [Parameter] public Guid MachineId { get; set; }
+    private IReadOnlyList<ManagedServiceSnapshot>? _services;
+    private ManagedServiceRequest? _pending;
+    private bool _busy;
+    private bool _confirmBreak;
+    private bool _revoked;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _services = null;
+        _pending = null;
+        _confirmBreak = false;
+        _revoked = false;
+        await RefreshAsync();
+    }
+
+    private void Select(ManagedServiceSnapshot service, ManagedServiceAction action)
+    {
+        _confirmBreak = false;
+        _pending = new(service.Id, action);
+    }
+
+    private Task RefreshAsync() => RunAsync(async () =>
+    {
+        _pending = null;
+        _services = await BrokerApi.GetManagedServicesAsync(MachineId);
+    });
+
+    private Task ControlAsync() => RunAsync(async () =>
+    {
+        var request = _pending ?? throw new InvalidOperationException("Select an enrolled application first.");
+        _pending = null;
+        _services = null;
+        _services = await BrokerApi.ControlManagedServiceAsync(MachineId, request);
+    });
+
+    private Task BreakAsync() => RunAsync(async () =>
+    {
+        _confirmBreak = false;
+        _pending = null;
+        await BrokerApi.BreakAgentPeeringAsync(MachineId);
+        _revoked = true;
+        _services = null;
+    });
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            if (new Uri(Navigation.Uri).Scheme != Uri.UriSchemeHttps)
+                throw new InvalidOperationException("Open the web console over HTTPS to use enrolled application controls.");
+            await action();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or Refit.ApiException or UnauthorizedAccessException)
+        {
+            _services = null;
+            Logger.LogWarning(ex, "Managed service operation failed for {MachineId}", MachineId);
+            _error = ex.Message;
+        }
+        finally { _busy = false; }
+    }
+}

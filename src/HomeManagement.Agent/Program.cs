@@ -17,6 +17,15 @@ internal static class Program
 {
     public static async Task Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--version")
+        {
+            Console.WriteLine(typeof(Program).Assembly
+                .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+                .Cast<System.Reflection.AssemblyInformationalVersionAttribute>()
+                .Single().InformationalVersion.Split('+')[0]);
+            return;
+        }
+
         // Minimal bootstrap logger (console only) — replaced once config is loaded
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Information()
@@ -122,6 +131,9 @@ internal static class Program
                     services.AddSingleton<ICommandHandler, PatchCommandHandler>(sp => sp.GetRequiredService<PatchCommandHandler>());
                     services.AddSingleton<ICommandHandler, PatchApplyCommandHandler>();
                     services.AddSingleton<ICommandHandler, ProcessListHandler>();
+                    services.AddSingleton<ManagedServiceRegistry>();
+                    services.AddSingleton<IManagedServiceSupervisor, ManagedServiceSupervisor>();
+                    services.AddSingleton<ICommandHandler, ManagedServicesHandler>();
 
                     // Update handler
                     services.AddSingleton<UpdateCommandHandler>();

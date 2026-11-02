@@ -27,6 +27,8 @@ public sealed class AgentConfiguration
 
     // ── Security ──
     public string[] DeniedCommandPatterns { get; set; } = [];
+    public string ManagedServicesPath { get; set; } = string.Empty;
+    public bool ManagedServicesOnly { get; set; }
 
     // -- Logging ──
     public string LogLevel { get; set; } = "Information";
@@ -66,6 +68,13 @@ public sealed class AgentConfiguration
         {
             throw new InvalidOperationException(
                 "Agent:UseTls may be false only when Agent:ControlServer targets localhost or another loopback address.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(ManagedServicesPath))
+        {
+            if (!UseTls || !Path.IsPathFullyQualified(ManagedServicesPath) || !ManagedServicesOnly)
+                throw new InvalidOperationException(
+                    "Managed service enrollment requires TLS, an absolute ManagedServicesPath and ManagedServicesOnly=true.");
         }
 
         if (AutoUpdateEnabled && (UpdateSigningPublicKey is null || UpdateSigningPublicKey.Length == 0))

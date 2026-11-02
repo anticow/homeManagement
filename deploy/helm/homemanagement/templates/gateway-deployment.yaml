@@ -32,7 +32,8 @@ spec:
             - name: APP_VERSION
               value: {{ .Values.gateway.image.tag | default .Values.global.imageTag | quote }}
             - name: ASPNETCORE_URLS
-              value: "http://+:{{ .Values.gateway.port }}"
+              value: "{{ include "homemanagement.controlScheme" . }}://+:{{ .Values.gateway.port }}"
+            {{- include "homemanagement.controlTlsEnv" . | nindent 12 }}
             - name: Auth__JwtSigningKey
               valueFrom:
                 secretKeyRef:
@@ -43,19 +44,19 @@ spec:
             - name: Auth__Audience
               value: {{ .Values.auth.audience | quote }}
             - name: ReverseProxy__Clusters__broker__Destinations__primary__Address
-              value: "http://hm-broker:{{ .Values.broker.port }}"
+              value: "{{ include "homemanagement.controlScheme" . }}://hm-broker:{{ .Values.broker.port }}"
             - name: ReverseProxy__Clusters__auth__Destinations__primary__Address
-              value: "http://hm-auth:{{ .Values.authService.port }}"
+              value: "{{ include "homemanagement.controlScheme" . }}://hm-auth:{{ .Values.authService.port }}"
             - name: Seq__Url
               value: {{ .Values.seq.url | quote }}
             - name: PlatformHealth__BrokerUrl
-              value: "http://hm-broker:{{ .Values.broker.port }}/healthz"
+              value: "{{ include "homemanagement.controlScheme" . }}://hm-broker:{{ .Values.broker.port }}/healthz"
             - name: PlatformHealth__AuthUrl
-              value: "http://hm-auth:{{ .Values.authService.port }}/healthz"
+              value: "{{ include "homemanagement.controlScheme" . }}://hm-auth:{{ .Values.authService.port }}/healthz"
             - name: PlatformHealth__WebUrl
-              value: "http://hm-web:{{ .Values.web.port }}/healthz"
+              value: "{{ include "homemanagement.controlScheme" . }}://hm-web:{{ .Values.web.port }}/healthz"
             - name: PlatformHealth__AgentGatewayUrl
-              value: "http://hm-agent-gw:{{ .Values.agentGateway.apiPort }}/healthz"
+              value: "{{ include "homemanagement.controlScheme" . }}://hm-agent-gw:{{ .Values.agentGateway.apiPort }}/healthz"
             {{- if .Values.healthPage.enabled }}
             - name: PlatformHealth__SeqUrl
               value: {{ .Values.healthPage.platformHealth.seqUrl | quote }}
@@ -76,12 +77,17 @@ spec:
               value: {{ .Values.serilog.overrides.systemNetHttp | quote }}
             - name: AllowedHosts
               value: "{{ .Values.ingress.host }};{{ .Values.healthPage.host }};hm-gateway;hm-gateway.{{ .Release.Namespace }}.svc.cluster.local;localhost"
+          {{- if .Values.managedServices.enabled }}
+          volumeMounts:
+            {{- include "homemanagement.controlTlsMounts" . | nindent 12 }}
+          {{- end }}
           resources:
             {{- toYaml .Values.gateway.resources | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
+              scheme: {{ ternary "HTTPS" "HTTP" .Values.managedServices.enabled }}
               httpHeaders:
                 - name: Host
                   value: localhost
@@ -91,11 +97,16 @@ spec:
             httpGet:
               path: /healthz
               port: http
+              scheme: {{ ternary "HTTPS" "HTTP" .Values.managedServices.enabled }}
               httpHeaders:
                 - name: Host
                   value: localhost
             initialDelaySeconds: 5
             periodSeconds: 10
+      {{- if .Values.managedServices.enabled }}
+      volumes:
+        {{- include "homemanagement.controlTlsVolumes" . | nindent 8 }}
+      {{- end }}
 ---
 {{- if .Values.gateway.autoscaling.enabled }}
 apiVersion: autoscaling/v2

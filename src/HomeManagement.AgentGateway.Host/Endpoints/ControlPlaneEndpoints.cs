@@ -36,9 +36,12 @@ public static class ControlPlaneEndpoints
     private static async Task<IResult> SendCommand(
         string agentId,
         RemoteCommand command,
+        HttpContext context,
         StandaloneAgentGatewayService gateway,
         CancellationToken ct)
     {
+        if (command.CommandType.Equals("ManagedServices", StringComparison.OrdinalIgnoreCase) && !context.Request.IsHttps)
+            return Results.Problem("Managed services require HTTPS.", statusCode: 403);
         try
         {
             return Results.Ok(await gateway.SendCommandAsync(agentId, command, ct));
@@ -72,22 +75,22 @@ public static class ControlPlaneEndpoints
     private static IResult RevokeAgent(
         string agentId,
         RevokeRequest? request,
+        HttpContext context,
         IRevokedAgentStore store,
         StandaloneAgentGatewayService gateway)
     {
+        if (!context.Request.IsHttps || !store.HasDurableStorage)
+            return Results.Problem("Peering revocation requires HTTPS and durable storage.", statusCode: 403);
         var reason = request?.Reason ?? "Revoked via control plane API";
-        store.Revoke(agentId, reason);
-
-        if (gateway.GetConnectedAgents().Any(a => string.Equals(a.AgentId, agentId, StringComparison.OrdinalIgnoreCase)))
-        {
-            gateway.UnregisterAgent(agentId);
-        }
+        gateway.RevokeAgent(agentId, reason);
 
         return Results.Ok(new { agentId, status = "revoked", reason });
     }
 
-    private static IResult ReinstateAgent(string agentId, IRevokedAgentStore store)
+    private static IResult ReinstateAgent(string agentId, IRevokedAgentStore store, HttpContext context)
     {
+        if (!context.Request.IsHttps || !store.HasDurableStorage)
+            return Results.Problem("Re-pairing requires HTTPS and durable storage.", statusCode: 403);
         store.Reinstate(agentId);
         return Results.Ok(new { agentId, status = "reinstated" });
     }

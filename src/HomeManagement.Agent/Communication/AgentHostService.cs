@@ -29,12 +29,15 @@ public sealed class AgentHostService : BackgroundService
     private readonly WindowsResourceLimits? _resourceLimits;
 
     // Thread-safe outbound message queue
-    private readonly Channel<AgentMessage> _outbound = Channel.CreateBounded<AgentMessage>(
-        new BoundedChannelOptions(64) { FullMode = BoundedChannelFullMode.DropOldest });
+    private Channel<AgentMessage> _outbound = CreateOutbound();
 
     // Inbound command queue — decouples gRPC receive loop from command execution
     // so update directives, shutdowns, and acks are never blocked by slow commands.
-    private readonly Channel<CommandRequest> _inboundCommands = Channel.CreateBounded<CommandRequest>(
+    private Channel<CommandRequest> _inboundCommands = CreateInbound();
+
+    private static Channel<AgentMessage> CreateOutbound() => Channel.CreateBounded<AgentMessage>(
+        new BoundedChannelOptions(64) { FullMode = BoundedChannelFullMode.Wait });
+    private static Channel<CommandRequest> CreateInbound() => Channel.CreateBounded<CommandRequest>(
         new BoundedChannelOptions(128) { FullMode = BoundedChannelFullMode.Wait });
 
     public AgentHostService(
@@ -66,6 +69,12 @@ public sealed class AgentHostService : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            if (!string.IsNullOrWhiteSpace(_config.ManagedServicesPath) && File.Exists(_config.ManagedServicesPath + ".disabled"))
+            {
+                _logger.LogWarning("Remote management disabled locally; agent will not connect");
+                await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken);
+                continue;
+            }
             try
             {
                 await RunConnectionLoopAsync(stoppingToken);
@@ -100,6 +109,8 @@ public sealed class AgentHostService : BackgroundService
 
     internal async Task RunConnectionAsync(AgentHub.AgentHubClient client, CancellationToken ct)
     {
+        _outbound = CreateOutbound();
+        _inboundCommands = CreateInbound();
         using var connectionCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var headers = new Metadata();
         if (!string.IsNullOrWhiteSpace(_config.ApiKey))
@@ -119,16 +130,33 @@ public sealed class AgentHostService : BackgroundService
             HeartbeatLoopAsync(connectionCts.Token),
             SendLoopAsync(call.RequestStream, connectionCts.Token),
             CommandProcessingLoopAsync(connectionCts.Token),
-            ReceiveLoopAsync(call.ResponseStream, connectionCts.Token)
+            ReceiveLoopAsync(call.ResponseStream, connectionCts.Token),
+            WatchLocalBreakAsync(connectionCts.Token)
         ];
         try
         {
             await await Task.WhenAny(tasks);
         }
+
         finally
         {
             await connectionCts.CancelAsync();
             await Task.WhenAll(tasks.Select(task => SafeAwait(task, connectionCts.Token)));
+            _outbound.Writer.TryComplete();
+            _inboundCommands.Writer.TryComplete();
+        }
+    }
+
+    private async Task WatchLocalBreakAsync(CancellationToken ct)
+    {
+        while (true)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1), ct);
+            if (!string.IsNullOrWhiteSpace(_config.ManagedServicesPath) && File.Exists(_config.ManagedServicesPath + ".disabled"))
+            {
+                _logger.LogWarning("Local break detected; disconnecting agent and discarding pending work");
+                return;
+            }
         }
     }
 
@@ -148,6 +176,11 @@ public sealed class AgentHostService : BackgroundService
                     break;
 
                 case ControlMessage.PayloadOneofCase.UpdateDirective:
+                    if (_config.ManagedServicesOnly)
+                    {
+                        _logger.LogWarning("Restricted agent rejected remote update; packages must be delivered by AWX");
+                        break;
+                    }
                     _logger.LogInformation("Received update directive: version {Version}",
                         message.UpdateDirective.TargetVersion);
                     _ = _updateHandler.HandleAsync(message.UpdateDirective, ct);

@@ -70,6 +70,12 @@ src/
   HomeManagement.Gui            Avalonia desktop app
 ```
 
+## AWX-enrolled application controls
+
+Optional service-wrapper monitoring and Start/Stop controls are configured per
+node by AWX, not enabled fleet-wide. See [managed services](docs/managed-services.md)
+for explicit enrollment, TLS requirements, permissions and revocable agent peering.
+
 ## Per-node Grafana graphs (web console)
 
 System history is collected by Prometheus from `node_exporter` (port 9100) and

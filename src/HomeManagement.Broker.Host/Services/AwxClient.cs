@@ -14,6 +14,9 @@ public sealed record AwxJob(int Id, string Name, string Status, string JobType, 
 
 public sealed class AwxClient
 {
+    public static bool IsWorkloadEnrollment(AwxJobTemplate template) =>
+        template.PlaybookName.Equals("configure-homemanagement-workloads.yml", StringComparison.OrdinalIgnoreCase);
+
     private static readonly Action<ILogger, Exception?> LogFetchJobTemplatesFailed =
         LoggerMessage.Define(LogLevel.Warning, new EventId(1, nameof(LogFetchJobTemplatesFailed)), "AWX: failed to fetch job templates");
     private static readonly Action<ILogger, Exception?> LogFetchRecentJobsFailed =
@@ -43,14 +46,7 @@ public sealed class AwxClient
             var list = new List<AwxJobTemplate>();
             foreach (var el in results.EnumerateArray())
             {
-                list.Add(new AwxJobTemplate(
-                    Id: el.GetProperty("id").GetInt32(),
-                    Name: el.GetProperty("name").GetString() ?? "",
-                    Description: el.TryGetProperty("description", out var d) ? d.GetString() ?? "" : "",
-                    PlaybookName: el.TryGetProperty("playbook", out var p) ? p.GetString() ?? "" : "",
-                    LastJobRun: el.TryGetProperty("last_job_run", out var ljr) && ljr.ValueKind != System.Text.Json.JsonValueKind.Null ? (int)(ljr.GetDateTime() - DateTime.UnixEpoch).TotalSeconds : 0,
-                    Status: el.TryGetProperty("status", out var s) ? s.GetString() ?? "" : ""
-                ));
+                list.Add(ParseTemplate(el));
             }
             return list;
         }
@@ -60,6 +56,24 @@ public sealed class AwxClient
             return [];
         }
     }
+
+    public async Task<AwxJobTemplate> GetJobTemplateAsync(int templateId, CancellationToken ct = default)
+    {
+        using var response = await _http.GetAsync($"api/v2/job_templates/{templateId}/", ct);
+        response.EnsureSuccessStatusCode();
+        using var document = await System.Text.Json.JsonDocument.ParseAsync(
+            await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        return ParseTemplate(document.RootElement);
+    }
+
+    private static AwxJobTemplate ParseTemplate(System.Text.Json.JsonElement el) => new(
+        Id: el.GetProperty("id").GetInt32(),
+        Name: el.GetProperty("name").GetString() ?? "",
+        Description: el.TryGetProperty("description", out var d) ? d.GetString() ?? "" : "",
+        PlaybookName: el.TryGetProperty("playbook", out var p) ? p.GetString() ?? "" : "",
+        LastJobRun: el.TryGetProperty("last_job_run", out var ljr) && ljr.ValueKind != System.Text.Json.JsonValueKind.Null
+            ? (int)(ljr.GetDateTime() - DateTime.UnixEpoch).TotalSeconds : 0,
+        Status: el.TryGetProperty("status", out var s) ? s.GetString() ?? "" : "");
 
     public async Task<IReadOnlyList<AwxJob>> GetRecentJobsAsync(int limit = 50, CancellationToken ct = default)
     {

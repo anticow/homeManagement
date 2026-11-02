@@ -14,7 +14,7 @@ public static class AwxEndpoints
         {
             var awx = services.GetService<AwxClient>();
             if (awx is null) return Results.Ok(Array.Empty<AwxJobTemplate>());
-            return Results.Ok(await awx.GetJobTemplatesAsync(ct));
+            return Results.Ok((await awx.GetJobTemplatesAsync(ct)).Where(template => !AwxClient.IsWorkloadEnrollment(template)));
         });
 
         group.MapGet("/jobs", async (IServiceProvider services, int limit = 50, CancellationToken ct = default) =>
@@ -28,6 +28,8 @@ public static class AwxEndpoints
         {
             var awx = services.GetService<AwxClient>();
             if (awx is null) return Results.Problem("AWX integration is not enabled.");
+            if (AwxClient.IsWorkloadEnrollment(await awx.GetJobTemplateAsync(id, ct)))
+                return Results.Problem("Application packages and enrollment must be managed directly in AWX.", statusCode: 403);
             var jobId = await awx.LaunchJobTemplateAsync(id, ct);
             return jobId is null
                 ? Results.Problem("AWX launch failed — check broker logs.")

@@ -12,10 +12,13 @@ public sealed class StandaloneAgentGatewayService : IDisposable
 {
     private readonly ConcurrentDictionary<string, AgentGatewaySession> _sessions = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger<StandaloneAgentGatewayService> _logger;
+    private readonly IRevokedAgentStore _revoked;
+    private readonly object _sessionLock = new();
 
-    public StandaloneAgentGatewayService(ILogger<StandaloneAgentGatewayService> logger)
+    public StandaloneAgentGatewayService(ILogger<StandaloneAgentGatewayService> logger, IRevokedAgentStore revoked)
     {
         _logger = logger;
+        _revoked = revoked;
     }
 
     public IReadOnlyList<ConnectedAgent> GetConnectedAgents()
@@ -49,10 +52,15 @@ public sealed class StandaloneAgentGatewayService : IDisposable
 
     public async Task<RemoteResult> SendCommandAsync(string agentId, RemoteCommand command, CancellationToken ct = default)
     {
+        if (_revoked.IsRevoked(agentId))
+            throw new InvalidOperationException("Agent peering has been revoked.");
         if (!_sessions.TryGetValue(agentId, out var session))
         {
             throw new InvalidOperationException($"Agent '{agentId}' is not connected.");
         }
+        if (command.CommandType.Equals("ManagedServices", StringComparison.OrdinalIgnoreCase)
+            && (!session.IsEncrypted || !session.HasUniqueCredential || !_revoked.HasDurableStorage))
+            throw new InvalidOperationException("Managed services require an encrypted agent session, a unique 32-byte credential and durable revocation storage.");
 
         var requestId = Guid.NewGuid().ToString("N");
         var pending = new TaskCompletionSource<CommandResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -121,15 +129,22 @@ public sealed class StandaloneAgentGatewayService : IDisposable
         _logger.LogInformation("Update directive sent to {AgentId}: version {Version}", agentId, package.Version);
     }
 
-    internal AgentGatewaySession RegisterAgent(Handshake handshake, IServerStreamWriter<ControlMessage> responseStream)
+    internal AgentGatewaySession RegisterAgent(Handshake handshake, IServerStreamWriter<ControlMessage> responseStream,
+        bool isEncrypted = false, Action? abort = null, bool hasUniqueCredential = false)
     {
         var outbound = Channel.CreateBounded<ControlMessage>(new BoundedChannelOptions(64)
         {
-            FullMode = BoundedChannelFullMode.DropOldest
+            FullMode = BoundedChannelFullMode.Wait
         });
 
-        var session = new AgentGatewaySession(handshake.AgentId, handshake, outbound, responseStream);
-        _sessions[session.AgentId] = session;
+        var session = new AgentGatewaySession(handshake.AgentId, handshake, outbound, responseStream, isEncrypted, abort, hasUniqueCredential);
+        lock (_sessionLock)
+        {
+            if (_revoked.IsRevoked(session.AgentId))
+                throw new InvalidOperationException("Agent peering has been revoked.");
+            if (!_sessions.TryAdd(session.AgentId, session))
+                throw new InvalidOperationException("An agent session with this identity is already connected.");
+        }
 
         _logger.LogInformation(
             "Agent registered: {AgentId} ({Hostname}) version {Version}",
@@ -140,18 +155,41 @@ public sealed class StandaloneAgentGatewayService : IDisposable
         return session;
     }
 
-    internal void UnregisterAgent(string agentId)
+    public void RevokeAgent(string agentId, string reason)
     {
-        if (_sessions.TryRemove(agentId, out var session))
+        lock (_sessionLock)
         {
-            session.Outbound.Writer.TryComplete();
-
-            foreach (var pending in session.PendingCommands.Values)
+            try
             {
-                pending.TrySetCanceled();
+                _revoked.Revoke(agentId, reason);
             }
+            finally
+            {
+                // A persistence failure is not success, but the live session must still be broken.
+                UnregisterAgent(agentId, abort: true);
+            }
+        }
+    }
 
-            _logger.LogInformation("Agent unregistered: {AgentId} ({Hostname})", agentId, session.Handshake.Hostname);
+    internal void UnregisterAgent(string agentId, AgentGatewaySession? expectedSession = null, bool abort = false)
+    {
+        lock (_sessionLock)
+        {
+            if (_sessions.TryGetValue(agentId, out var session)
+                && (expectedSession is null || ReferenceEquals(session, expectedSession))
+                && _sessions.TryRemove(agentId, out _))
+            {
+                session.Outbound.Writer.TryComplete();
+                if (abort)
+                    session.Abort?.Invoke();
+
+                foreach (var pending in session.PendingCommands.Values)
+                {
+                    pending.TrySetCanceled();
+                }
+
+                _logger.LogInformation("Agent unregistered: {AgentId} ({Hostname})", agentId, session.Handshake.Hostname);
+            }
         }
     }
 
@@ -166,7 +204,10 @@ public sealed class StandaloneAgentGatewayService : IDisposable
                 heartbeat.UptimeSeconds,
                 heartbeat.CpuPercent);
         }
+
     }
+
+    internal bool CanSend(string agentId) => !_revoked.IsRevoked(agentId) && _sessions.ContainsKey(agentId);
 
     internal void CompleteCommand(string agentId, CommandResponse response)
     {

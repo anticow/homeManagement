@@ -6,6 +6,7 @@
 @inject HomeManagement.Web.Services.IBrokerApi BrokerApi
 @inject NavigationManager Navigation
 @inject ILogger<MachineDetail> Logger
+@inject IConfiguration Configuration
 
 @if (_loading)
 {
@@ -114,6 +115,10 @@ else if (_machine is not null)
     }
 
     <HomeManagement.Web.Components.Shared.NodeMetricsPanels Machine="_machine" />
+    @if (_machine.Protocol == TransportProtocol.Agent && Configuration.GetValue<bool>("ManagedServices:Enabled"))
+    {
+        <HomeManagement.Web.Components.Shared.ManagedServicesPanel @key="_machine.Id" MachineId="_machine.Id" />
+    }
 
     <!-- ── Services (from agent) ─────────────────────────────────────────── -->
     <h2 style="margin-top:24px;">

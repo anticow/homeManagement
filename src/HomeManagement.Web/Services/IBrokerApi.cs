@@ -47,6 +47,16 @@ public interface IBrokerApi
     [Get("/api/services/{machineId}")]
     Task<IReadOnlyList<ServiceInfo>> GetServicesAsync(Guid machineId, CancellationToken ct = default);
 
+    [Get("/api/machines/{machineId}/managed-services")]
+    Task<IReadOnlyList<ManagedServiceSnapshot>> GetManagedServicesAsync(Guid machineId, CancellationToken ct = default);
+
+    [Post("/api/machines/{machineId}/managed-services/control")]
+    Task<IReadOnlyList<ManagedServiceSnapshot>> ControlManagedServiceAsync(
+        Guid machineId, [Body] ManagedServiceRequest request, CancellationToken ct = default);
+
+    [Post("/api/machines/{machineId}/managed-services/break-peering")]
+    Task BreakAgentPeeringAsync(Guid machineId, CancellationToken ct = default);
+
     // ── Action1 ──
     [Get("/api/action1/endpoints/{endpointId}/patches")]
     Task<IReadOnlyList<Action1PatchDto>> GetAction1PatchesAsync(string endpointId, CancellationToken ct = default);

@@ -80,6 +80,11 @@ public sealed class AgentApiKeyValidator : IAgentApiKeyValidator
         }
     }
 
+    public bool SupportsManagedServiceControl(string agentId) =>
+        _configuredKeys.TryGetValue(agentId, out var key)
+        && AgentGatewayHostOptions.HasValidControlPlaneApiKey(new AgentGatewayHostOptions { ApiKey = key })
+        && _configuredKeys.Values.Count(value => Matches(value, key)) == 1;
+
     internal static IReadOnlyDictionary<string, string> BuildKeys(AgentGatewayHostOptions options)
     {
         var keys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

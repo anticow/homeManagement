@@ -12,7 +12,7 @@ public enum PatchCategory { Security, BugFix, Feature, Driver, Other }
 public enum PatchInstallState { Detected, Staged, Approved, Deferred, Installing, Installed, Failed }
 
 // ── Services ──
-public enum ServiceState { Running, Stopped, Starting, Stopping, Paused, Unknown }
+public enum ServiceState { Running, Stopped, Starting, Stopping, Paused, Unknown, Failed }
 public enum ServiceStartupType { Automatic, Manual, Disabled }
 public enum ServiceAction { Start, Stop, Restart, Enable, Disable }
 

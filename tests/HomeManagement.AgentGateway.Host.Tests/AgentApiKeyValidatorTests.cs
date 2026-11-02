@@ -10,6 +10,21 @@ namespace HomeManagement.AgentGateway.Host.Tests;
 public sealed class AgentApiKeyValidatorTests
 {
     [Fact]
+    public void ManagedControl_RequiresStrongUniquePerAgentCredential()
+    {
+        var key = Convert.ToBase64String(Enumerable.Range(1, 32).Select(value => (byte)value).ToArray());
+        var unique = CreateValidator(new Dictionary<string, string?> { ["AgentGateway:AgentApiKeys:agent-01"] = key });
+        unique.SupportsManagedServiceControl("agent-01").Should().BeTrue();
+        var shared = CreateValidator(new Dictionary<string, string?>
+        {
+            ["AgentGateway:AgentApiKeys:agent-01"] = key, ["AgentGateway:AgentApiKeys:agent-02"] = key
+        });
+        shared.SupportsManagedServiceControl("agent-01").Should().BeFalse();
+        var weak = CreateValidator(new Dictionary<string, string?> { ["AgentGateway:AgentApiKeys:agent-01"] = "weak-key" });
+        weak.SupportsManagedServiceControl("agent-01").Should().BeFalse();
+    }
+
+    [Fact]
     public void ValidateOrThrow_WithConfiguredAgentKey_AllowsMatch()
     {
         var validator = CreateValidator(new Dictionary<string, string?>

@@ -11,12 +11,18 @@ internal sealed class AgentGatewaySession
         string agentId,
         Handshake handshake,
         Channel<ControlMessage> outbound,
-        IServerStreamWriter<ControlMessage> responseStream)
+        IServerStreamWriter<ControlMessage> responseStream,
+        bool isEncrypted,
+        Action? abort,
+        bool hasUniqueCredential)
     {
         AgentId = agentId;
         Handshake = handshake;
         Outbound = outbound;
         ResponseStream = responseStream;
+        IsEncrypted = isEncrypted;
+        Abort = abort;
+        HasUniqueCredential = hasUniqueCredential;
     }
 
     public string AgentId { get; }
@@ -26,6 +32,9 @@ internal sealed class AgentGatewaySession
     public Channel<ControlMessage> Outbound { get; }
 
     public IServerStreamWriter<ControlMessage> ResponseStream { get; }
+    public bool IsEncrypted { get; }
+    public Action? Abort { get; }
+    public bool HasUniqueCredential { get; }
 
     public DateTime ConnectedUtc { get; } = DateTime.UtcNow;
 
