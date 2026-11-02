@@ -70,6 +70,10 @@ jobs:
           --set agentGateway.apiKey="AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
           > /tmp/homemanagement-rendered.yaml
 
+      - name: Verify ingress certificate bindings
+        shell: pwsh
+        run: ./scripts/Test-IngressCertificates.ps1
+
   publish-binaries:
     name: Publish (${{ matrix.rid }})
     needs: validate

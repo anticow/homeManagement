@@ -22,4 +22,7 @@ spec:
     {{- if .Values.ingress.agentGatewayHost }}
     - {{ .Values.ingress.agentGatewayHost | quote }}
     {{- end }}
+    {{- if .Values.healthPage.enabled }}
+    - {{ .Values.healthPage.host | quote }}
+    {{- end }}
 {{- end }}

@@ -76,6 +76,17 @@ Optional service-wrapper monitoring and Start/Stop controls are configured per
 node by AWX, not enabled fleet-wide. See [managed services](docs/managed-services.md)
 for explicit enrollment, TLS requirements, permissions and revocable agent peering.
 
+## Health page certificates
+
+The health ingress uses `ingress.tls.secretName` when ingress TLS is enabled.
+When `ingress.clusterIssuer` is configured, the chart includes the enabled health
+hostname in the shared cert-manager Certificate alongside the application hosts.
+The production issuer is `letsencrypt-dns-sp-v2`. HTTPS is available at
+`https://health.cowgomu.net/platform-health`; HTTP remains available without an
+HTTPS redirect for existing uptime monitors. Disabling ingress TLS preserves
+HTTP-only operation. Run `pwsh -File scripts/Test-IngressCertificates.ps1` to
+check the certificate and ingress render combinations.
+
 ## Per-node Grafana graphs (web console)
 
 System history is collected by Prometheus from `node_exporter` (port 9100) and

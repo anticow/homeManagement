@@ -187,8 +187,8 @@ prometheus:
   scrapeLabel: "homemanagement"
   queryTimeoutSeconds: 10
 
-# -- Platform health page (HTTP-only, no auth, no TLS)
-# Accessible at http://<host>/platform-health — safe to expose unauthenticated.
+# -- Platform health page (no auth; shares ingress TLS when enabled)
+# Accessible at https://<host>/platform-health; HTTP remains available for monitors.
 # Only the /platform-health path is routed; the rest of the gateway stays HTTPS-only.
 healthPage:
   enabled: true
