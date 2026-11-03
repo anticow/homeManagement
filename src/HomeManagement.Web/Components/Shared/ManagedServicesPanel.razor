@@ -4,6 +4,7 @@
 @inject HomeManagement.Web.Services.IBrokerApi BrokerApi
 @inject NavigationManager Navigation
 @inject ILogger<ManagedServicesPanel> Logger
+@inject IConfiguration Configuration
 
 <h2>Enrolled applications</h2>
 <p>Packages and enrollment are managed by AWX. These controls only start or stop installed services.</p>
@@ -45,9 +46,12 @@ else if (_services is not null)
             </tbody>
         </table>
     }
+    @if (!Configuration.GetValue<bool>("AgentEnrollment:Enabled"))
+    {
     <AuthorizeView Roles="Admin">
         <button type="button" disabled="@_busy" @onclick="() => _confirmBreak = true">Break agent peering</button>
     </AuthorizeView>
+    }
 }
 @if (_pending is not null)
 {

@@ -57,6 +57,24 @@ public interface IBrokerApi
     [Post("/api/machines/{machineId}/managed-services/break-peering")]
     Task BreakAgentPeeringAsync(Guid machineId, CancellationToken ct = default);
 
+    [Get("/api/machines/{machineId}/agent-enrollment")]
+    Task<AgentEnrollmentMetadata> GetAgentEnrollmentAsync(Guid machineId, CancellationToken ct = default);
+
+    [Get("/api/machines/{machineId}/agent-runtime/observation")]
+    Task<MachineAgentObservation> GetMachineAgentObservationAsync(Guid machineId, CancellationToken ct = default);
+
+    [Post("/api/machines/{machineId}/agent-enrollment/assign")]
+    Task<AgentEnrollmentMetadata> AssignAgentEnrollmentAsync(
+        Guid machineId, [Body] MachineAgentEnrollmentAssignment request, CancellationToken ct = default);
+
+    [Post("/api/machines/{machineId}/agent-enrollment/transition")]
+    Task<AgentEnrollmentMetadata> ChangeAgentEnrollmentAsync(
+        Guid machineId, [Body] AgentEnrollmentChange request, CancellationToken ct = default);
+
+    [Post("/api/machines/{machineId}/agent-enrollment/rebind")]
+    Task<AgentEnrollmentMetadata> RebindAgentEnrollmentAsync(
+        Guid machineId, [Body] AgentEnrollmentRebind request, CancellationToken ct = default);
+
     // ── Action1 ──
     [Get("/api/action1/endpoints/{endpointId}/patches")]
     Task<IReadOnlyList<Action1PatchDto>> GetAction1PatchesAsync(string endpointId, CancellationToken ct = default);

@@ -14,18 +14,22 @@ internal sealed class AgentTransportProvider
 {
     private readonly IAgentGateway _gateway;
     private readonly ILogger<AgentTransportProvider> _logger;
+    private readonly IMachineAgentRuntime? _runtime;
 
-    public AgentTransportProvider(IAgentGateway gateway, ILogger<AgentTransportProvider> logger)
+    public AgentTransportProvider(IAgentGateway gateway, ILogger<AgentTransportProvider> logger,
+        IMachineAgentRuntime? runtime = null)
     {
         _gateway = gateway;
         _logger = logger;
+        _runtime = runtime;
     }
 
     public async Task<RemoteResult> ExecuteAsync(MachineTarget target, RemoteCommand command, CancellationToken ct)
     {
+        if (_runtime is not null) return await _runtime.SendMachineCommandAsync(target, command, ct);
         var agentId = command.CommandType.Equals("ManagedServices", StringComparison.OrdinalIgnoreCase)
             ? target.Hostname.Value
-            : ResolveAgentId(target);
+            : ResolveLegacyAgentId(_gateway, target);
 
         _logger.LogInformation("Routing command to agent {AgentId} for host {Hostname}",
             agentId, target.Hostname);
@@ -33,12 +37,16 @@ internal sealed class AgentTransportProvider
         return await _gateway.SendCommandAsync(agentId, command, ct);
     }
 
+    internal Task<bool> RequiresSingleDispatchAsync(CancellationToken ct) =>
+        _runtime?.VerifyEnrollmentModeAsync(ct) ?? Task.FromResult(false);
+
     public async Task<ConnectionTestResult> TestConnectionAsync(MachineTarget target, CancellationToken ct)
     {
         try
         {
-            var agentId = ResolveAgentId(target);
-            var metadata = await _gateway.GetMetadataAsync(agentId, ct);
+            var metadata = _runtime is not null
+                ? await _runtime.GetMachineMetadataAsync(target, ct)
+                : await _gateway.GetMetadataAsync(ResolveLegacyAgentId(_gateway, target), ct);
 
             return new ConnectionTestResult(
                 Reachable: true,
@@ -65,10 +73,10 @@ internal sealed class AgentTransportProvider
     /// Matches by hostname (case-insensitive). Falls back to checking AgentId directly
     /// in case the machine's hostname IS the AgentId.
     /// </summary>
-    private string ResolveAgentId(MachineTarget target)
+    internal static string ResolveLegacyAgentId(IAgentGateway gateway, MachineTarget target)
     {
         var hostname = target.Hostname.Value;
-        var agents = _gateway.GetConnectedAgents();
+        var agents = gateway.GetConnectedAgents();
 
         // Match by hostname first (agents report Environment.MachineName in Handshake)
         var match = agents.FirstOrDefault(a =>

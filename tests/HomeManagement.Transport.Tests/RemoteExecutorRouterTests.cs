@@ -1,10 +1,14 @@
 using FluentAssertions;
 using HomeManagement.Abstractions;
 using HomeManagement.Abstractions.CrossCutting;
+using HomeManagement.Abstractions.Interfaces;
 using HomeManagement.Abstractions.Models;
 using HomeManagement.Abstractions.Validation;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using System.Net;
+using System.Net.Http.Json;
+using Microsoft.Extensions.Options;
 
 namespace HomeManagement.Transport.Tests;
 
@@ -53,6 +57,74 @@ public class RemoteExecutorRouterTests
         var act = () => router.ExecuteAsync(target, command);
 
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData("Shell", false)]
+    [InlineData("ManagedServices", false)]
+    [InlineData("Shell", true)]
+    [InlineData("ManagedServices", true)]
+    public async Task ManagedProductionRouter_NeverReplaysHandoffFailureOrCancellation(string type, bool canceled)
+    {
+        using var handler = new ManagedCommandHandler(async ct =>
+        {
+            if (canceled) await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            throw new HttpRequestException("Synthetic lost response after handoff and identity replacement.");
+        });
+        using var client = ManagedClient(handler);
+        var router = ManagedRouter(client, TimeSpan.FromMilliseconds(5));
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        Func<Task> action = () => router.ExecuteAsync(ManagedTarget(),
+            new("test", TimeSpan.FromSeconds(45), CommandType: type), cancellation.Token);
+        if (canceled) await action.Should().ThrowAsync<OperationCanceledException>();
+        else await action.Should().ThrowAsync<HttpRequestException>();
+        handler.CommandPosts.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ManagedProductionRouter_UsesCommandBudgetNotGenericAttemptTimeout()
+    {
+        using var handler = new ManagedCommandHandler(async ct =>
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
+            return new(HttpStatusCode.OK) { Content = JsonContent.Create(new RemoteResult(0, "once", "", TimeSpan.Zero, false)) };
+        });
+        using var client = ManagedClient(handler);
+        var router = ManagedRouter(client, TimeSpan.FromMilliseconds(5));
+        (await router.ExecuteAsync(ManagedTarget(), new("test", TimeSpan.FromSeconds(45), CommandType: "ManagedServices")))
+            .Stdout.Should().Be("once");
+        handler.CommandPosts.Should().Be(1);
+    }
+
+    private static MachineTarget ManagedTarget() => new(Guid.NewGuid(), TestHost, OsType.Linux,
+        MachineConnectionMode.Agent, TransportProtocol.Agent, 443, Guid.Empty);
+
+    private static RemoteAgentGatewayClient ManagedClient(HttpMessageHandler handler) =>
+        new(Options.Create(new AgentGatewayClientOptions
+        {
+            BaseUrl = "https://gateway.test",
+            ApiKey = "synthetic-key",
+            EnrollmentEnabled = true
+        }), NullLogger<RemoteAgentGatewayClient>.Instance, handler);
+
+    private static RemoteExecutorRouter ManagedRouter(RemoteAgentGatewayClient client, TimeSpan attemptTimeout) =>
+        new(null!, null!, new AgentTransportProvider(client, NullLogger<AgentTransportProvider>.Instance, client),
+            new DefaultResiliencePipeline(NullLogger<DefaultResiliencePipeline>.Instance,
+                Options.Create(new ResilienceOptions { OperationTimeout = attemptTimeout, RetryBaseDelay = TimeSpan.Zero })),
+            Substitute.For<ICorrelationContext>(), NullLogger<RemoteExecutorRouter>.Instance);
+
+    private sealed class ManagedCommandHandler(Func<CancellationToken, Task<HttpResponseMessage>> handoff) : HttpMessageHandler
+    {
+        public int CommandPosts { get; private set; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Get && request.RequestUri!.AbsolutePath.EndsWith("/capabilities", StringComparison.Ordinal))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new AgentEnrollmentCapabilities(true)) });
+            if (request.Method != HttpMethod.Post || !request.RequestUri!.AbsolutePath.EndsWith("/commands", StringComparison.Ordinal))
+                throw new InvalidOperationException("Unexpected runtime request.");
+            CommandPosts++;
+            return handoff(cancellationToken);
+        }
     }
 
     /// <summary>

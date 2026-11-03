@@ -1,10 +1,12 @@
+using System.Text.Json.Serialization;
+
 namespace HomeManagement.Abstractions.Models;
 
 // ── Remote Execution ──
 
 public record RemoteCommand(
-    string CommandText,
-    TimeSpan Timeout,
+    [property: JsonRequired] string CommandText,
+    [property: JsonRequired] TimeSpan Timeout,
     ElevationMode Elevation = ElevationMode.None,
     string? RunAsUser = null,
     IDictionary<string, string>? EnvironmentVariables = null,

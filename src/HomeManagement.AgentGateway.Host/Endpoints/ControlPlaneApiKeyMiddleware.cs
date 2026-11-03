@@ -30,8 +30,8 @@ internal sealed class ControlPlaneApiKeyMiddleware
             return;
         }
 
-        var suppliedKey = context.Request.Headers[HeaderName].FirstOrDefault();
-        if (!Matches(suppliedKey))
+        var suppliedKeys = context.Request.Headers[HeaderName];
+        if (suppliedKeys.Count != 1 || !Matches(suppliedKeys[0]))
         {
             _logger.LogWarning(
                 "Agent Gateway control-plane request from {RemoteIp} rejected due to a missing or invalid API key",
@@ -46,6 +46,7 @@ internal sealed class ControlPlaneApiKeyMiddleware
     private bool Matches(string? suppliedKey)
     {
         Span<byte> suppliedBytes = stackalloc byte[AgentGatewayHostOptions.MinimumApiKeyBytes];
+        suppliedBytes.Clear();
         var hasValidEncoding = !string.IsNullOrEmpty(suppliedKey)
             && Convert.TryFromBase64String(suppliedKey, suppliedBytes, out var bytesWritten)
             && bytesWritten == AgentGatewayHostOptions.MinimumApiKeyBytes;

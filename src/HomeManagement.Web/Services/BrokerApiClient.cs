@@ -92,6 +92,32 @@ public sealed class BrokerApiClient : IBrokerApi, IDisposable
             throw new InvalidOperationException("Managed services require an HTTPS BrokerApi:BaseUrl.");
     }
 
+    public Task<HomeManagement.Abstractions.Models.AgentEnrollmentMetadata> GetAgentEnrollmentAsync(Guid machineId, CancellationToken ct = default) =>
+        ExecuteEnrollmentOnceAsync(api => api.GetAgentEnrollmentAsync(machineId, ct), ct);
+
+    public Task<HomeManagement.Abstractions.Models.MachineAgentObservation> GetMachineAgentObservationAsync(Guid machineId, CancellationToken ct = default) =>
+        ExecuteEnrollmentOnceAsync(api => api.GetMachineAgentObservationAsync(machineId, ct), ct);
+
+    public Task<HomeManagement.Abstractions.Models.AgentEnrollmentMetadata> AssignAgentEnrollmentAsync(Guid machineId,
+        HomeManagement.Abstractions.Models.MachineAgentEnrollmentAssignment request, CancellationToken ct = default) =>
+        ExecuteEnrollmentOnceAsync(api => api.AssignAgentEnrollmentAsync(machineId, request, ct), ct);
+
+    public Task<HomeManagement.Abstractions.Models.AgentEnrollmentMetadata> ChangeAgentEnrollmentAsync(Guid machineId,
+        HomeManagement.Abstractions.Models.AgentEnrollmentChange request, CancellationToken ct = default) =>
+        ExecuteEnrollmentOnceAsync(api => api.ChangeAgentEnrollmentAsync(machineId, request, ct), ct);
+
+    public Task<HomeManagement.Abstractions.Models.AgentEnrollmentMetadata> RebindAgentEnrollmentAsync(Guid machineId,
+        HomeManagement.Abstractions.Models.AgentEnrollmentRebind request, CancellationToken ct = default) =>
+        ExecuteEnrollmentOnceAsync(api => api.RebindAgentEnrollmentAsync(machineId, request, ct), ct);
+
+    private async Task<T> ExecuteEnrollmentOnceAsync<T>(Func<IBrokerApi, Task<T>> action, CancellationToken ct)
+    {
+        RequireManagedServiceHttps();
+        // Refresh credentials before dispatch, never replay a possibly committed mutation.
+        var api = await CreateApiAsync(ct);
+        return await action(api);
+    }
+
     public Task<IReadOnlyList<Action1PatchDto>> GetAction1PatchesAsync(string endpointId, CancellationToken ct = default)
         => ExecuteAsync(api => api.GetAction1PatchesAsync(endpointId, ct), ct);
 

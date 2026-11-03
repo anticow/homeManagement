@@ -2,13 +2,14 @@ using HomeManagement.Abstractions;
 using HomeManagement.Abstractions.CrossCutting;
 using HomeManagement.Abstractions.Interfaces;
 using HomeManagement.Abstractions.Models;
+using HomeManagement.Abstractions.Validation;
 using Microsoft.Extensions.Logging;
 
 namespace HomeManagement.Transport;
 
 /// <summary>
 /// Routes remote execution requests to the appropriate transport provider based on
-/// the target machine's configured protocol. All calls flow through the resilience pipeline.
+/// the target machine's configured protocol. Managed Agent commands are never replayed.
 /// </summary>
 internal sealed class RemoteExecutorRouter : IRemoteExecutor
 {
@@ -39,6 +40,19 @@ internal sealed class RemoteExecutorRouter : IRemoteExecutor
     {
         _logger.LogInformation("[{CorrelationId}] Executing command on {Host} via {Protocol}",
             _correlation.CorrelationId, target.Hostname, target.Protocol);
+
+        if (target.Protocol == TransportProtocol.Agent && await _agentProvider.RequiresSingleDispatchAsync(ct))
+        {
+            var seconds = AgentRuntimeRequestValidation.ValidateCommand(command);
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            budget.CancelAfter(TimeSpan.FromSeconds(seconds + 30));
+            try { return await _agentProvider.ExecuteAsync(target, command, budget.Token); }
+            catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
+            {
+                _logger.LogWarning("Managed Agent dispatch failed for {MachineId}; outcome may be uncertain. No retry was attempted.", target.MachineId);
+                throw;
+            }
+        }
 
         return await _resilience.ExecuteAsync(
             target.Hostname.ToString(),

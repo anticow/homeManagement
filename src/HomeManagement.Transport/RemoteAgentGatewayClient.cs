@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace HomeManagement.Transport;
 
-public sealed class RemoteAgentGatewayClient : IAgentGateway, IAgentPeeringControl, IDisposable
+public sealed partial class RemoteAgentGatewayClient : IAgentGateway, IAgentPeeringControl, IAgentEnrollmentControl, IMachineAgentRuntime, IDisposable
 {
     private const string HeaderName = "x-agent-gateway-api-key";
 
@@ -28,10 +28,26 @@ public sealed class RemoteAgentGatewayClient : IAgentGateway, IAgentPeeringContr
     private bool _disposed;
 
     public RemoteAgentGatewayClient(IOptions<AgentGatewayClientOptions> options, ILogger<RemoteAgentGatewayClient> logger)
+        : this(options, logger, new HttpClientHandler { AllowAutoRedirect = false })
     {
-        _options = options.Value;
+    }
+
+    internal RemoteAgentGatewayClient(IOptions<AgentGatewayClientOptions> options,
+        ILogger<RemoteAgentGatewayClient> logger, HttpMessageHandler handler)
+    {
+        var configured = options.Value;
+        _options = new AgentGatewayClientOptions
+        {
+            ApiKey = configured.ApiKey,
+            BaseUrl = configured.BaseUrl,
+            PollIntervalSeconds = configured.PollIntervalSeconds,
+            EnrollmentEnabled = configured.EnrollmentEnabled
+        };
         _logger = logger;
-        _httpClient = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
+        if (_options.EnrollmentEnabled && (!Uri.TryCreate(_options.BaseUrl, UriKind.Absolute, out var address)
+            || address.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(address.UserInfo)))
+            throw new InvalidOperationException("Managed enrollment requires an HTTPS Gateway without URL credentials.");
+        _httpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri(_options.BaseUrl, UriKind.Absolute),
             // Per-request timeouts are applied in SendCommandAsync based on command.Timeout.
@@ -54,7 +70,16 @@ public sealed class RemoteAgentGatewayClient : IAgentGateway, IAgentPeeringContr
             return;
         }
 
-        await RefreshSnapshotAsync(ct);
+        try
+        {
+            if (await VerifyEnrollmentModeAsync(ct)) return;
+            await RefreshSnapshotAsync(ct);
+        }
+        catch
+        {
+            Interlocked.Exchange(ref _started, 0);
+            throw;
+        }
         _pollTimer = new Timer(
             async _ => await SafePollAsync(),
             null,
@@ -72,6 +97,7 @@ public sealed class RemoteAgentGatewayClient : IAgentGateway, IAgentPeeringContr
 
     public IReadOnlyList<ConnectedAgent> GetConnectedAgents()
     {
+        RequireLegacyRuntimeAsync(CancellationToken.None).GetAwaiter().GetResult();
         EnsureStarted();
 
         if (_snapshot.Count == 0 || DateTimeOffset.UtcNow - _lastRefreshUtc > TimeSpan.FromSeconds(_options.PollIntervalSeconds * 2))
@@ -94,6 +120,7 @@ public sealed class RemoteAgentGatewayClient : IAgentGateway, IAgentPeeringContr
 
     public async Task<RemoteResult> SendCommandAsync(string agentId, RemoteCommand command, CancellationToken ct = default)
     {
+        await RequireLegacyRuntimeAsync(ct);
         if (command.CommandType.Equals("ManagedServices", StringComparison.OrdinalIgnoreCase))
             RequireEncryptedControlPlane();
         EnsureStarted();
@@ -108,9 +135,13 @@ public sealed class RemoteAgentGatewayClient : IAgentGateway, IAgentPeeringContr
     public async Task RevokeAsync(string agentId, CancellationToken ct = default)
     {
         RequireEncryptedControlPlane();
+        using var budget = EnrollmentBudget(ct);
+        var capabilities = await GetCapabilitiesAsync(budget.Token);
+        if (_options.EnrollmentEnabled || capabilities.EnrollmentEnabled)
+            throw new InvalidOperationException("Managed peering requires a machine binding and caller-confirmed version.");
         using var response = await _httpClient.PostAsJsonAsync(
             $"/internal/agents/{Uri.EscapeDataString(agentId)}/revoke",
-            new { Reason = "Peering broken by HomeManagement operator" }, ct);
+            new { Reason = "Peering broken by HomeManagement operator" }, budget.Token);
         response.EnsureSuccessStatusCode();
     }
 
@@ -122,6 +153,7 @@ public sealed class RemoteAgentGatewayClient : IAgentGateway, IAgentPeeringContr
 
     public async Task<AgentMetadata> GetMetadataAsync(string agentId, CancellationToken ct = default)
     {
+        await RequireLegacyRuntimeAsync(ct);
         EnsureStarted();
         using var response = await _httpClient.GetAsync($"/internal/agents/{Uri.EscapeDataString(agentId)}", ct);
         return await ReadRequiredAsync<AgentMetadata>(response, agentId, ct);
@@ -129,6 +161,7 @@ public sealed class RemoteAgentGatewayClient : IAgentGateway, IAgentPeeringContr
 
     public async Task RequestUpdateAsync(string agentId, AgentUpdatePackage package, CancellationToken ct = default)
     {
+        await RequireLegacyRuntimeAsync(ct);
         EnsureStarted();
         using var response = await _httpClient.PostAsJsonAsync($"/internal/agents/{Uri.EscapeDataString(agentId)}/updates", package, ct);
         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -168,6 +201,7 @@ public sealed class RemoteAgentGatewayClient : IAgentGateway, IAgentPeeringContr
 
     private async Task RefreshSnapshotAsync(CancellationToken ct)
     {
+        await RequireLegacyRuntimeAsync(ct);
         await _refreshLock.WaitAsync(ct);
         try
         {

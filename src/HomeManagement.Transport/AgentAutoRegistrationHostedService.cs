@@ -19,19 +19,32 @@ internal sealed class AgentAutoRegistrationHostedService : BackgroundService
     private readonly IAgentGateway _gateway;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AgentAutoRegistrationHostedService> _logger;
+    private readonly IMachineAgentRuntime? _runtime;
 
     public AgentAutoRegistrationHostedService(
         IAgentGateway gateway,
         IServiceScopeFactory scopeFactory,
-        ILogger<AgentAutoRegistrationHostedService> logger)
+        ILogger<AgentAutoRegistrationHostedService> logger, IMachineAgentRuntime? runtime = null)
     {
         _gateway = gateway;
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _runtime = runtime;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (_runtime is not null && await _runtime.VerifyEnrollmentModeAsync(stoppingToken))
+        {
+            // Managed observations are deliberately not persisted into inventory.
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                if (!await _runtime.VerifyEnrollmentModeAsync(stoppingToken))
+                    throw new InvalidOperationException("Gateway authority changed; managed inventory synchronization remains disabled.");
+            }
+            return;
+        }
         // Wait for the agent gateway to become available (handles startup ordering)
         const int maxRetries = 30;
         for (var attempt = 1; attempt <= maxRetries; attempt++)
@@ -78,7 +91,16 @@ internal sealed class AgentAutoRegistrationHostedService : BackgroundService
                 };
             });
 
-        await tcs.Task;
+        if (_runtime is null) await tcs.Task;
+        else
+        {
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                if (await _runtime.VerifyEnrollmentModeAsync(stoppingToken))
+                    throw new InvalidOperationException("Gateway mode changed; legacy inventory synchronization cannot continue.");
+            }
+        }
     }
 
     private async Task RegisterAgentAsync(string agentId, string hostname)
@@ -86,6 +108,8 @@ internal sealed class AgentAutoRegistrationHostedService : BackgroundService
         try
         {
             using var scope = _scopeFactory.CreateScope();
+            if (_runtime is not null && await _runtime.VerifyEnrollmentModeAsync())
+                throw new InvalidOperationException("Legacy inventory synchronization cannot use managed enrollment.");
             var inventory = scope.ServiceProvider.GetRequiredService<IInventoryService>();
 
             var existing = await inventory.QueryAsync(
@@ -160,6 +184,8 @@ internal sealed class AgentAutoRegistrationHostedService : BackgroundService
         try
         {
             using var scope = _scopeFactory.CreateScope();
+            if (_runtime is not null && await _runtime.VerifyEnrollmentModeAsync())
+                throw new InvalidOperationException("Legacy inventory synchronization cannot use managed enrollment.");
             var inventory = scope.ServiceProvider.GetRequiredService<IInventoryService>();
 
             var existing = await inventory.QueryAsync(

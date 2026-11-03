@@ -28,10 +28,11 @@ var brokerBaseUrl = builder.Configuration["BrokerApi:BaseUrl"]
 var authBaseUrl = builder.Configuration["AuthApi:BaseUrl"]
     ?? "http://localhost:8083";
 var managedServicesEnabled = builder.Configuration.GetValue<bool>("ManagedServices:Enabled");
-if (managedServicesEnabled
+var encryptedControlEnabled = managedServicesEnabled || builder.Configuration.GetValue<bool>("AgentEnrollment:Enabled");
+if (encryptedControlEnabled
     && (!Uri.TryCreate(brokerBaseUrl, UriKind.Absolute, out var brokerUri) || brokerUri.Scheme != Uri.UriSchemeHttps
         || !Uri.TryCreate(authBaseUrl, UriKind.Absolute, out var authUri) || authUri.Scheme != Uri.UriSchemeHttps))
-    throw new InvalidOperationException("ManagedServices:Enabled requires HTTPS BrokerApi:BaseUrl and AuthApi:BaseUrl.");
+    throw new InvalidOperationException("Managed services or agent enrollment requires HTTPS BrokerApi:BaseUrl and AuthApi:BaseUrl.");
 
 builder.Services.AddScoped<ServerSessionState>();
 builder.Services.AddScoped<WebSessionAuthService>();
@@ -43,7 +44,7 @@ builder.Services
         ContentSerializer = new SystemTextJsonContentSerializer(new JsonSerializerOptions(JsonSerializerDefaults.Web))
     })
     .ConfigureHttpClient(c => c.BaseAddress = new Uri(authBaseUrl))
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = !managedServicesEnabled });
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = !encryptedControlEnabled });
 
 builder.Services.AddHttpClient(BrokerApiClient.HttpClientName, c =>
 {
@@ -51,12 +52,12 @@ builder.Services.AddHttpClient(BrokerApiClient.HttpClientName, c =>
     // 60s covers the worst-case broker fan-out (e.g. pending-patches across many machines)
     // while still surfacing errors rather than leaving the UI in perpetual "Loading…" state.
     c.Timeout = TimeSpan.FromSeconds(60);
-}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = !managedServicesEnabled });
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = !encryptedControlEnabled });
 builder.Services.AddScoped<IBrokerApi, BrokerApiClient>();
 
 builder.Services.AddHttpClient(AdminApiClient.HttpClientName, c =>
     c.BaseAddress = new Uri(authBaseUrl))
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = !managedServicesEnabled });
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = !encryptedControlEnabled });
 builder.Services.AddScoped<IAdminApi, AdminApiClient>();
 
 // ── Auth state ──
@@ -95,7 +96,7 @@ if (!string.IsNullOrWhiteSpace(dpKeyPath))
 }
 
 var app = builder.Build();
-if (managedServicesEnabled)
+if (encryptedControlEnabled)
 {
     app.Use(async (context, next) =>
     {

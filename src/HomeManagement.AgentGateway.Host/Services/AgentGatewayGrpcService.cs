@@ -51,38 +51,41 @@ public sealed class AgentGatewayGrpcService : AgentHub.AgentHubBase
             var handshake = firstMsg.Handshake;
             agentId = handshake.AgentId;
 
-            _apiKeyValidator.ValidateOrThrow(context, handshake);
-
+            _gateway.ValidateLegacyHandshake(_apiKeyValidator, context, handshake);
             var httpContext = context.GetHttpContext();
-            var session = _gateway.RegisterAgent(handshake, responseStream,
-                httpContext.Request.IsHttps, httpContext.Abort, _apiKeyValidator.SupportsManagedServiceControl(agentId));
+            var session = _gateway.AuthenticateAndRegister(_apiKeyValidator, context, handshake, responseStream,
+                httpContext.Request.IsHttps, httpContext.Abort);
             registeredSession = session;
             isRegistered = true;
 
             _logger.LogInformation("Agent {AgentId} ({Hostname}) connected", agentId, handshake.Hostname);
 
             // Send ACK
+            if (!_gateway.CanSend(session))
+                throw new RpcException(new Status(StatusCode.PermissionDenied, "Agent session no longer authorized."));
             await responseStream.WriteAsync(new ControlMessage
             {
                 Ack = new Ack { InResponseTo = "handshake" }
             }, context.CancellationToken);
 
-            sendTask = SendLoopAsync(agentId, session.Outbound.Reader, responseStream, httpContext.Abort, context.CancellationToken);
+            sendTask = SendLoopAsync(session, session.Outbound.Reader, responseStream, httpContext.Abort, context.CancellationToken);
 
             // Process incoming messages
             while (await requestStream.MoveNext(context.CancellationToken))
             {
+                if (!_gateway.CanSend(session))
+                    throw new RpcException(new Status(StatusCode.PermissionDenied, "Agent session no longer authorized."));
                 var msg = requestStream.Current;
 
                 switch (msg.PayloadCase)
                 {
                     case AgentMessage.PayloadOneofCase.Heartbeat:
-                        _gateway.UpdateHeartbeat(agentId, msg.Heartbeat);
+                        _gateway.UpdateHeartbeat(session, msg.Heartbeat);
                         _logger.LogDebug("Heartbeat from {AgentId}", agentId);
                         break;
 
                     case AgentMessage.PayloadOneofCase.CommandResponse:
-                        _gateway.CompleteCommand(agentId, msg.CommandResponse);
+                        _gateway.CompleteCommand(session, msg.CommandResponse);
                         _logger.LogInformation("Command response from {AgentId}: request={RequestId}, exit={ExitCode}",
                             agentId, msg.CommandResponse.RequestId, msg.CommandResponse.ExitCode);
                         break;
@@ -111,8 +114,8 @@ public sealed class AgentGatewayGrpcService : AgentHub.AgentHubBase
     }
 
     private async Task SendLoopAsync(
-        string agentId,
-        ChannelReader<ControlMessage> reader,
+        AgentGatewaySession session,
+        ChannelReader<AgentGatewayOutbound> reader,
         IServerStreamWriter<ControlMessage> responseStream,
         Action abort,
         CancellationToken ct)
@@ -121,14 +124,12 @@ public sealed class AgentGatewayGrpcService : AgentHub.AgentHubBase
         {
             await foreach (var message in reader.ReadAllAsync(ct))
             {
-                if (!_gateway.CanSend(agentId))
-                    throw new RpcException(new Status(StatusCode.PermissionDenied, "Agent peering revoked."));
-                await responseStream.WriteAsync(message, ct);
+                await _gateway.WriteOutboundAsync(session, message, responseStream, ct);
             }
         }
         catch (Exception ex) when (ex is RpcException or IOException or InvalidOperationException)
         {
-            _logger.LogWarning(ex, "Agent {AgentId} send loop failed; aborting connection", agentId);
+            _logger.LogWarning(ex, "Agent {AgentId} send loop failed; aborting connection", session.AgentId);
             abort();
             throw;
         }

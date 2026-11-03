@@ -98,13 +98,30 @@ public sealed class BrokerApiClientTests
         session.IsAuthenticated.Should().BeFalse();
     }
 
-    private static IHttpClientFactory CreateFactory(HttpMessageHandler handler)
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Conflict)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task EnrollmentMutation_IsNotRetriedAfterAnyHttpFailure(HttpStatusCode status)
+    {
+        using var handler = new QueueHttpMessageHandler(new HttpResponseMessage(status) { Content = new StringContent("{}") });
+        var session = new ServerSessionState();
+        session.SetSession(CreateToken("alice", ["Admin"]), "refresh-a");
+        var auth = Substitute.For<IWebSessionAuthService>();
+        using var client = new BrokerApiClient(CreateFactory(handler, "https://broker.test"), session, auth);
+        await ((Func<Task>)(() => client.ChangeAgentEnrollmentAsync(Guid.NewGuid(), new(7, AgentEnrollmentTransition.Revoke))))
+            .Should().ThrowAsync<Refit.ApiException>();
+        handler.Requests.Should().ContainSingle();
+        await auth.DidNotReceiveWithAnyArgs().RefreshAsync(default);
+    }
+
+    private static IHttpClientFactory CreateFactory(HttpMessageHandler handler, string url = "http://localhost:8082")
     {
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(BrokerApiClient.HttpClientName)
-            .Returns(new HttpClient(handler, disposeHandler: false)
+            .Returns(_ => new HttpClient(handler, disposeHandler: false)
             {
-                BaseAddress = new Uri("http://localhost:8082")
+                BaseAddress = new Uri(url)
             });
         return factory;
     }
@@ -144,7 +161,9 @@ public sealed class BrokerApiClientTests
                 throw new InvalidOperationException("No queued HTTP responses were configured.");
             }
 
-            return Task.FromResult(_responses.Dequeue());
+            var response = _responses.Dequeue();
+            response.RequestMessage = request;
+            return Task.FromResult(response);
         }
     }
 }

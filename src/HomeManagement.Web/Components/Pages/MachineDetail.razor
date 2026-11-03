@@ -33,11 +33,11 @@ else if (_machine is not null)
             }
             <tr><td><strong>OS</strong></td><td>@_machine.OsType</td></tr>
             <tr><td><strong>OS Version</strong></td><td>@_machine.OsVersion</td></tr>
-            <tr><td><strong>State</strong></td><td>@_machine.State</td></tr>
+            <tr><td><strong>@(Configuration.GetValue<bool>("AgentEnrollment:Enabled") ? "Historical inventory state" : "State")</strong></td><td>@_machine.State</td></tr>
             <tr><td><strong>Connection Mode</strong></td><td>@_machine.ConnectionMode</td></tr>
             <tr><td><strong>Protocol</strong></td><td>@_machine.Protocol</td></tr>
             <tr><td><strong>Created</strong></td><td>@_machine.CreatedUtc.ToString("g")</td></tr>
-            <tr><td><strong>Last Contact</strong></td><td>@_machine.LastContactUtc.ToString("g")</td></tr>
+            <tr><td><strong>@(Configuration.GetValue<bool>("AgentEnrollment:Enabled") ? "Historical inventory contact" : "Last Contact")</strong></td><td>@_machine.LastContactUtc.ToString("g")</td></tr>
             @if (!string.IsNullOrEmpty(_machine.AgentVersion))
             {
                 <tr><td><strong>Agent Version</strong></td><td>@_machine.AgentVersion</td></tr>
@@ -115,6 +115,12 @@ else if (_machine is not null)
     }
 
     <HomeManagement.Web.Components.Shared.NodeMetricsPanels Machine="_machine" />
+    @if (_machine.Protocol == TransportProtocol.Agent && Configuration.GetValue<bool>("AgentEnrollment:Enabled"))
+    {
+        <HomeManagement.Web.Components.Shared.MachineAgentStatusPanel @key="_machine.Id" MachineId="_machine.Id" />
+        <HomeManagement.Web.Components.Shared.AgentEnrollmentPanel @key="_machine.Id" MachineId="_machine.Id"
+            InventoryHostname="@(_machine.Fqdn ?? _machine.Hostname.Value)" />
+    }
     @if (_machine.Protocol == TransportProtocol.Agent && Configuration.GetValue<bool>("ManagedServices:Enabled"))
     {
         <HomeManagement.Web.Components.Shared.ManagedServicesPanel @key="_machine.Id" MachineId="_machine.Id" />

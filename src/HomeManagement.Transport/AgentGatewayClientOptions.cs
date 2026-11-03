@@ -9,4 +9,5 @@ public sealed class AgentGatewayClientOptions
     public string ApiKey { get; set; } = string.Empty;
 
     public int PollIntervalSeconds { get; set; } = 5;
+    public bool EnrollmentEnabled { get; set; }
 }

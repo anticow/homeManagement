@@ -70,11 +70,26 @@ public static class ManagedServiceEndpoints
                 return Results.BadRequest(new { error = "This machine does not use Agent transport." });
             var auditEvent = CreateAudit(machine, context, correlation, AuditAction.AgentDisconnected, "Break agent peering requested");
             await audit.RecordAsync(auditEvent, ct);
-            await peering.RevokeAsync(machine.Hostname.Value, ct);
+            try { await peering.RevokeAsync(machine.Hostname.Value, ct); }
+            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or OperationCanceledException)
+            {
+                await audit.RecordAsync(auditEvent with
+                {
+                    EventId = Guid.NewGuid(),
+                    TimestampUtc = DateTime.UtcNow,
+                    Outcome = AuditOutcome.Failure,
+                    Detail = "Legacy break-peering failed or its outcome is uncertain; use enrollment metadata and a confirmed version in managed mode."
+                }, CancellationToken.None);
+                if (context.RequestAborted.IsCancellationRequested) throw;
+                return Results.Problem("Peering revocation failed. Managed enrollment requires the machine enrollment route and a confirmed version; refresh metadata.",
+                    statusCode: 409);
+            }
             await audit.RecordAsync(auditEvent with
             {
-                EventId = Guid.NewGuid(), TimestampUtc = DateTime.UtcNow,
-                Detail = "Agent peering revoked", Outcome = AuditOutcome.Success
+                EventId = Guid.NewGuid(),
+                TimestampUtc = DateTime.UtcNow,
+                Detail = "Agent peering revoked",
+                Outcome = AuditOutcome.Success
             }, CancellationToken.None);
             return Results.Ok();
         });

@@ -111,10 +111,19 @@ public static class ApplicationBuilderExtensions
     /// <summary>
     /// Maps the standard health, readiness, version, and Prometheus scraping endpoints.
     /// </summary>
-    public static WebApplication UseHomeManagementHealthEndpoints(this WebApplication app)
+    public static WebApplication UseHomeManagementHealthEndpoints(this WebApplication app, bool taggedReadiness = false)
     {
-        app.MapHealthChecks("/healthz");
-        app.MapGet("/readyz", () => Results.Ok("ready"));
+        app.MapHealthChecks("/healthz", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+        {
+            Predicate = registration => !taggedReadiness || !registration.Tags.Contains("readiness")
+        });
+        if (taggedReadiness)
+            app.MapHealthChecks("/readyz", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+            {
+                Predicate = registration => registration.Tags.Contains("readiness")
+            });
+        else
+            app.MapGet("/readyz", () => Results.Ok("ready"));
         app.MapGet("/version",
                 () => new { version = Environment.GetEnvironmentVariable("APP_VERSION") ?? "unknown" })
             .AllowAnonymous().ExcludeFromDescription();

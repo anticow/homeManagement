@@ -1,0 +1,89 @@
+@implements IDisposable
+@using HomeManagement.Abstractions.Models
+@inject HomeManagement.Web.Services.IBrokerApi BrokerApi
+@inject NavigationManager Navigation
+@inject ILogger<MachineAgentStatusPanel> Logger
+
+<h2>Gateway live observation</h2>
+<p>Point-in-time only, not cached command authorization. Historical inventory state is not synchronized in managed mode.</p>
+<button type="button" @onclick="RefreshAsync">Refresh live connection</button>
+@if (_observation is not null)
+{
+    <p>Agent @_observation.AgentId: @(_observation.Connected ? "connected" : "disconnected")
+        observed at @_observation.ObservedAtUtc.ToString("u") (UTC). This observation may already be stale.</p>
+}
+else
+{
+    <p role="status">@_status</p>
+}
+
+@code {
+    [Parameter] public Guid MachineId { get; set; }
+    private Guid _machineId;
+    private long _revision;
+    private bool _disposed;
+    private CancellationTokenSource? _request;
+    private MachineAgentObservation? _observation;
+    private string _status = "Not observed. Refresh explicitly.";
+
+    protected override void OnParametersSet()
+    {
+        if (_machineId == MachineId) return;
+        _machineId = MachineId;
+        Invalidate();
+        _status = "Not observed. Refresh explicitly.";
+    }
+
+    private void Invalidate()
+    {
+        _revision++;
+        _request?.Cancel();
+        _request?.Dispose();
+        _request = null;
+        _observation = null;
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_disposed) return;
+        Invalidate();
+        var revision = _revision;
+        var machineId = MachineId;
+        using var request = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        _request = request;
+        _status = "Refreshing Gateway observation...";
+        try
+        {
+            if (new Uri(Navigation.Uri).Scheme != Uri.UriSchemeHttps)
+                throw new InvalidOperationException("Live node observation requires HTTPS.");
+            var observation = await BrokerApi.GetMachineAgentObservationAsync(machineId, request.Token);
+            if (!_disposed && revision == _revision && machineId == MachineId)
+            {
+                if (observation.MachineId != machineId)
+                    throw new InvalidOperationException("Live observation returned the wrong machine.");
+                _observation = observation;
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or Refit.ApiException or InvalidOperationException
+            or UnauthorizedAccessException or OperationCanceledException)
+        {
+            if (!_disposed && revision == _revision)
+            {
+                _observation = null;
+                _status = "Gateway observation unavailable. No current online/offline state is known.";
+                Logger.LogWarning("Live Gateway observation unavailable for {MachineId}.", machineId);
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_request, request)) _request = null;
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Invalidate();
+        GC.SuppressFinalize(this);
+    }
+}

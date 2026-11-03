@@ -1,0 +1,160 @@
+@using HomeManagement.Abstractions.Models
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Net
+@inject HomeManagement.Web.Services.IBrokerApi BrokerApi
+@inject NavigationManager Navigation
+@inject ILogger<AgentEnrollmentPanel> Logger
+
+<AuthorizeView Roles="Admin">
+    <Authorized>
+        <h2>Node identity and access</h2>
+        <p>Credentials are managed by HomeManagement and delivered by AWX. No secret is displayed here.
+            Enrollment state is not a heartbeat or application permission.</p>
+        <button type="button" disabled="@_busy" @onclick="RefreshAsync">Refresh enrollment</button>
+        @if (_error is not null) { <p role="alert">@_error</p> }
+        @if (_metadata is not null)
+        {
+            <p>Agent: @_metadata.AgentId; inventory: @_metadata.InventoryHostname; wire hostname: @_metadata.ExpectedWireHostname</p>
+            <p>State: @_metadata.State; version: @_metadata.Version; generation: @_metadata.CredentialGeneration;
+                updated (UTC): @_metadata.UpdatedUtc.ToString("u")</p>
+            @if (_metadata.State == AgentEnrollmentState.Revoked)
+            {
+                <button type="button" disabled="@_busy" @onclick="() => Select(AgentEnrollmentTransition.Reenable)">Re-enable with fresh credential</button>
+                <label>Expected wire hostname <input @bind="_wire" disabled="@_busy" /></label>
+                <button type="button" disabled="@_busy" @onclick="SelectRebind">Rebind this revoked node</button>
+            }
+            else
+            {
+                <button type="button" disabled="@_busy" @onclick="() => Select(AgentEnrollmentTransition.Rotate)">Rotate credential</button>
+                <button type="button" disabled="@_busy" @onclick="() => Select(AgentEnrollmentTransition.Revoke)">Revoke node access</button>
+            }
+        }
+        @if (_missing)
+        {
+            <p>No explicit identity is bound to this machine. Administrator assignment does not prove node ownership.</p>
+            <label>Explicit agent ID <input @bind="_agentId" disabled="@_busy" /></label>
+            <label>Expected wire hostname <input @bind="_wire" disabled="@_busy" /></label>
+            <p>Authoritative inventory hostname: @InventoryHostname</p>
+            <button type="button" disabled="@_busy" @onclick="SelectAssignment">Assign identity</button>
+        }
+        @if (_confirmation is not null)
+        {
+            <p role="alert">@_confirmation This may disconnect the agent. Rotation/re-enablement requires AWX
+                to deliver the current credential. Already running operations cannot be undone.</p>
+            <button type="button" disabled="@_busy" @onclick="ConfirmAsync">Confirm</button>
+            <button type="button" disabled="@_busy" @onclick="Cancel">Cancel</button>
+        }
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    [Parameter] public Guid MachineId { get; set; }
+    [Parameter] public string InventoryHostname { get; set; } = "";
+    private AgentEnrollmentMetadata? _metadata;
+    private AgentEnrollmentChange? _pending;
+    private MachineAgentEnrollmentAssignment? _assignment;
+    private AgentEnrollmentRebind? _rebind;
+    private string? _confirmation;
+    private string? _error;
+    private string _agentId = "";
+    private string _wire = "";
+    private bool _missing;
+    private bool _busy;
+
+    private async Task RefreshAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        Cancel();
+        try { await ReadAsync(); }
+        catch (Exception ex) when (IsOperationError(ex)) { ReportFailure(); }
+        finally { _busy = false; }
+    }
+
+    private async Task ReadAsync()
+    {
+        RequireHttps();
+        _metadata = null;
+        _missing = false;
+        try
+        {
+            _metadata = await BrokerApi.GetAgentEnrollmentAsync(MachineId);
+            _wire = _metadata.ExpectedWireHostname;
+        }
+        catch (Refit.ApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            _missing = true;
+        }
+    }
+
+    private void Select(AgentEnrollmentTransition transition)
+    {
+        Cancel();
+        if (_metadata is null) return;
+        _pending = new(_metadata.Version, transition);
+        _confirmation = $"Confirm {transition} for {_metadata.AgentId} at version {_metadata.Version}?";
+    }
+
+    private void SelectAssignment()
+    {
+        Cancel();
+        _assignment = new(_agentId, InventoryHostname, _wire);
+        _confirmation = $"Confirm explicit assignment of {_agentId} to this machine?";
+    }
+
+    private void SelectRebind()
+    {
+        Cancel();
+        if (_metadata is null) return;
+        _rebind = new(_metadata.Version, InventoryHostname, _wire);
+        _confirmation = $"Confirm rebinding {_metadata.AgentId} at version {_metadata.Version}? It will remain revoked.";
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_busy || _confirmation is null) return;
+        _busy = true;
+        _error = null;
+        var pending = _pending;
+        var assignment = _assignment;
+        var rebind = _rebind;
+        Cancel();
+        try
+        {
+            RequireHttps();
+            if (pending is not null) _metadata = await BrokerApi.ChangeAgentEnrollmentAsync(MachineId, pending);
+            else if (assignment is not null) _metadata = await BrokerApi.AssignAgentEnrollmentAsync(MachineId, assignment);
+            else if (rebind is not null) _metadata = await BrokerApi.RebindAgentEnrollmentAsync(MachineId, rebind);
+            _missing = false;
+        }
+        catch (Exception ex) when (IsOperationError(ex))
+        {
+            ReportFailure();
+            try { await ReadAsync(); }
+            catch (Exception refreshError) when (IsOperationError(refreshError))
+            {
+                _metadata = null;
+                _missing = false;
+                Logger.LogWarning("Agent enrollment refresh failed for {MachineId}.", MachineId);
+            }
+        }
+        finally { _busy = false; }
+    }
+
+    private void Cancel() { _pending = null; _assignment = null; _rebind = null; _confirmation = null; }
+    private void RequireHttps()
+    {
+        if (new Uri(Navigation.Uri).Scheme != Uri.UriSchemeHttps)
+            throw new InvalidOperationException("Agent enrollment requires HTTPS.");
+    }
+    private static bool IsOperationError(Exception ex) =>
+        ex is HttpRequestException or Refit.ApiException or InvalidOperationException or UnauthorizedAccessException or OperationCanceledException;
+    private void ReportFailure()
+    {
+        _metadata = null;
+        _missing = false;
+        _error = "Enrollment operation failed or its outcome is uncertain. Metadata must be refreshed before a new confirmation. No mutation was retried.";
+        Logger.LogWarning("Agent enrollment operation failed for {MachineId}; refresh required.", MachineId);
+    }
+}

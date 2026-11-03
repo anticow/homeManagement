@@ -5,6 +5,13 @@ using HomeManagement.Core;
 using Serilog;
 using System.Globalization;
 
+var bootstrapExit = AgentEnrollmentBootstrap.Run(args, Console.Out, Console.Error);
+if (bootstrapExit is { } exitCode)
+{
+    Environment.ExitCode = exitCode;
+    return;
+}
+
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture)
     .CreateBootstrapLogger();
@@ -21,16 +28,13 @@ builder.Services.AddOptions<AgentGatewayHostOptions>()
         AgentGatewayHostOptions.HasValidControlPlaneApiKey,
         $"AgentGateway:ApiKey must be a nontrivial Base64-encoded key containing exactly {AgentGatewayHostOptions.MinimumApiKeyBytes} decoded bytes.")
     .ValidateOnStart();
-builder.Services.AddSingleton<RevokedAgentStore>();
-builder.Services.AddSingleton<IRevokedAgentStore>(sp => sp.GetRequiredService<RevokedAgentStore>());
-builder.Services.AddSingleton<AgentApiKeyValidator>();
-builder.Services.AddSingleton<IAgentApiKeyValidator>(sp => sp.GetRequiredService<AgentApiKeyValidator>());
+builder.Services.AddGatewayAgentAuthority(builder.Configuration);
 builder.Services.AddGrpc();
-builder.Services.AddSingleton<StandaloneAgentGatewayService>();
 builder.Services.AddSingleton<ICorrelationContext, CorrelationContext>();
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
+app.InitializeGatewayAgentAuthority();
 
 // ── Security headers ──
 app.UseHsts();
@@ -44,13 +48,15 @@ app.UseSerilogRequestLogging(opts =>
         ctx.Request.Path.StartsWithSegments("/healthz") || ctx.Request.Path.StartsWithSegments("/readyz")
             ? Serilog.Events.LogEventLevel.Verbose
             : Serilog.Events.LogEventLevel.Information);
+app.UseAgentEnrollmentBoundary();
 app.UseControlPlaneApiKeyAuthentication();
 
 // ── Health ──
-app.UseHomeManagementHealthEndpoints();
+app.UseHomeManagementHealthEndpoints(taggedReadiness: app.Services.GetRequiredService<AgentEnrollmentMode>().Enabled);
 
 // ── gRPC endpoint ──
 app.MapGrpcService<AgentGatewayGrpcService>();
 app.MapControlPlaneEndpoints();
+app.MapAgentEnrollmentEndpoints();
 
 app.Run();

@@ -18,6 +18,8 @@ public sealed class AgentGatewayHostOptions
     /// </summary>
     public string? AgentApiKeysJson { get; set; }
 
+    public AgentEnrollmentOptions Enrollment { get; set; } = new();
+
     public static bool HasValidControlPlaneApiKey(AgentGatewayHostOptions options)
     {
         if (options.ApiKey.Contains("CHANGE-ME", StringComparison.OrdinalIgnoreCase)
@@ -51,4 +53,12 @@ public sealed class AgentGatewayHostOptions
 
         return false;
     }
+}
+
+public sealed class AgentEnrollmentOptions
+{
+    public bool Enabled { get; set; }
+    public string Directory { get; set; } = string.Empty;
+    public string WrappingKeyPath { get; set; } = string.Empty;
+    public string ProvisioningKeyPath { get; set; } = string.Empty;
 }
