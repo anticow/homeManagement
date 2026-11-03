@@ -1,10 +1,13 @@
+using System.Net.Sockets;
 using System.Reactive.Subjects;
 using FluentAssertions;
 using HomeManagement.Abstractions;
 using HomeManagement.Abstractions.Interfaces;
 using HomeManagement.Abstractions.Models;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace HomeManagement.Transport.Tests;
@@ -56,6 +59,52 @@ public sealed class ManagedAgentObserverTests
     }
 
     [Fact]
+    public async Task CapabilityConnectionFailure_StopsAndDisposesHostWithoutLegacyAccess()
+    {
+        var gateway = Substitute.For<IAgentGateway>();
+        var verification = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handler = new CapabilityFailureHandler(verification.Task);
+        using var runtime = new RemoteAgentGatewayClient(Options.Create(new AgentGatewayClientOptions()),
+            NullLogger<RemoteAgentGatewayClient>.Instance, handler);
+        using var host = new HostBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(gateway);
+                services.AddSingleton<IMachineAgentRuntime>(runtime);
+                services.AddHostedService<AgentAutoRegistrationHostedService>();
+            })
+            .Build();
+        var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
+        var observer = host.Services.GetServices<IHostedService>().OfType<AgentAutoRegistrationHostedService>().Single();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = lifetime.ApplicationStarted.Register(() => started.TrySetResult());
+        using var cancellation = new CancellationTokenSource();
+
+        var execution = host.RunAsync(cancellation.Token);
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            verification.SetException(new HttpRequestException("Gateway unavailable.",
+                new SocketException((int)SocketError.ConnectionRefused)));
+            await execution.WaitAsync(TimeSpan.FromSeconds(5));
+
+            var failure = await Assert.ThrowsAsync<HttpRequestException>(() =>
+                observer.ExecuteTask ?? throw new InvalidOperationException("Observer did not start."));
+            failure.InnerException.Should().BeOfType<SocketException>();
+            lifetime.ApplicationStopping.IsCancellationRequested.Should().BeTrue();
+            var resolveServices = () => host.Services.GetRequiredService<IHostApplicationLifetime>();
+            resolveServices.Should().Throw<ObjectDisposedException>();
+            gateway.ReceivedCalls().Should().BeEmpty();
+            handler.Requests.Should().Be(1);
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+            await execution.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [Fact]
     public async Task ConnectionTest_UsesMachineBoundMetadataInsteadOfConnectedHostname()
     {
         var gateway = Substitute.For<IAgentGateway>();
@@ -82,5 +131,19 @@ public sealed class ManagedAgentObserverTests
         await observer.StartAsync(CancellationToken.None);
         await Assert.ThrowsAsync<InvalidOperationException>(() => observer.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(10)));
         gateway.ReceivedCalls().Should().BeEmpty();
+    }
+
+    private sealed class CapabilityFailureHandler(Task<HttpResponseMessage> response) : HttpMessageHandler
+    {
+        private int _requests;
+        public int Requests => Volatile.Read(ref _requests);
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            request.Method.Should().Be(HttpMethod.Get);
+            request.RequestUri?.AbsolutePath.Should().Be("/internal/agents/capabilities");
+            Interlocked.Increment(ref _requests);
+            return response.WaitAsync(cancellationToken);
+        }
     }
 }

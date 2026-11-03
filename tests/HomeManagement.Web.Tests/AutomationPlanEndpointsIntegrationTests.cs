@@ -15,6 +15,7 @@ using HomeManagement.Auditing;
 using HomeManagement.Automation;
 using HomeManagement.Broker.Host.Hubs;
 using HomeManagement.Data;
+using HomeManagement.Transport;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -25,6 +26,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 using Serilog.Core;
 using Serilog.Events;
 using Xunit.Abstractions;
@@ -106,6 +108,27 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
         }
 
         Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT").Should().Be(_environmentBeforeInitialization);
+    }
+
+    [Fact]
+    public async Task Host_WithoutExternalGatewayObserver_RemainsRunning()
+    {
+        var services = _factory.Services;
+        services.GetServices<IHostedService>().Should().NotContain(service =>
+            service.GetType().FullName == "HomeManagement.Transport.AgentAutoRegistrationHostedService");
+        services.GetRequiredService<IAgentGateway>().Should().BeSameAs(_factory.AgentGateway);
+        services.GetRequiredService<IMachineAgentRuntime>().Should().BeSameAs(_factory.AgentGateway);
+        services.GetRequiredService<IAgentPeeringControl>().Should().BeSameAs(_factory.AgentGateway);
+        services.GetRequiredService<IAgentEnrollmentControl>().Should().BeSameAs(_factory.EnrollmentControl);
+        services.GetService<RemoteAgentGatewayClient>().Should().BeNull();
+
+        using var response = await _client.GetAsync($"/api/automation/plans/{Guid.NewGuid()}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.IsCancellationRequested.Should().BeFalse();
+        _factory.AgentGateway.ReceivedCalls().Should().BeEmpty();
+        _factory.EnrollmentControl.ReceivedCalls().Should().BeEmpty();
+        _factory.Diagnostics.Exceptions.Should().BeEmpty();
     }
 
     [Fact]
@@ -733,6 +756,10 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
         {
             Diagnostics = new HostStartupDiagnostics(output);
             _startupOverrides = startupOverrides;
+            // Any accidentally retained observer must fail deterministically rather
+            // than depending on whether localhost happens to run a real gateway.
+            ((IMachineAgentRuntime)AgentGateway).VerifyEnrollmentModeAsync(Arg.Any<CancellationToken>())
+                .Returns(Task.FromException<bool>(new HttpRequestException("Unexpected gateway capability probe in isolated endpoint tests.")));
             _dataDirectory = Path.Combine(Path.GetTempPath(), $"hm-broker-automation-tests-{Guid.NewGuid():N}");
             Directory.CreateDirectory(_dataDirectory);
             _databasePath = Path.Combine(_dataDirectory, "broker-automation-tests.db");
@@ -741,6 +768,9 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
 
         public FakePlanLlmClient LlmClient { get; }
         public HostStartupDiagnostics Diagnostics { get; }
+        public IAgentGateway AgentGateway { get; } =
+            Substitute.For<IAgentGateway, IMachineAgentRuntime, IAgentPeeringControl>();
+        public IAgentEnrollmentControl EnrollmentControl { get; } = Substitute.For<IAgentEnrollmentControl>();
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -802,6 +832,23 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
                 services.AddScoped<IPatchService, FakePatchService>();
                 services.AddScoped<IHaosAdapter, FakeHaosAdapter>();
                 services.AddScoped<IAuditLogger, FakeAuditLogger>();
+
+                // This suite exercises automation endpoints, not gateway peering.
+                // Remove only the observer; retain Quartz and the command broker.
+                // Single fails loudly if the production registration contract changes.
+                var observer = services.Single(descriptor =>
+                    descriptor.ServiceType == typeof(IHostedService)
+                    && descriptor.ImplementationType?.FullName == "HomeManagement.Transport.AgentAutoRegistrationHostedService");
+                services.Remove(observer);
+                services.RemoveAll<RemoteAgentGatewayClient>();
+                services.RemoveAll<IAgentGateway>();
+                services.RemoveAll<IMachineAgentRuntime>();
+                services.RemoveAll<IAgentPeeringControl>();
+                services.RemoveAll<IAgentEnrollmentControl>();
+                services.AddSingleton(AgentGateway);
+                services.AddSingleton((IMachineAgentRuntime)AgentGateway);
+                services.AddSingleton((IAgentPeeringControl)AgentGateway);
+                services.AddSingleton(EnrollmentControl);
 
                 services.AddAuthentication(options =>
                 {

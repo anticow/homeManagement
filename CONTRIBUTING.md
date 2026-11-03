@@ -44,6 +44,11 @@ a cross-platform CI failure resolved. The cancellation test allows up to 60 seco
 for shell startup on busy runners, then independently requires cancellation and child
 exit within five seconds each. Test hosts must use host-scoped environment configuration
 and idempotent teardown rather than changing the process environment or stopping a host twice.
+The automation endpoint fixture replaces gateway interfaces and removes only the
+agent auto-registration observer, so no external gateway capability probe can stop its host.
+Transport observer tests separately cover capability connection failures and
+enrollment-mode rejection. Production still fails closed on unverifiable authority;
+these endpoint tests must not change the host's background-service exception policy.
 
 ## Project Structure
 
