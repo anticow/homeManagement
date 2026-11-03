@@ -42,6 +42,8 @@ services:
       ASPNETCORE_URLS: "http://+:8082"
       ConnectionStrings__HomeManagement: "Server=sqlserver;Database=HomeManagement;User Id=sa;Password=${HM_SQL_SA_PASSWORD};Encrypt=True;TrustServerCertificate=${HM_TRUST_SERVER_CERT:-True};Command Timeout=120;"
       AgentGateway__ApiKey: "${HM_AGENT_GATEWAY_API_KEY}"
+      # HTTP/1 control plane; port 9444 is reserved for gRPC agents.
+      AgentGateway__BaseUrl: "http://agent-gw:9445"
       Auth__JwtSigningKey: "${HM_JWT_SIGNING_KEY}"
       Auth__Issuer: "homemanagement"
       Auth__Audience: "homemanagement-api"
@@ -57,6 +59,8 @@ services:
       sqlserver:
         condition: service_healthy
       auth:
+        condition: service_healthy
+      agent-gw:
         condition: service_healthy
       seq:
         condition: service_started
