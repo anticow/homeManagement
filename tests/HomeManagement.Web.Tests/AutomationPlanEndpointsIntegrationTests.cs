@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -10,6 +11,7 @@ using HomeManagement.Abstractions.Interfaces;
 using HomeManagement.Abstractions.Models;
 using HomeManagement.Abstractions.Validation;
 using HomeManagement.AI.Abstractions.Contracts;
+using HomeManagement.Auditing;
 using HomeManagement.Automation;
 using HomeManagement.Broker.Host.Hubs;
 using HomeManagement.Data;
@@ -23,19 +25,28 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Serilog.Core;
+using Serilog.Events;
+using Xunit.Abstractions;
 
 namespace HomeManagement.Web.Tests;
 
 public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, IDisposable
 {
     private readonly string? _environmentBeforeInitialization = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+    private readonly ITestOutputHelper _output;
     private BrokerAutomationWebApplicationFactory _factory = null!;
     private HttpClient _client = null!;
     private bool _disposed;
 
+    public AutomationPlanEndpointsIntegrationTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
+
     public Task InitializeAsync()
     {
-        _factory = new BrokerAutomationWebApplicationFactory();
+        _factory = new BrokerAutomationWebApplicationFactory(_output);
         _client = _factory.CreateClient();
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Test");
         return Task.CompletedTask;
@@ -82,7 +93,7 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
 
         Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT").Should().Be(_environmentBeforeInitialization);
 
-        await using (var nextFactory = new BrokerAutomationWebApplicationFactory())
+        await using (var nextFactory = new BrokerAutomationWebApplicationFactory(_output))
         {
             using var nextClient = nextFactory.CreateClient();
             nextClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Test");
@@ -95,6 +106,46 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
         }
 
         Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT").Should().Be(_environmentBeforeInitialization);
+    }
+
+    [Fact]
+    public async Task HostStartup_WithMissingAuditKey_ReportsValidationBeforeDisposal()
+    {
+        await DisposeAsync();
+        await using var invalidFactory = new BrokerAutomationWebApplicationFactory(_output,
+            new Dictionary<string, string?> { ["Audit:HmacKey"] = string.Empty });
+
+        var createClient = () => invalidFactory.CreateClient();
+        // ASP.NET Core can surface ObjectDisposedException instead of the startup
+        // exception when app.Run disposes the failed host on the entry-point thread.
+        // Verify the original validation failure independently through host logging.
+        createClient.Should().Throw<Exception>();
+        invalidFactory.Diagnostics.Exceptions
+            .SelectMany(FlattenExceptions)
+            .OfType<OptionsValidationException>()
+            .Should().ContainSingle(exception =>
+                exception.OptionsType == typeof(AuditOptions)
+                && exception.Failures.Any(failure => failure.StartsWith("Audit:HmacKey is required.", StringComparison.Ordinal)));
+        invalidFactory.Diagnostics.ApplicationStarted.Should().BeFalse();
+    }
+
+    private static IEnumerable<Exception> FlattenExceptions(Exception exception)
+    {
+        yield return exception;
+        if (exception is AggregateException aggregate)
+        {
+            foreach (var inner in aggregate.InnerExceptions.SelectMany(FlattenExceptions))
+            {
+                yield return inner;
+            }
+        }
+        else if (exception.InnerException is { } innerException)
+        {
+            foreach (var inner in FlattenExceptions(innerException))
+            {
+                yield return inner;
+            }
+        }
     }
 
     [Fact]
@@ -675,9 +726,13 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
     {
         private readonly string _databasePath;
         private readonly string _dataDirectory;
+        private readonly IReadOnlyDictionary<string, string?>? _startupOverrides;
 
-        public BrokerAutomationWebApplicationFactory()
+        public BrokerAutomationWebApplicationFactory(ITestOutputHelper output,
+            IReadOnlyDictionary<string, string?>? startupOverrides = null)
         {
+            Diagnostics = new HostStartupDiagnostics(output);
+            _startupOverrides = startupOverrides;
             _dataDirectory = Path.Combine(Path.GetTempPath(), $"hm-broker-automation-tests-{Guid.NewGuid():N}");
             Directory.CreateDirectory(_dataDirectory);
             _databasePath = Path.Combine(_dataDirectory, "broker-automation-tests.db");
@@ -685,6 +740,7 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
         }
 
         public FakePlanLlmClient LlmClient { get; }
+        public HostStartupDiagnostics Diagnostics { get; }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -710,10 +766,18 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
                     ["AI:Ollama:Model"] = "fake",
                     ["Automation:Enabled"] = "true",
                 });
+                if (_startupOverrides is not null)
+                {
+                    config.AddInMemoryCollection(_startupOverrides);
+                }
             });
 
             builder.ConfigureServices(services =>
             {
+                // AddHomeManagementSerilog reads registered sinks from DI. Capture
+                // host startup exceptions in xUnit output before app.Run disposes
+                // the host and WebApplicationFactory can mask the real failure.
+                services.AddSingleton<ILogEventSink>(Diagnostics);
                 // Remove DbContextOptions first, so both AddHomeManagementSqlServer and AddHomeManagement
                 // will detect it's not registered and skip their own registrations (see their guard checks).
                 // Then we register our test DbContext with SQLite, which will be picked up by both.
@@ -782,6 +846,52 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
                     }
 
                     await Task.Delay(100);
+                }
+            }
+        }
+    }
+
+    private sealed class HostStartupDiagnostics(ITestOutputHelper output) : ILogEventSink
+    {
+        private readonly ConcurrentQueue<Exception> _exceptions = new();
+        private int _applicationStarted;
+
+        public IReadOnlyCollection<Exception> Exceptions => _exceptions.ToArray();
+        public bool ApplicationStarted => Volatile.Read(ref _applicationStarted) != 0;
+
+        public void Emit(LogEvent logEvent)
+        {
+            if (!logEvent.Properties.TryGetValue("SourceContext", out var context)
+                || context is not ScalarValue { Value: string source }
+                || (!source.StartsWith("Microsoft.Extensions.Hosting", StringComparison.Ordinal)
+                    && !source.StartsWith("Microsoft.Hosting.Lifetime", StringComparison.Ordinal)))
+            {
+                return;
+            }
+
+            if (logEvent.MessageTemplate.Text.StartsWith("Application started.", StringComparison.Ordinal))
+            {
+                Interlocked.Exchange(ref _applicationStarted, 1);
+            }
+
+            // Do not render event properties or configuration values. Exception
+            // types/stacks and the static validation messages identify the producer.
+            output.WriteLine("Broker host: {0}", logEvent.MessageTemplate.Text);
+            if (logEvent.Exception is { } exception)
+            {
+                _exceptions.Enqueue(exception);
+                foreach (var failure in FlattenExceptions(exception))
+                {
+                    output.WriteLine("Startup exception type: {0}", failure.GetType().FullName);
+                    output.WriteLine("Startup exception stack: {0}", failure.StackTrace);
+                    if (failure is OptionsValidationException validation)
+                    {
+                        output.WriteLine("Invalid options type: {0}", validation.OptionsType.FullName);
+                        foreach (var message in validation.Failures)
+                        {
+                            output.WriteLine("Options validation failure: {0}", message);
+                        }
+                    }
                 }
             }
         }
