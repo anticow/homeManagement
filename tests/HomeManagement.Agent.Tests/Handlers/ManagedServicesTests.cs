@@ -18,7 +18,10 @@ public sealed class ManagedServicesTests : IDisposable
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private AgentConfiguration Config => new()
     {
-        ApiKey = "test-key", UseTls = true, ManagedServicesOnly = true, ManagedServicesPath = _path
+        ApiKey = "test-key",
+        UseTls = true,
+        ManagedServicesOnly = true,
+        ManagedServicesPath = _path
     };
 
     private void Write(params ManagedServiceEnrollment[] services) =>
@@ -129,7 +132,8 @@ public sealed class ManagedServicesTests : IDisposable
 
     private static CommandRequest Request(ManagedServiceRequest control) => new()
     {
-        RequestId = "test", CommandType = "ManagedServices",
+        RequestId = "test",
+        CommandType = "ManagedServices",
         CommandText = JsonSerializer.Serialize(control, JsonOptions)
     };
 

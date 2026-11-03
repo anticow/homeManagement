@@ -69,9 +69,20 @@ public sealed class AgentProcessRunnerTests
         var execution = AgentProcessRunner.RunAsync(startInfo, cancellation.Token);
         try
         {
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            // Windows PowerShell cold startup can exceed 15 seconds on a busy CI runner.
+            // Keep startup and shutdown budgets separate: this is a cancellation test,
+            // not a shell startup benchmark.
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             while (!File.Exists(pidPath) || new FileInfo(pidPath).Length == 0)
+            {
+                if (execution.IsCompleted)
+                {
+                    var result = await execution;
+                    Assert.Fail($"Child exited before publishing its PID (exit code {result.ExitCode}).");
+                }
+
                 await Task.Delay(20, timeout.Token);
+            }
 
             var pid = int.Parse((await File.ReadAllTextAsync(pidPath, timeout.Token)).Trim(), CultureInfo.InvariantCulture);
             using var child = Process.GetProcessById(pid);
@@ -79,7 +90,7 @@ public sealed class AgentProcessRunnerTests
             await cancellation.CancelAsync();
             var action = async () => await execution.WaitAsync(TimeSpan.FromSeconds(5));
             await action.Should().ThrowAsync<OperationCanceledException>();
-            await child.WaitForExitAsync(timeout.Token);
+            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
             child.HasExited.Should().BeTrue();
         }
         finally

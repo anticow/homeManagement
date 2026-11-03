@@ -28,6 +28,23 @@ dotnet test HomeManagement.sln --filter "FullyQualifiedName!~Integration"
 dotnet test HomeManagement.sln
 ```
 
+### Focused CI regression checks
+
+For the agent process cancellation and broker automation host lifecycle tests, run:
+
+```bash
+dotnet test tests/HomeManagement.Agent.Tests -c Release --filter "FullyQualifiedName~AgentProcessRunnerTests|FullyQualifiedName~ManagedServicesTests"
+dotnet test tests/HomeManagement.AgentGateway.Host.Tests -c Release --filter "FullyQualifiedName~AgentApiKeyValidatorTests"
+dotnet test tests/HomeManagement.Web.Tests -c Release --filter "FullyQualifiedName~AutomationPlanEndpointsIntegrationTests"
+```
+
+These tests do not require Docker or live services. Run the process tests on Windows and
+Linux, and the automation endpoint tests on Linux as well as Windows before declaring
+a cross-platform CI failure resolved. The cancellation test allows up to 60 seconds
+for shell startup on busy runners, then independently requires cancellation and child
+exit within five seconds each. Test hosts must use host-scoped environment configuration
+and idempotent teardown rather than changing the process environment or stopping a host twice.
+
 ## Project Structure
 
 The solution contains **35 projects** (19 source + 16 test):

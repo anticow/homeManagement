@@ -20,6 +20,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -27,8 +28,10 @@ namespace HomeManagement.Web.Tests;
 
 public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, IDisposable
 {
+    private readonly string? _environmentBeforeInitialization = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
     private BrokerAutomationWebApplicationFactory _factory = null!;
     private HttpClient _client = null!;
+    private bool _disposed;
 
     public Task InitializeAsync()
     {
@@ -40,14 +43,58 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
 
     public async Task DisposeAsync()
     {
-        _client.Dispose();
-        await _factory.DisposeAsync();
+        if (_disposed)
+        {
+            return;
+        }
+
+        // xUnit also calls IDisposable after IAsyncLifetime teardown.
+        // Do not stop the same host a second time while the next host is starting.
+        _disposed = true;
+        _client?.Dispose();
+        if (_factory is not null)
+        {
+            await _factory.DisposeAsync();
+        }
     }
 
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         _client?.Dispose();
         _factory?.Dispose();
+    }
+
+    [Fact]
+    public async Task Teardown_IsIdempotent_AndNextHostRemainsUsable()
+    {
+        Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT").Should().Be(_environmentBeforeInitialization);
+        _factory.Services.GetRequiredService<IHostEnvironment>().EnvironmentName.Should().Be("Test");
+
+        await DisposeAsync();
+        Dispose();
+        await DisposeAsync();
+
+        Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT").Should().Be(_environmentBeforeInitialization);
+
+        await using (var nextFactory = new BrokerAutomationWebApplicationFactory())
+        {
+            using var nextClient = nextFactory.CreateClient();
+            nextClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Test");
+            Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT").Should().Be(_environmentBeforeInitialization);
+            nextFactory.Services.GetRequiredService<IHostEnvironment>().EnvironmentName.Should().Be("Test");
+
+            using var response = await nextClient.GetAsync($"/api/automation/plans/{Guid.NewGuid()}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT").Should().Be(_environmentBeforeInitialization);
     }
 
     [Fact]
@@ -631,9 +678,6 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
 
         public BrokerAutomationWebApplicationFactory()
         {
-            // Set environment to "Test" so hosts detect and skip SQL Server registration
-            Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Test");
-
             _dataDirectory = Path.Combine(Path.GetTempPath(), $"hm-broker-automation-tests-{Guid.NewGuid():N}");
             Directory.CreateDirectory(_dataDirectory);
             _databasePath = Path.Combine(_dataDirectory, "broker-automation-tests.db");
@@ -644,6 +688,8 @@ public sealed class AutomationPlanEndpointsIntegrationTests : IAsyncLifetime, ID
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            // Scope the environment to this host, not the entire test process.
+            builder.UseEnvironment("Test");
             builder.ConfigureAppConfiguration((context, config) =>
             {
                 config.AddInMemoryCollection(new Dictionary<string, string?>

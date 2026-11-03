@@ -17,7 +17,8 @@ public sealed class AgentApiKeyValidatorTests
         unique.SupportsManagedServiceControl("agent-01").Should().BeTrue();
         var shared = CreateValidator(new Dictionary<string, string?>
         {
-            ["AgentGateway:AgentApiKeys:agent-01"] = key, ["AgentGateway:AgentApiKeys:agent-02"] = key
+            ["AgentGateway:AgentApiKeys:agent-01"] = key,
+            ["AgentGateway:AgentApiKeys:agent-02"] = key
         });
         shared.SupportsManagedServiceControl("agent-01").Should().BeFalse();
         var weak = CreateValidator(new Dictionary<string, string?> { ["AgentGateway:AgentApiKeys:agent-01"] = "weak-key" });
