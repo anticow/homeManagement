@@ -17,7 +17,7 @@ namespace HomeManagement.Data.SqlServer.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.11")
+                .HasAnnotation("ProductVersion", "10.0.10")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -401,6 +401,48 @@ namespace HomeManagement.Data.SqlServer.Migrations
                     b.HasIndex("RunId", "StepName");
 
                     b.ToTable("AutomationRunSteps");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.DeviceStateEntity", b =>
+                {
+                    b.Property<Guid>("MachineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("AgentAttemptUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("AgentFailure")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime?>("AgentSuccessUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("HealthJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("LastHeartbeatUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool?>("LastKnownConnected")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ManagedObservationJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("MetricsAttemptUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("MetricsFailure")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime?>("MetricsSuccessUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("MachineId");
+
+                    b.ToTable("DeviceStates");
                 });
 
             modelBuilder.Entity("HomeManagement.Data.Entities.JobEntity", b =>
@@ -792,6 +834,17 @@ namespace HomeManagement.Data.SqlServer.Migrations
                         .IsRequired();
 
                     b.Navigation("Run");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.DeviceStateEntity", b =>
+                {
+                    b.HasOne("HomeManagement.Data.Entities.MachineEntity", "Machine")
+                        .WithMany()
+                        .HasForeignKey("MachineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Machine");
                 });
 
             modelBuilder.Entity("HomeManagement.Data.Entities.JobMachineResultEntity", b =>

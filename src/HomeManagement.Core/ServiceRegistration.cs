@@ -49,6 +49,7 @@ public static class ServiceRegistration
         services.AddScoped<IAuditEventRepository, AuditEventRepository>();
         services.AddScoped<IJobRepository, JobRepository>();
         services.AddScoped<IServiceSnapshotRepository, ServiceSnapshotRepository>();
+        services.AddScoped<IDeviceStateRepository, DeviceStateRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<IAutomationRunRepository, AutomationRunRepository>();
         services.AddScoped<IPlanRepository, PlanRepository>();

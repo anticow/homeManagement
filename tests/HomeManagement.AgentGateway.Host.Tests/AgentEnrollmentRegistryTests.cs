@@ -654,12 +654,22 @@ public sealed class AgentEnrollmentRegistryTests : IDisposable
         using var registry = Open();
         using var gateway = Gateway(registry);
         gateway.GetMachineObservation(_machineId).Connected.Should().BeFalse();
+        gateway.GetMachineObservation(_machineId).LastHeartbeatUtc.Should().BeNull();
         ((Action)(() => gateway.GetMachineMetadata(_machineId))).Should().Throw<InvalidOperationException>();
         ((Action)(() => gateway.GetMachineObservation(Guid.NewGuid()))).Should().Throw<KeyNotFoundException>();
         var session = Connect(gateway, Ensure(registry).Credential);
+        gateway.GetMachineObservation(_machineId).LastHeartbeatUtc.Should().BeNull();
+        gateway.GetConnectedAgents().Single().LastReceivedHeartbeatUtc.Should().BeNull();
+        session.LastHeartbeatUtc = new DateTime(2026, 11, 4, 12, 30, 0, DateTimeKind.Utc);
+        session.LastReceivedHeartbeatUtc = session.LastHeartbeatUtc;
         var observation = gateway.GetMachineObservation(_machineId);
         observation.RegistryId.Should().Be(registry.RegistryId);
         observation.SessionId.Should().Be(session.SessionId);
+        observation.LastHeartbeatUtc.Should().Be(new DateTimeOffset(session.LastHeartbeatUtc));
+        observation.LastHeartbeatUtc.Should().NotBe(observation.ObservedAtUtc);
+        gateway.UpdateHeartbeat(session, new Heartbeat());
+        gateway.GetMachineObservation(_machineId).LastHeartbeatUtc.Should().Be(new DateTimeOffset(session.LastHeartbeatUtc));
+        gateway.GetConnectedAgents().Single().LastReceivedHeartbeatUtc.Should().Be(session.LastHeartbeatUtc);
         registry.Transition("domain-a-node", 1, AgentEnrollmentTransition.Revoke);
         ((Action)(() => gateway.GetMachineObservation(_machineId))).Should().Throw<InvalidOperationException>();
     }

@@ -3,6 +3,7 @@
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using HomeManagement.Abstractions.Models
 @using HomeManagement.Web.Services
+@using HomeManagement.Web.Components.Shared
 @inject IBrokerApi BrokerApi
 @inject NavigationManager Navigation
 
@@ -23,109 +24,7 @@
         </a>
     </div>
 
-    @if (_machinesLoading)
-    {
-        <p>Loading machines...</p>
-    }
-    else if (!string.IsNullOrEmpty(_machinesError))
-    {
-        <p>@_machinesError</p>
-    }
-    else if (_machines is not null && _health is not null)
-    {
-        <table>
-            <thead>
-                <tr>
-                    <th>Hostname</th>
-                    <th>OS</th>
-                    <th>State</th>
-                    <th style="text-align: center;">Health Status</th>
-                    <th style="text-align: right;">CPU</th>
-                    <th style="text-align: right;">Memory</th>
-                    <th style="text-align: right;">Disk</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var machine in _machines.Items)
-                {
-                    var health = _health.FirstOrDefault(h => h.Id == machine.Id);
-                    var statusColor = health?.OverallStatus switch
-                    {
-                        AgentHealthStatus.Healthy => "#388e3c",
-                        AgentHealthStatus.Warning => "#f57c00",
-                        AgentHealthStatus.Critical => "#c62828",
-                        _ => "#999"
-                    };
-                    var statusLabel = health?.OverallStatus.ToString() ?? "Unknown";
-                    var statusDot = health?.OverallStatus switch
-                    {
-                        AgentHealthStatus.Healthy => "●",
-                        AgentHealthStatus.Warning => "⚠",
-                        AgentHealthStatus.Critical => "✕",
-                        _ => "?"
-                    };
-
-                    <tr>
-                        <td><a href="/machines/@machine.Id">@machine.Hostname</a></td>
-                        <td>@machine.OsType</td>
-                        <td>@machine.State</td>
-                        <td style="text-align: center;">
-                            @if (health != null && !health.IsOnline)
-                            {
-                                <span style="color: #999;">○ Offline</span>
-                            }
-                            else if (health != null)
-                            {
-                                <span style="@($"color: {statusColor}; font-weight: 600;")">
-                                    @statusDot @statusLabel
-                                </span>
-                            }
-                            else
-                            {
-                                <span style="color: #999;">—</span>
-                            }
-                        </td>
-                        <td style="text-align: right;">
-                            @if (health?.CpuUsagePercent.HasValue ?? false)
-                            {
-                                <span style="@MetricStyle(health.CpuUsagePercent.Value)">
-                                    @health.CpuUsagePercent.Value.ToString("F1")%
-                                </span>
-                            }
-                            else
-                            {
-                                <span style="color: #999;">—</span>
-                            }
-                        </td>
-                        <td style="text-align: right;">
-                            @if (health?.MemoryUsagePercent.HasValue ?? false)
-                            {
-                                <span style="@MetricStyle(health.MemoryUsagePercent.Value)">
-                                    @health.MemoryUsagePercent.Value.ToString("F1")%
-                                </span>
-                            }
-                            else
-                            {
-                                <span style="color: #999;">—</span>
-                            }
-                        </td>
-                        <td style="text-align: right;">
-                            @if (health?.DiskUsagePercent.HasValue ?? false)
-                            {
-                                <span style="@MetricStyle(health.DiskUsagePercent.Value)">
-                                    @health.DiskUsagePercent.Value.ToString("F1")%
-                                </span>
-                            }
-                            else
-                            {
-                                <span style="color: #999;">—</span>
-                            }
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    }
+    <FleetMachineTable />
 }
 else
 {
@@ -370,13 +269,10 @@ else
     private const string Action1Tab = "action1";
 
     private string _activeTab = HmFleetTab;
-    private bool _machinesLoading = true;
-    private PagedResult<Machine>? _machines;
-    private IReadOnlyList<AgentHealthSummary>? _health;
-    private string? _machinesError;
     private IReadOnlyList<Action1OrgDto>? _orgs;
     private string? _action1Error;
     private bool _action1Loading = true;
+    private bool _action1Requested;
 
     protected override async Task OnInitializedAsync()
     {
@@ -385,40 +281,21 @@ else
             ? Action1Tab
             : HmFleetTab;
 
-        await Task.WhenAll(LoadMachinesAsync(), LoadAction1Async());
+        if (_activeTab == Action1Tab) await LoadAction1Async();
     }
 
-    private void SwitchTab(string tab) => _activeTab = tab;
-
-    private async Task LoadMachinesAsync()
+    private async Task SwitchTab(string tab)
     {
-        try
-        {
-            var machinesTask = BrokerApi.GetMachinesAsync();
-            var healthTask = BrokerApi.GetAllAgentHealthAsync();
-            await Task.WhenAll(machinesTask, healthTask);
-            
-            _machines = machinesTask.Result;
-            _health = healthTask.Result;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            Navigation.NavigateTo("/login");
-        }
-        catch (Exception ex)
-        {
-            _machinesError = $"Unable to load machines: {ex.Message}";
-        }
-        finally
-        {
-            _machinesLoading = false;
-        }
+        _activeTab = tab;
+        // HM Fleet is DB-only; do not make an unrelated live Action1 request until its tab is opened.
+        if (tab == Action1Tab && !_action1Requested) await LoadAction1Async();
     }
 
     private Task ReloadAction1Async() => LoadAction1Async();
 
     private async Task LoadAction1Async()
     {
+        _action1Requested = true;
         _action1Loading = true;
         _action1Error = null;
         try
@@ -449,10 +326,4 @@ else
         _ => ""
     };
 
-    private static string MetricStyle(double value)
-    {
-        var color = value > 85 ? "#c62828" : value > 70 ? "#f57c00" : "#388e3c";
-        var fontWeight = value > 85 ? "600" : "400";
-        return $"color: {color}; font-weight: {fontWeight};";
-    }
 }

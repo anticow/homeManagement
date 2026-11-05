@@ -136,13 +136,13 @@ public sealed class AgentHealthService : IAgentHealthService
 
         // Check if agent is online
         var upQuery = PromQL.EndpointUp(hostname, _prometheusOptions.ScrapeLabel);
-        var upResult = await QuerySingleValueAsync(upQuery, ct);
+        var upResult = await QuerySingleValueAsync(upQuery, summary, ct);
         summary.IsOnline = upResult.HasValue && upResult.Value > 0.5;
 
         if (!summary.IsOnline)
         {
             summary.OverallStatus = AgentHealthStatus.Critical;
-            summary.ErrorMessage = "Agent offline or unreachable";
+            summary.ErrorMessage ??= "Agent offline or unreachable";
             _logger.LogWarning("Agent {Hostname} is offline", hostname);
             return summary;
         }
@@ -172,8 +172,9 @@ public sealed class AgentHealthService : IAgentHealthService
             }
 
             // Determine overall status based on thresholds
-            summary.OverallStatus = DetermineStatus(summary);
+            summary.OverallStatus = summary.ErrorMessage is null ? DetermineStatus(summary) : AgentHealthStatus.Critical;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error querying metrics for {Hostname}", hostname);
@@ -193,9 +194,9 @@ public sealed class AgentHealthService : IAgentHealthService
         var memQuery = PromQL.WindowsMemoryUsagePercent(hostname, _prometheusOptions.ScrapeLabel);
         var diskQuery = PromQL.WindowsDiskUsagePercent(hostname, _prometheusOptions.ScrapeLabel);
 
-        summary.CpuUsagePercent = await QuerySingleValueAsync(cpuQuery, ct);
-        summary.MemoryUsagePercent = await QuerySingleValueAsync(memQuery, ct);
-        summary.DiskUsagePercent = await QuerySingleValueAsync(diskQuery, ct);
+        summary.CpuUsagePercent = await QuerySingleValueAsync(cpuQuery, summary, ct);
+        summary.MemoryUsagePercent = await QuerySingleValueAsync(memQuery, summary, ct);
+        summary.DiskUsagePercent = await QuerySingleValueAsync(diskQuery, summary, ct);
     }
 
     private async Task QueryLinuxMetricsAsync(
@@ -207,9 +208,9 @@ public sealed class AgentHealthService : IAgentHealthService
         var memQuery = PromQL.LinuxMemoryUsagePercent(hostname, _prometheusOptions.ScrapeLabel);
         var diskQuery = PromQL.LinuxDiskUsagePercent(hostname, _prometheusOptions.ScrapeLabel);
 
-        summary.CpuUsagePercent = await QuerySingleValueAsync(cpuQuery, ct);
-        summary.MemoryUsagePercent = await QuerySingleValueAsync(memQuery, ct);
-        summary.DiskUsagePercent = await QuerySingleValueAsync(diskQuery, ct);
+        summary.CpuUsagePercent = await QuerySingleValueAsync(cpuQuery, summary, ct);
+        summary.MemoryUsagePercent = await QuerySingleValueAsync(memQuery, summary, ct);
+        summary.DiskUsagePercent = await QuerySingleValueAsync(diskQuery, summary, ct);
     }
 
     private async Task QueryMacOsMetricsAsync(
@@ -221,21 +222,29 @@ public sealed class AgentHealthService : IAgentHealthService
         var memQuery = PromQL.MacOsMemoryUsagePercent(hostname, _prometheusOptions.ScrapeLabel);
         var diskQuery = PromQL.MacOsDiskUsagePercent(hostname, _prometheusOptions.ScrapeLabel);
 
-        summary.CpuUsagePercent = await QuerySingleValueAsync(cpuQuery, ct);
-        summary.MemoryUsagePercent = await QuerySingleValueAsync(memQuery, ct);
-        summary.DiskUsagePercent = await QuerySingleValueAsync(diskQuery, ct);
+        summary.CpuUsagePercent = await QuerySingleValueAsync(cpuQuery, summary, ct);
+        summary.MemoryUsagePercent = await QuerySingleValueAsync(memQuery, summary, ct);
+        summary.DiskUsagePercent = await QuerySingleValueAsync(diskQuery, summary, ct);
     }
 
-    private async Task<double?> QuerySingleValueAsync(string promql, CancellationToken ct)
+    private async Task<double?> QuerySingleValueAsync(string promql, AgentHealthSummary summary, CancellationToken ct)
     {
-        var results = await _prometheus.QueryAsync(promql, ct);
+        var query = await _prometheus.QueryWithStatusAsync(promql, ct);
+        if (!query.Succeeded)
+        {
+            summary.ErrorMessage = "Prometheus metrics unavailable.";
+            return null;
+        }
+        var results = query.Results;
 
         if (results.Count == 0)
         {
             return null;
         }
 
-        return results[0].Value.AsDouble();
+        var value = results[0].Value.AsDouble();
+        if (!value.HasValue) summary.ErrorMessage = "Prometheus metrics unavailable.";
+        return value;
     }
 
     private AgentHealthStatus DetermineStatus(AgentHealthSummary summary)

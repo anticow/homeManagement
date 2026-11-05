@@ -8,7 +8,9 @@ public record ConnectedAgent(
     string AgentVersion,
     DateTime ConnectedSinceUtc,
     DateTime LastHeartbeatUtc,
-    TimeSpan Uptime);
+    TimeSpan Uptime,
+    // Unlike the historical LastHeartbeatUtc field, this is null until a heartbeat is actually received.
+    DateTime? LastReceivedHeartbeatUtc = null);
 
 public record AgentMetadata(
     string AgentId,

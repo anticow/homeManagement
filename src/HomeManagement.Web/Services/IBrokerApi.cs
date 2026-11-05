@@ -27,6 +27,9 @@ public interface IBrokerApi
     [Get("/api/agents/health")]
     Task<IReadOnlyList<AgentHealthSummary>> GetAllAgentHealthAsync(CancellationToken ct = default);
 
+    [Get("/api/device-state")]
+    Task<PagedResult<FleetDeviceState>> GetFleetDeviceStatesAsync(int page = 1, int pageSize = 25, CancellationToken ct = default);
+
     [Get("/api/agents/health/{machineId}")]
     Task<AgentHealthSummary> GetAgentHealthAsync(Guid machineId, CancellationToken ct = default);
 

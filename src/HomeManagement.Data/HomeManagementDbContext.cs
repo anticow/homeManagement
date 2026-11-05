@@ -18,6 +18,7 @@ public class HomeManagementDbContext : DbContext
     public DbSet<JobMachineResultEntity> JobMachineResults => Set<JobMachineResultEntity>();
     public DbSet<ScheduledJobEntity> ScheduledJobs => Set<ScheduledJobEntity>();
     public DbSet<ServiceSnapshotEntity> ServiceSnapshots => Set<ServiceSnapshotEntity>();
+    public DbSet<DeviceStateEntity> DeviceStates => Set<DeviceStateEntity>();
     public DbSet<AppSettingEntity> AppSettings => Set<AppSettingEntity>();
     public DbSet<AuthUserEntity> AuthUsers => Set<AuthUserEntity>();
     public DbSet<AuthRoleEntity> AuthRoles => Set<AuthRoleEntity>();
@@ -64,6 +65,15 @@ public class HomeManagementDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<DeviceStateEntity>(e =>
+        {
+            e.HasKey(s => s.MachineId);
+            e.HasOne(s => s.Machine).WithMany().HasForeignKey(s => s.MachineId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(s => !s.Machine.IsDeleted);
+            e.Property(s => s.AgentFailure).HasMaxLength(200);
+            e.Property(s => s.MetricsFailure).HasMaxLength(200);
+        });
+
         // ── Machines ──
         modelBuilder.Entity<MachineEntity>(e =>
         {

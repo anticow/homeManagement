@@ -44,7 +44,8 @@ public sealed partial class StandaloneAgentGatewayService : IDisposable
                     session.Handshake.AgentVersion,
                     session.ConnectedUtc,
                     session.LastHeartbeatUtc,
-                    DateTime.UtcNow - session.ConnectedUtc))
+                    DateTime.UtcNow - session.ConnectedUtc,
+                    session.LastReceivedHeartbeatUtc))
                 .OrderBy(agent => agent.Hostname, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
@@ -280,6 +281,7 @@ public sealed partial class StandaloneAgentGatewayService : IDisposable
         {
             if (!IsCurrent(session)) throw new InvalidOperationException("Stale agent session.");
             session.LastHeartbeatUtc = DateTime.UtcNow;
+            session.LastReceivedHeartbeatUtc = session.LastHeartbeatUtc;
             _logger.LogDebug(
                 "Heartbeat from {AgentId}: uptime={UptimeSeconds}s cpu={CpuPercent:F1}%",
                 session.AgentId,

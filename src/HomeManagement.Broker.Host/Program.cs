@@ -1,4 +1,5 @@
 using HomeManagement.Abstractions.CrossCutting;
+using HomeManagement.Abstractions.Models;
 using HomeManagement.Auth;
 using HomeManagement.AI.Abstractions.Configuration;
 using HomeManagement.Auditing;
@@ -65,6 +66,14 @@ if (awxOpts?.Enabled == true && !string.IsNullOrWhiteSpace(awxOpts.BaseUrl))
 builder.Services.AddApprovalJobStore();
 builder.Services.AddPrometheusIntegration(builder.Configuration);
 builder.Services.AddHealthMonitoringWithConfiguration(builder.Configuration);
+builder.Services.AddOptions<DeviceStateOptions>()
+    .Bind(builder.Configuration.GetSection(DeviceStateOptions.SectionName))
+    .Validate(o => o.ValidationIntervalSeconds is >= 1 and <= 86400
+        && o.StaleAfterSeconds >= o.ValidationIntervalSeconds && o.StaleAfterSeconds <= 604800,
+        "DeviceState requires a validation interval of 1..86400 seconds and a stale threshold between the interval and 604800 seconds.")
+    .ValidateOnStart();
+builder.Services.AddScoped<DeviceStateCollector>();
+builder.Services.AddHostedService<DeviceStateValidationWorker>();
 builder.Services.AddHomeManagementAuth(builder.Configuration);
 builder.Services
     .AddOptions<AiOptions>()
@@ -188,6 +197,7 @@ app.MapServiceEndpoints();
 app.MapManagedServiceEndpoints();
 app.MapAgentEnrollmentEndpoints();
 app.MapMachineAgentRuntimeEndpoints();
+app.MapDeviceStateEndpoints();
 app.MapJobEndpoints();
 app.MapCredentialEndpoints();
 app.MapAuditEndpoints();

@@ -49,7 +49,8 @@ public sealed class AgentGatewayService : IAgentGateway, IDisposable
             c.Handshake.AgentVersion,
             c.ConnectedUtc,
             c.LastHeartbeatUtc,
-            DateTime.UtcNow - c.ConnectedUtc)).ToList().AsReadOnly();
+            DateTime.UtcNow - c.ConnectedUtc,
+            c.LastReceivedHeartbeatUtc)).ToList().AsReadOnly();
 
     public async Task<RemoteResult> SendCommandAsync(
         string agentId,
@@ -176,6 +177,7 @@ public sealed class AgentGatewayService : IAgentGateway, IDisposable
         if (_connections.TryGetValue(agentId, out var connection))
         {
             connection.LastHeartbeatUtc = DateTime.UtcNow;
+            connection.LastReceivedHeartbeatUtc = connection.LastHeartbeatUtc;
             _logger.LogDebug("Heartbeat from {AgentId}: uptime={Uptime}s cpu={Cpu:F1}%",
                 agentId, heartbeat.UptimeSeconds, heartbeat.CpuPercent);
         }

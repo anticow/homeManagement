@@ -15,6 +15,7 @@ internal sealed class AgentConnection
     public IServerStreamWriter<ControlMessage> ResponseStream { get; }
     public DateTime ConnectedUtc { get; } = DateTime.UtcNow;
     public DateTime LastHeartbeatUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? LastReceivedHeartbeatUtc { get; set; }
 
     /// <summary>
     /// Pending command completions keyed by request_id.

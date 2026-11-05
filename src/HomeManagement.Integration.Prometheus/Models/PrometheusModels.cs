@@ -14,6 +14,9 @@ public sealed record PrometheusQueryData(
     string ResultType,  // "vector" | "matrix" | "scalar" | "string"
     IReadOnlyList<PrometheusVector> Result);
 
+/// <summary>Separates successful empty vectors (unsupported/missing metrics) from failed queries.</summary>
+public sealed record PrometheusQueryResult(bool Succeeded, IReadOnlyList<PrometheusVector> Results);
+
 /// <summary>A single instant-vector result from a Prometheus query.</summary>
 public sealed record PrometheusVector(
     IReadOnlyDictionary<string, string> Metric,

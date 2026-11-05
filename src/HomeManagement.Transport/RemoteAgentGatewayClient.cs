@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace HomeManagement.Transport;
 
-public sealed partial class RemoteAgentGatewayClient : IAgentGateway, IAgentPeeringControl, IAgentEnrollmentControl, IMachineAgentRuntime, IDisposable
+public sealed partial class RemoteAgentGatewayClient : IAgentGateway, IAgentPeeringControl, IAgentEnrollmentControl, IMachineAgentRuntime, IFreshAgentSnapshotReader, IDisposable
 {
     private const string HeaderName = "x-agent-gateway-api-key";
 
@@ -116,6 +116,17 @@ public sealed partial class RemoteAgentGatewayClient : IAgentGateway, IAgentPeer
         {
             return _snapshot;
         }
+    }
+
+    public async Task<IReadOnlyList<ConnectedAgent>> ReadFreshLegacySnapshotAsync(CancellationToken ct = default)
+    {
+        using var budget = EnrollmentBudget(ct);
+        await RequireLegacyRuntimeAsync(budget.Token);
+        using var response = await SendEnrollmentAsync(HttpMethod.Get, "/internal/agents", null, budget.Token);
+        var agents = await ReadEnrollmentResponseAsync<List<ConnectedAgent>>(response, budget.Token, 4 * 1024 * 1024);
+        if (agents.Any(a => a is null || string.IsNullOrWhiteSpace(a.AgentId) || string.IsNullOrWhiteSpace(a.Hostname)))
+            throw new InvalidOperationException("Gateway returned an invalid fresh agent snapshot.");
+        return agents;
     }
 
     public async Task<RemoteResult> SendCommandAsync(string agentId, RemoteCommand command, CancellationToken ct = default)

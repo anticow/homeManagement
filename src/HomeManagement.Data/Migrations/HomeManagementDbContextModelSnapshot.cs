@@ -15,7 +15,7 @@ namespace HomeManagement.Data.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.11");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
 
             modelBuilder.Entity("HomeManagement.Data.Entities.AppSettingEntity", b =>
                 {
@@ -396,6 +396,48 @@ namespace HomeManagement.Data.Migrations
                     b.HasIndex("RunId", "StepName");
 
                     b.ToTable("AutomationRunSteps");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.DeviceStateEntity", b =>
+                {
+                    b.Property<Guid>("MachineId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("AgentAttemptUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AgentFailure")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("AgentSuccessUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("HealthJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastHeartbeatUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool?>("LastKnownConnected")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ManagedObservationJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("MetricsAttemptUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MetricsFailure")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("MetricsSuccessUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("MachineId");
+
+                    b.ToTable("DeviceStates");
                 });
 
             modelBuilder.Entity("HomeManagement.Data.Entities.JobEntity", b =>
@@ -787,6 +829,17 @@ namespace HomeManagement.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Run");
+                });
+
+            modelBuilder.Entity("HomeManagement.Data.Entities.DeviceStateEntity", b =>
+                {
+                    b.HasOne("HomeManagement.Data.Entities.MachineEntity", "Machine")
+                        .WithMany()
+                        .HasForeignKey("MachineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Machine");
                 });
 
             modelBuilder.Entity("HomeManagement.Data.Entities.JobMachineResultEntity", b =>

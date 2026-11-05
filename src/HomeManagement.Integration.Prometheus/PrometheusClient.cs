@@ -20,7 +20,8 @@ public sealed class PrometheusClient
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = { new PrometheusValueJsonConverter() }
     };
 
     public PrometheusClient(
@@ -41,6 +42,19 @@ public sealed class PrometheusClient
         string promql,
         CancellationToken ct = default)
     {
+        // Preserve the established best-effort API for existing callers.
+        try { return (await QueryWithStatusAsync(promql, ct)).Results; }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { return []; }
+    }
+
+    /// <summary>
+    /// Failure-aware instant vector query. Successful empty results remain successful;
+    /// HTTP/API/serialization failures and timeouts are explicit failures. Caller cancellation propagates.
+    /// </summary>
+    public async Task<PrometheusQueryResult> QueryWithStatusAsync(
+        string promql,
+        CancellationToken ct = default)
+    {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(TimeSpan.FromSeconds(_options.QueryTimeoutSeconds));
 
@@ -52,24 +66,27 @@ public sealed class PrometheusClient
             var response = await _http.GetFromJsonAsync<PrometheusApiResponse<PrometheusQueryData>>(
                 url, JsonOptions, cts.Token);
 
-            if (response is null || response.Status != "success" || response.Data is null)
+            if (response is null || response.Status != "success" || response.Data is null
+                || response.Data.ResultType != "vector" || response.Data.Result is null
+                || response.Data.Result.Any(r => r is null || r.Value is null))
             {
                 _logger.LogWarning("Prometheus query returned non-success: {Error}", response?.Error);
-                return [];
+                return new(false, []);
             }
 
-            return response.Data.Result;
+            return new(true, response.Data.Result);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             _logger.LogWarning("Prometheus query timed out after {Seconds}s: {Query}",
                 _options.QueryTimeoutSeconds, promql);
-            return [];
+            return new(false, []);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Prometheus query failed: {Query}", promql);
-            return [];
+            return new(false, []);
         }
     }
 

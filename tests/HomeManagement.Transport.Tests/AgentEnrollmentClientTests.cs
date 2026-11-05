@@ -181,6 +181,93 @@ public sealed class AgentEnrollmentClientTests
     }
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ManagedObservationHeartbeatIsOptionalAndIndependentOfObservedTime(bool includeHeartbeat)
+    {
+        var observed = DateTimeOffset.UtcNow;
+        var heartbeat = observed.AddMinutes(-2);
+        using var handler = new Handler(request =>
+            request.RequestUri!.AbsolutePath.EndsWith("capabilities", StringComparison.Ordinal)
+                ? Json(new AgentEnrollmentCapabilities(true))
+                : new(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new
+                    {
+                        registryId = Guid.NewGuid(),
+                        machineId = MachineId,
+                        agentId = "bound-agent",
+                        bindingVersion = 2,
+                        credentialGeneration = 3,
+                        sessionId = Guid.NewGuid(),
+                        connected = true,
+                        observedAtUtc = observed
+                    })
+                });
+        // Old gateways omit the property entirely, not merely return null.
+        using var client = Client(handler);
+        var old = await client.GetMachineObservationAsync(MachineId);
+        old.LastHeartbeatUtc.Should().BeNull();
+        if (includeHeartbeat)
+        {
+            using var currentHandler = new Handler(request =>
+                request.RequestUri!.AbsolutePath.EndsWith("capabilities", StringComparison.Ordinal)
+                    ? Json(new AgentEnrollmentCapabilities(true)) : Json(old with { LastHeartbeatUtc = heartbeat }));
+            using var current = Client(currentHandler);
+            var value = await current.GetMachineObservationAsync(MachineId);
+            value.LastHeartbeatUtc.Should().Be(heartbeat);
+            value.ObservedAtUtc.Should().Be(observed);
+        }
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task FreshLegacySnapshotFailureThrowsInsteadOfReturningPreviouslyCachedConnections(HttpStatusCode failure)
+    {
+        var fail = false;
+        using var handler = new Handler(request =>
+            request.RequestUri!.AbsolutePath.EndsWith("capabilities", StringComparison.Ordinal)
+                ? Json(new AgentEnrollmentCapabilities(false))
+                : fail ? new(failure) : Json(new List<ConnectedAgent>
+                {
+                    new("id", "node", "1", DateTime.UtcNow, DateTime.UtcNow, TimeSpan.Zero)
+                }));
+        using var client = Client(handler, false);
+        await client.StartAsync();
+        fail = true;
+        var previousListRequests = handler.Requests.Count(r => r.Path == "/internal/agents");
+        await ((Func<Task>)(() => client.ReadFreshLegacySnapshotAsync())).Should().ThrowAsync<HttpRequestException>();
+        handler.Requests.Count(r => r.Path == "/internal/agents").Should().Be(previousListRequests + 1);
+        await client.StopAsync();
+    }
+
+    [Fact]
+    public async Task FreshLegacyReadRejectsManagedModeBeforeRequestingList()
+    {
+        using var handler = new Handler(_ => Json(new AgentEnrollmentCapabilities(true)));
+        using var client = Client(handler);
+        await ((Func<Task>)(() => client.ReadFreshLegacySnapshotAsync())).Should().ThrowAsync<InvalidOperationException>();
+        handler.Requests.Should().ContainSingle().Which.Path.Should().Be("/internal/agents/capabilities");
+    }
+
+    [Theory]
+    [InlineData("[null]")]
+    [InlineData("[{}]")]
+    [InlineData("null")]
+    [InlineData("invalid json")]
+    public async Task FreshLegacyReadRejectsMalformedEvidence(string body)
+    {
+        using var handler = new Handler(request =>
+            request.RequestUri!.AbsolutePath.EndsWith("capabilities", StringComparison.Ordinal)
+                ? Json(new AgentEnrollmentCapabilities(false))
+                : new(HttpStatusCode.OK) { Content = new StringContent(body) });
+        using var client = Client(handler, false);
+        await ((Func<Task>)(() => client.ReadFreshLegacySnapshotAsync())).Should().ThrowAsync<InvalidOperationException>();
+        handler.Requests.Should().HaveCount(2);
+    }
+
+    [Theory]
     [InlineData(false, true)]
     [InlineData(true, false)]
     public async Task RuntimeMismatch_PreventsAllRuntimeAndStartupFallback(bool enabled, bool server)

@@ -31,8 +31,9 @@ public sealed partial class StandaloneAgentGatewayService
                 throw new InvalidOperationException("Machine enrollment is revoked.");
             var session = _sessions.GetValueOrDefault(metadata.AgentId);
             var connected = session is not null && IsCurrent(session);
+            var currentSession = connected ? session : null;
             return new(registry.RegistryId, machineId, metadata.AgentId, metadata.Version, metadata.CredentialGeneration,
-                connected ? session!.SessionId : null, connected, DateTimeOffset.UtcNow);
+                currentSession?.SessionId, connected, DateTimeOffset.UtcNow, currentSession?.LastReceivedHeartbeatUtc);
         }
     }
 

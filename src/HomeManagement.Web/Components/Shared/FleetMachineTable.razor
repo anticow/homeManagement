@@ -1,0 +1,136 @@
+@implements IDisposable
+@using HomeManagement.Abstractions.Models
+@inject HomeManagement.Web.Services.IBrokerApi BrokerApi
+@inject ILogger<FleetMachineTable> Logger
+
+<button type="button" @onclick="RefreshAsync">Refresh stored fleet view</button>
+<p>Database-backed last-known evidence, validated periodically by the broker. Refresh reads stored data only;
+    it never contacts agents, the gateway or Prometheus. Inventory state is historical, not current connectivity.
+    Heartbeat/check-in is an actual gateway heartbeat receipt, not validation time; older gateways may not supply it.
+    All timestamps are UTC. This evidence is not command authorization.</p>
+@if (_status is not null)
+{
+    <p role="status">@_status</p>
+}
+@if (_devices is not null)
+{
+    <p>Stored view read at @Timestamp(_readAtUtc). Freshness is evaluated by the broker at read time.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Hostname</th><th>OS</th><th>Historical inventory state</th>
+                <th>HM agent state</th><th>Last agent heartbeat/check-in (UTC)</th><th>Agent validation (UTC)</th>
+                <th>Prometheus/exporter metrics</th><th>CPU</th><th>Memory</th><th>Disk</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var device in _devices.Items)
+            {
+                var state = device.Snapshot;
+                var health = state.Health;
+                <tr>
+                    <td><a href="/machines/@device.Machine.Id">@device.Machine.Hostname</a></td>
+                    <td>@device.Machine.OsType</td>
+                    <td>@device.Machine.State</td>
+                    @if (device.Connectivity == DeviceConnectivity.NotApplicable)
+                    {
+                        <td>Not applicable (non-agent transport)</td><td>Not applicable</td><td>Not applicable</td>
+                    }
+                    else
+                    {
+                        <td>
+                            <div>@device.Connectivity @(device.AgentIsStale ? "— stale / unknown" : "— last validated")</div>
+                            <div>Last known: @KnownState(state.LastKnownConnected)</div>
+                            @if (state.AgentFailure is not null) { <div>@state.AgentFailure</div> }
+                        </td>
+                        <td>@Timestamp(state.LastHeartbeatUtc)</td>
+                        <td>
+                            <div>Successful: @Timestamp(state.AgentSuccessUtc)</div>
+                            <div>Attempt: @Timestamp(state.AgentAttemptUtc)</div>
+                            <div>Age: @Age(device.AgentAgeSeconds)</div>
+                        </td>
+                    }
+                    <td>
+                        <div>@(health is null ? "Unknown / unavailable" : $"Last known exporter up — {health.OverallStatus}")</div>
+                        <div>@(device.MetricsIsStale ? "Stale / unavailable" : "Last validated metrics")</div>
+                        <div>Successful: @Timestamp(state.MetricsSuccessUtc)</div>
+                        <div>Attempt: @Timestamp(state.MetricsAttemptUtc)</div>
+                        @if (state.MetricsFailure is not null) { <div>@state.MetricsFailure</div> }
+                    </td>
+                    <td>@Metric(health?.CpuUsagePercent)</td>
+                    <td>@Metric(health?.MemoryUsagePercent)</td>
+                    <td>@Metric(health?.DiskUsagePercent)</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <button type="button" disabled="@(_page == 1)" @onclick="PreviousAsync">Previous</button>
+    <span>Page @_devices.Page — @_devices.TotalCount machines</span>
+    <button type="button" disabled="@((long)_devices.Page * _devices.PageSize >= _devices.TotalCount)" @onclick="NextAsync">Next</button>
+}
+
+@code {
+    private readonly CancellationTokenSource _lifetime = new();
+    private CancellationTokenSource? _request;
+    private long _revision;
+    private bool _disposed;
+    private int _page = 1;
+    private PagedResult<FleetDeviceState>? _devices;
+    private DateTimeOffset? _readAtUtc;
+    private string? _status;
+
+    protected override Task OnInitializedAsync() => RefreshAsync();
+    private Task PreviousAsync() { _page = Math.Max(1, _page - 1); return RefreshAsync(); }
+    private Task NextAsync() { _page++; return RefreshAsync(); }
+
+    private async Task RefreshAsync()
+    {
+        if (_disposed) return;
+        var revision = ++_revision;
+        _request?.Cancel();
+        using var request = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        request.CancelAfter(TimeSpan.FromSeconds(30));
+        _request = request;
+        _devices = null;
+        _status = "Reading stored fleet view...";
+        try
+        {
+            var devices = await BrokerApi.GetFleetDeviceStatesAsync(_page, 25, request.Token);
+            if (_disposed || revision != _revision) return;
+            _devices = devices;
+            _readAtUtc = DateTimeOffset.UtcNow;
+            _status = null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or Refit.ApiException or InvalidOperationException
+            or UnauthorizedAccessException or OperationCanceledException or System.Text.Json.JsonException)
+        {
+            if (!_disposed && revision == _revision)
+            {
+                _status = "Stored fleet view unavailable. Refresh to try again; no validation was triggered.";
+                Logger.LogWarning("Stored fleet view unavailable.");
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_request, request)) _request = null;
+        }
+    }
+
+    private static string KnownState(bool? connected) => connected switch { true => "Online", false => "Offline", null => "Unknown" };
+    private static string Timestamp(DateTimeOffset? value) =>
+        value?.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss 'UTC'", System.Globalization.CultureInfo.InvariantCulture) ?? "Unknown / unavailable";
+    private static string Age(double? value) =>
+        value.HasValue ? Math.Floor(value.Value).ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + " seconds" : "Never validated";
+    private static string Metric(double? value) =>
+        value.HasValue ? value.Value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + "% (last known)" : "Unavailable";
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _revision++;
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+        GC.SuppressFinalize(this);
+    }
+}

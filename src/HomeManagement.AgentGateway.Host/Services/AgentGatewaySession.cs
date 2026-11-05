@@ -43,6 +43,7 @@ internal sealed class AgentGatewaySession
     public DateTime ConnectedUtc { get; } = DateTime.UtcNow;
 
     public DateTime LastHeartbeatUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? LastReceivedHeartbeatUtc { get; set; }
 
     public ConcurrentDictionary<string, PendingAgentCommand> PendingCommands { get; } = new();
 }
