@@ -30,6 +30,10 @@ images.
 
 ## 2. Branching Strategy
 
+**Current release contract:** the application release job checks out and updates
+`master`; the infrastructure receiver and AWX project use ansible `main`.
+The historical `main`/`develop` diagram below is not the release deployment ref.
+
 ```
 main          ← production-ready, protected
   └─ develop  ← integration branch, protected
@@ -142,6 +146,42 @@ created during the platform migration (doc 15).
 
 Tags containing a hyphen (e.g., `v1.0.0-rc.1`) are automatically marked as
 pre-release on the GitHub Release.
+
+### Stable release delivery (current cross-repository contract)
+
+Only stable `vMAJOR.MINOR.PATCH` releases deploy. The existing release job bumps
+`deploy/argocd/values-production.yaml` on **master**, then uses the existing
+`ANSIBLE_DISPATCHER_APP_ID` / `ANSIBLE_DISPATCHER_PRIVATE_KEY` GitHub App integration,
+scoped only to `anticow/ansible`, to dispatch **Platform Configure** on **main**:
+`operation=homemanagement-release`, `environment=cowgo`, `check=false`, stable
+`release_version`, and unique `delivery_id=hm-<run ID>-<attempt>`.
+There is no release-chain dispatch to `awx-deliver.yml`.
+
+**Receive-first rollout:** review and merge ansible/main's receiver before
+homeManagement/master's producer. Existing App Actions read/write permission
+must support both dispatch and run polling; the script checks read access before
+dispatch and never broadens permissions or introduces a new token. It dispatches
+once and waits up to 55 minutes for the correlated receiver's completed success.
+An accepted POST alone is not delivery success. Queuing, downstream failure,
+cancellation, API failures, ambiguous correlation, and timeouts cannot report
+success; inspect receiver/AWX jobs before any manual retry.
+
+The receiver reuses its successful `awx-reconcile` Tailscale OAuth route to
+`awx.cowgomu.net` and `ANSIBLE_VAULT_PASSWORD` launcher. AWX authentication stays
+in the existing ansible inventory/Vault path, not separate GitHub `AWX_*`
+secrets. CI does not depend on workstation 1Password or Catbox SSH.
+After successful AWX reconciliation it waits sequentially for existing
+**Register ArgoCD Application → Apply HomeManagement Schema → Deploy
+HomeManagement** templates (600 seconds per stage; receiver cap 45 minutes).
+The final template receives the stable image version, not `latest`; source refs
+remain application `master` / ansible `main`, with AWX update-on-launch and
+60-second cache retained. No generic direct Helm replacement is introduced.
+
+Release check requests are rejected before receiver live setup and by the
+orchestration playbook. Ordinary configuration operations and unrelated push
+changes cannot select this delivery path. The tag bump precedes dispatch;
+ArgoCD auto-sync can observe it independently, so this is not an atomic release
+or rollback guarantee. Wait timeouts do not cancel existing AWX jobs.
 
 ---
 
